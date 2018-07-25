@@ -1,0 +1,49 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+import os
+import subprocess
+
+import click
+
+
+def build_image():
+    click.secho(u"🛠  Building PlatypOS", fg="blue")
+    subprocess.call(['bootimage', 'build', '--manifest-path', 'kernel/Cargo.toml'])
+
+
+def qemu_run():
+    click.secho(u"🏃‍ Running in QEMU", fg="blue")
+    subprocess.call(['qemu-system-x86_64', '-drive', 'format=raw,file=target/x86_64-os/debug/bootimage-kernel.bin'])
+
+
+@click.group()
+def pos():
+    """
+    Command line tool for platypos
+    """
+    pass
+
+
+@pos.command()
+def prereqs():
+    subprocess.call(['cargo', 'install', 'bootimage', 'cargo-xbuild'])
+
+
+@pos.command()
+def build():
+    build_image()
+
+
+@pos.command()
+@click.option('--build/--no-build', default=True)
+def run(build):
+    if build:
+        build_image()
+    qemu_run()
+
+
+
+if __name__ == '__main__':
+    root = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
+    os.chdir(root)
+    pos()

@@ -1,0 +1,13 @@
+cargo-features = ["edition"]
+
+[package]
+name = "kernel"
+version = "0.1.0"
+authors = ["Ben Navetta <ben.navetta@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+bootloader_precompiled = "0.2.0"
+
+[package.metadata.bootimage]
+default-target = "x86_64-os.json"
