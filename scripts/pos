@@ -13,7 +13,7 @@ def build_image():
 
 def qemu_run():
     click.secho(u"🏃‍ Running in QEMU", fg="blue")
-    subprocess.call(['qemu-system-x86_64', '-drive', 'format=raw,file=target/x86_64-os/debug/bootimage-kernel.bin'])
+    subprocess.call(['qemu-system-x86_64', '-drive', 'format=raw,file=target/x86_64-os/debug/bootimage-kernel.bin', '-serial', 'mon:stdio'])
 
 
 @click.group()

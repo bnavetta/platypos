@@ -1,0 +1,8 @@
+[package]
+name = "dbg"
+version = "0.1.0"
+authors = ["Ben Navetta <ben.navetta@gmail.com>"]
+
+[dependencies]
+uart_16550 = "0.1.0"
+spin = "0.4.8"

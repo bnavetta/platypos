@@ -2,14 +2,23 @@
 #![no_std]
 #![no_main]
 
-use bootloader_precompiled;
+extern crate bootloader_precompiled;
+
+#[macro_use]
+extern crate dbg;
 
 use core::panic::PanicInfo;
+
+use dbg::Category;
 
 static HELLO: &[u8] = b"Hello World!";
 
 #[no_mangle]
 pub extern "C" fn _start() -> ! {
+    dbg::init(0x3F8);
+
+    dbg!(Mode::Error, "Hello, World!");
+
     let vga_buffer = 0xb8000 as *mut u8;
 
     for (i, &byte) in HELLO.iter().enumerate() {
