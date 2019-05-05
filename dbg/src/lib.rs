@@ -12,8 +12,8 @@ use core::fmt::{Arguments, Result, Write};
 use uart_16550::SerialPort;
 use spin::Mutex;
 
-pub use category::Category;
-use category::COLOR_NORMAL;
+pub use crate::category::Category;
+use crate::category::COLOR_NORMAL;
 
 mod category;
 

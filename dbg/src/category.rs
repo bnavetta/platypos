@@ -20,14 +20,18 @@ pub(crate) const COLOR_BRIGHT_WHITE: &'static str = "\x1b[1;37;40m";
 /// control logging for entire OS subsystems.
 pub enum Category {
     /// Error messages, indicating that something has gone wrong.
-    Error
+    Error,
+
+    /// Messages from the boot and initialization process
+    Boot,
 }
 
 impl Category {
     pub(crate) fn color(&self) -> &str {
         use self::Category::*;
         match self {
-            &Error => COLOR_BRIGHT_RED
+            &Error => COLOR_BRIGHT_RED,
+            &Boot => COLOR_CYAN,
         }
     }
 
@@ -35,7 +39,8 @@ impl Category {
     pub fn name(&self) -> &str {
         use self::Category::*;
         match self {
-            &Error => "error"
+            &Error => "error",
+            &Boot => "boot",
         }
     }
 }

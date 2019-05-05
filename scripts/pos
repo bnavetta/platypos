@@ -8,7 +8,10 @@ import click
 
 def build_image():
     click.secho(u"🛠  Building PlatypOS", fg="blue")
-    subprocess.call(['bootimage', 'build', '--manifest-path', 'kernel/Cargo.toml'])
+    if subprocess.call(['bootimage', 'build', '--manifest-path', 'kernel/Cargo.toml']) != 0:
+        click.secho(u"❌ Build failed")
+        return False
+    return True
 
 
 def qemu_run():
@@ -38,7 +41,9 @@ def build():
 @click.option('--build/--no-build', default=True)
 def run(build):
     if build:
-        build_image()
+        success = build_image()
+        if not success:
+            return
     qemu_run()
 
 
