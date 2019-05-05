@@ -5,19 +5,12 @@ authors = ["Ben Navetta <ben.navetta@gmail.com>"]
 edition = "2018"
 
 [dependencies]
-dbg = { path = "../dbg" }
 kutil = { path = "../kutil" }
-slog-serial = { path = "../slog-serial" }
+serial_logger = { path = "../serial_logger" }
+log = "~0.4.6"
 bootloader = "~0.6"
 raw-cpuid = "~6.1"
 x86_64 = "~0.3"
-
-[dependencies.slog]
-# version = "~2.4.1"
-# 2.4.1 doesn't actually work on no_std
-git = "https://github.com/slog-rs/slog"
-default-features = false
-features = []
 
 [package.metadata.bootimage]
 default-target = "x86_64-os.json"

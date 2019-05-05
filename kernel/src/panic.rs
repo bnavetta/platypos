@@ -1,10 +1,10 @@
 use core::panic::PanicInfo;
 
-use dbg::{Category, dbg};
+use log::error;
 
 #[cfg(not(test))]
 #[panic_handler]
 pub fn panic(info: &PanicInfo) -> ! {
-    dbg!(Category::Error, "{}", info);
+    error!("{}", info);
     loop {}
 }

@@ -7,18 +7,14 @@
 #[macro_use]
 extern crate bootloader;
 extern crate raw_cpuid;
-#[macro_use]
-extern crate slog;
 extern crate x86_64;
 
-extern crate dbg;
 extern crate kutil;
 
 use bootloader::bootinfo::BootInfo;
-use dbg::{Category, dbg};
+use log::{info, debug, warn};
 use raw_cpuid::{CpuId, Hypervisor};
-
-use slog_serial::SerialDrain;
+use serial_logger;
 
 pub mod memory;
 mod panic;
@@ -31,18 +27,14 @@ static ALLOC: KernelAllocator = KernelAllocator;
 static HELLO: &[u8] = b"Hello World!";
 
 fn main(boot_info: &'static BootInfo) -> ! {
-    dbg::init(0x3F8);
+    serial_logger::init().expect("Could not initialize logging");
 
-    let drain = unsafe { SerialDrain::on_port(0x3F8) };
-    let drain = slog::IgnoreResult::new(drain);
-     let log = slog::Logger::root_typed(drain, o!("os" => "platypos"));
-
-     info!(log, "This is a log message!");
+    info!("This works! {}", "hi\n");
 
     let cpuid = CpuId::new();
     match cpuid.get_vendor_info() {
-        Some(info) => dbg!(Category::Boot, "CPU: {}", info),
-        None => dbg!(Category::Error, "CPUID not supported")
+        Some(info) => debug!("CPU: {}", info),
+        None => warn!("CPUID not supported")
     }
 
     if let Some(hypervisor) = cpuid.get_hypervisor_info() {
@@ -53,15 +45,15 @@ fn main(boot_info: &'static BootInfo) -> ! {
             Hypervisor::KVM => "KVM",
             Hypervisor::Unknown(_, _, _) => "Unknown"
         };
-        dbg!(Category::Boot, "Running under {}", hypervisor_name);
+        debug!("Running under {}", hypervisor_name);
     } else {
-        dbg!(Category::Boot, "Not running in a hypervisor");
+        debug!("Not running in a hypervisor");
     }
 
-    dbg!(Category::Boot, "Physical Memory Map:");
+    info!("Physical Memory Map:");
     for region in boot_info.memory_map.iter() {
         let size = region.range.end_addr() - region.range.start_addr();
-        dbg!(Category::Boot, "    {:#018x}-{:#018x}: {:?} ({} bytes)", region.range.start_addr(), region.range.end_addr(), region.region_type, size);
+        info!("    {:#018x}-{:#018x}: {:?} ({} bytes)", region.range.start_addr(), region.range.end_addr(), region.region_type, size);
     }
 
     let vga_buffer = 0xb8000 as *mut u8;

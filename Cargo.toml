@@ -2,8 +2,7 @@
 members = [
 	"kernel",
 	"kutil",
-	"dbg",
-	"slog-serial"
+	"serial_logger"
 ]
 
 [profile.dev]

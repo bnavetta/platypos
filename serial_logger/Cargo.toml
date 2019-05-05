@@ -1,9 +1,10 @@
 [package]
-name = "dbg"
+name = "serial_logger"
 version = "0.1.0"
 authors = ["Ben Navetta <ben.navetta@gmail.com>"]
 edition = "2018"
 
 [dependencies]
-uart_16550 = "0.1.0"
-spin = "~0.4"
+log = "~0.4.6"
+spin = "~0.5"
+uart_16550 = "~0.2.0"
