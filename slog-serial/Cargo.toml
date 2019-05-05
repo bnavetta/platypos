@@ -1,16 +1,12 @@
 [package]
-name = "kernel"
+name = "slog-serial"
 version = "0.1.0"
 authors = ["Ben Navetta <ben.navetta@gmail.com>"]
 edition = "2018"
 
 [dependencies]
-dbg = { path = "../dbg" }
-kutil = { path = "../kutil" }
-slog-serial = { path = "../slog-serial" }
-bootloader = "~0.6"
-raw-cpuid = "~6.1"
-x86_64 = "~0.3"
+uart_16550 = "~0.2.0"
+spin = "~0.5"
 
 [dependencies.slog]
 # version = "~2.4.1"
@@ -18,6 +14,3 @@ x86_64 = "~0.3"
 git = "https://github.com/slog-rs/slog"
 default-features = false
 features = []
-
-[package.metadata.bootimage]
-default-target = "x86_64-os.json"

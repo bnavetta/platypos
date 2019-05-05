@@ -29,7 +29,7 @@ def pos():
 
 @pos.command()
 def prereqs():
-    subprocess.call(['cargo', 'install', 'bootimage', 'cargo-xbuild'])
+    subprocess.call(['cargo', 'install', 'bootimage', 'cargo-xbuild', '--force'])
 
 
 @pos.command()
