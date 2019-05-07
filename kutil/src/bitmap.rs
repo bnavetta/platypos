@@ -2,7 +2,7 @@ use core::slice;
 
 /// A fixed-size bitmap
 pub struct Bitmap<'a> {
-    data: &'a mut [u8]
+    data: &'a mut [u8],
 }
 
 impl<'a> Bitmap<'a> {
@@ -13,7 +13,9 @@ impl<'a> Bitmap<'a> {
     /// Create a bitmap from a pointer and a length. The `len` argument is the size
     /// in bytes, not bits, of the bitmap
     pub unsafe fn from_raw_parts(data: *mut u8, len: usize) -> Bitmap<'a> {
-        Bitmap { data: slice::from_raw_parts_mut(data, len) }
+        Bitmap {
+            data: slice::from_raw_parts_mut(data, len),
+        }
     }
 
     pub fn len(&self) -> usize {
@@ -61,4 +63,3 @@ mod tests {
         }
     }
 }
-

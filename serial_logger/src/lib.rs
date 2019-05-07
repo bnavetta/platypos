@@ -2,7 +2,7 @@
 
 use core::fmt::Write;
 
-use log::{Log, Record, Level, LevelFilter, Metadata, SetLoggerError};
+use log::{Level, LevelFilter, Log, Metadata, Record, SetLoggerError};
 use spin::Mutex;
 use uart_16550::SerialPort;
 
@@ -38,7 +38,9 @@ pub struct SerialLogger {
 
 impl SerialLogger {
     const fn new(port: SerialPort) -> SerialLogger {
-        SerialLogger { port: Mutex::new(port) }
+        SerialLogger {
+            port: Mutex::new(port),
+        }
     }
 
     const unsafe fn from_port(port: u16) -> SerialLogger {
@@ -69,14 +71,25 @@ impl Log for SerialLogger {
                 Level::Error => COLOR_RED,
             };
 
-            let _ = write!(w, "{}{}{} ", COLOR_GREY, record.module_path().unwrap_or(record.target()), COLOR_NORMAL);
-            let _ = write!(w, "{}{}{} ", level_color, record.level(), COLOR_NORMAL);
-            let _ = write!(w, "{}{}:{}{}", COLOR_BRIGHT_CYAN, record.file().unwrap_or("unknown"), record.line().unwrap_or(0), COLOR_NORMAL);
+            let _ = write!(
+                w,
+                "{}[{:>30}]{} ",
+                COLOR_GREY,
+                record.module_path().unwrap_or(record.target()),
+                COLOR_NORMAL
+            );
+            let _ = write!(w, "{}{:>5}{} ", level_color, record.level(), COLOR_NORMAL);
+            let _ = write!(
+                w,
+                "{}{}:{}{}",
+                COLOR_BRIGHT_CYAN,
+                record.file().unwrap_or("unknown"),
+                record.line().unwrap_or(0),
+                COLOR_NORMAL
+            );
             let _ = write!(w, " {}-{} {}\n", COLOR_GREY, COLOR_NORMAL, record.args());
         }
     }
 
-    fn flush(&self) {
-
-    }
+    fn flush(&self) {}
 }

@@ -8,7 +8,5 @@ unsafe impl GlobalAlloc for KernelAllocator {
         ptr::null_mut()
     }
 
-    unsafe fn dealloc(&self, _ptr: *mut u8, _layout: Layout) {
-
-    }
+    unsafe fn dealloc(&self, _ptr: *mut u8, _layout: Layout) {}
 }

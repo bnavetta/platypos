@@ -1,22 +1,16 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 import os
+import getpass
 import subprocess
 
 import click
 
 
-def build_image():
-    click.secho(u"🛠  Building PlatypOS", fg="blue")
-    if subprocess.call(['bootimage', 'build', '--manifest-path', 'kernel/Cargo.toml']) != 0:
-        click.secho(u"❌ Build failed")
-        return False
-    return True
-
-
-def qemu_run():
-    click.secho(u"🏃‍ Running in QEMU", fg="blue")
-    subprocess.call(['qemu-system-x86_64', '-drive', 'format=raw,file=target/x86_64-os/debug/bootimage-kernel.bin', '-serial', 'mon:stdio'])
+# There's some weird interaction between vboxsf and rust-lld, this seems
+# like a decent enough workaround
+if getpass.getuser() == 'vagrant':
+    os.environ['CARGO_TARGET_DIR'] = '/home/vagrant/cargo-target'
 
 
 @click.group()
@@ -30,22 +24,35 @@ def pos():
 @pos.command()
 def prereqs():
     subprocess.call(['cargo', 'install', 'bootimage', 'cargo-xbuild', '--force'])
+    subprocess.call(['rustup', 'component', 'add', 'rust-src'])
+    subprocess.call(['rustup', 'component', 'add', 'llvm-tools-preview'])
 
 
 @pos.command()
 def build():
-    build_image()
+    click.secho(u"🛠  Building PlatypOS", fg="blue")
+    if subprocess.call(['bootimage', 'build', '--manifest-path', 'kernel/Cargo.toml']) != 0:
+        click.secho(u"❌ Build failed")
 
 
 @pos.command()
-@click.option('--build/--no-build', default=True)
-def run(build):
-    if build:
-        success = build_image()
-        if not success:
-            return
-    qemu_run()
+@click.option('--debug/--no-debug', default=False)
+def run(debug):
+    click.secho(u"🏃‍ Running in QEMU", fg="blue")
+    args = ['bootimage', 'run', '--manifest-path', 'kernel/Cargo.toml', '--', '-serial', 'mon:stdio']
 
+    if debug:
+        args.extend(['-s', '-S'])
+
+    subprocess.call(args)
+
+
+@pos.command()
+def debug():
+    click.secho(u"Connecting to GDB", fg="blue")
+    target_dir = os.environ.get('CARGO_TARGET_DIR', 'target')
+    kernel_binary = os.path.join(target_dir, 'x86_64-os/debug/kernel')
+    subprocess.call(['rust-gdb', kernel_binary, '-x', 'init.gdb'])
 
 
 if __name__ == '__main__':

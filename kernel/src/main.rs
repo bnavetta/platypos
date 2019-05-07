@@ -1,6 +1,4 @@
-#![feature(asm)]
-#![feature(stdsimd)]
-#![feature(alloc_error_handler)]
+#![feature(asm, stdsimd, alloc_error_handler, stmt_expr_attributes)]
 #![no_std]
 #![cfg_attr(not(test), no_main)]
 
@@ -12,7 +10,7 @@ extern crate x86_64;
 extern crate kutil;
 
 use bootloader::bootinfo::BootInfo;
-use log::{info, debug, warn};
+use log::{debug, info, warn};
 use raw_cpuid::{CpuId, Hypervisor};
 use serial_logger;
 
@@ -34,7 +32,7 @@ fn main(boot_info: &'static BootInfo) -> ! {
     let cpuid = CpuId::new();
     match cpuid.get_vendor_info() {
         Some(info) => debug!("CPU: {}", info),
-        None => warn!("CPUID not supported")
+        None => warn!("CPUID not supported"),
     }
 
     if let Some(hypervisor) = cpuid.get_hypervisor_info() {
@@ -43,7 +41,7 @@ fn main(boot_info: &'static BootInfo) -> ! {
             Hypervisor::VMware => "VMware",
             Hypervisor::HyperV => "HyperV",
             Hypervisor::KVM => "KVM",
-            Hypervisor::Unknown(_, _, _) => "Unknown"
+            Hypervisor::Unknown(_, _, _) => "Unknown",
         };
         debug!("Running under {}", hypervisor_name);
     } else {
@@ -53,8 +51,16 @@ fn main(boot_info: &'static BootInfo) -> ! {
     info!("Physical Memory Map:");
     for region in boot_info.memory_map.iter() {
         let size = region.range.end_addr() - region.range.start_addr();
-        info!("    {:#018x}-{:#018x}: {:?} ({} bytes)", region.range.start_addr(), region.range.end_addr(), region.region_type, size);
+        info!(
+            "    {:#018x}-{:#018x}: {:?} ({} bytes)",
+            region.range.start_addr(),
+            region.range.end_addr(),
+            region.region_type,
+            size
+        );
     }
+
+    memory::frame::init(boot_info);
 
     let vga_buffer = 0xb8000 as *mut u8;
 
