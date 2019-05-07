@@ -4,6 +4,8 @@
 Vagrant.configure("2") do |config|
   config.vm.box = "ubuntu/disco64"
 
+  config.vm.network "forwarded_port", guest: 1234, host: 1234
+
   config.vm.provider "virtualbox" do |vb|
     # Display the VirtualBox GUI when booting the machine
     # vb.gui = true

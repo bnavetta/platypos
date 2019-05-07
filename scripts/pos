@@ -1,8 +1,10 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+
 import os
 import getpass
 import subprocess
+import shutil
 
 import click
 
@@ -11,6 +13,27 @@ import click
 # like a decent enough workaround
 if getpass.getuser() == 'vagrant':
     os.environ['CARGO_TARGET_DIR'] = '/home/vagrant/cargo-target'
+
+
+def kernel_binary():
+    """
+    Get the path to the kernel ELF binary
+    """
+    target_dir = os.environ.get('CARGO_TARGET_DIR', 'target')
+    return os.path.join(target_dir, 'x86_64-os/debug/kernel')
+
+
+def exec_command(args):
+    try:
+        return subprocess.call(args)
+    except Exception as ex:
+        click.echo(u"❌ Running " + click.style(" ".join(args), fg="red") + " failed", err=True)
+        click.secho(str(ex), fg="red", err=True)
+        return 1
+
+
+def build_image():
+    return exec_command(['bootimage', 'build', '--manifest-path', 'kernel/Cargo.toml']) == 0
 
 
 @click.group()
@@ -23,16 +46,19 @@ def pos():
 
 @pos.command()
 def prereqs():
-    subprocess.call(['cargo', 'install', 'bootimage', 'cargo-xbuild', '--force'])
-    subprocess.call(['rustup', 'component', 'add', 'rust-src'])
-    subprocess.call(['rustup', 'component', 'add', 'llvm-tools-preview'])
+    exec_command(['cargo', 'install', 'bootimage', 'cargo-xbuild', '--force'])
+    exec_command(['rustup', 'component', 'add', 'rust-src'])
+    exec_command(['rustup', 'component', 'add', 'llvm-tools-preview'])
 
 
 @pos.command()
-def build():
+@click.option('--remote/--no-remote', default=False)
+def build(remote):
     click.secho(u"🛠  Building PlatypOS", fg="blue")
-    if subprocess.call(['bootimage', 'build', '--manifest-path', 'kernel/Cargo.toml']) != 0:
+    if not build_image():
         click.secho(u"❌ Build failed")
+    if remote:
+        shutil.copyfile(kernel_binary(), 'target/debug-kernel')
 
 
 @pos.command()
@@ -44,15 +70,13 @@ def run(debug):
     if debug:
         args.extend(['-s', '-S'])
 
-    subprocess.call(args)
+    exec_command(args)
 
 
 @pos.command()
 def debug():
     click.secho(u"Connecting to GDB", fg="blue")
-    target_dir = os.environ.get('CARGO_TARGET_DIR', 'target')
-    kernel_binary = os.path.join(target_dir, 'x86_64-os/debug/kernel')
-    subprocess.call(['rust-gdb', kernel_binary, '-x', 'init.gdb'])
+    exec_command(['rust-gdb', kernel_binary(), '-x', 'init.gdb'])
 
 
 if __name__ == '__main__':

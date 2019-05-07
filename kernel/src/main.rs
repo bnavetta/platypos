@@ -70,7 +70,7 @@ fn main(boot_info: &'static BootInfo) -> ! {
             *vga_buffer.offset(i as isize * 2 + 1) = 0xb;
         }
     }
-
+    
     loop {}
 }
 

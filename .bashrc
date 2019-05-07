@@ -2,7 +2,9 @@
 # see /usr/share/doc/bash/examples/startup-files (in the package bash-doc)
 # for examples
 
-# If not running interactively, don't do anything
+export PATH="$HOME/.cargo/bin:$PATH"
+
+# If not running interactively, skip the interactive parts
 case $- in
     *i*) ;;
       *) return;;
@@ -88,4 +90,3 @@ if ! shopt -oq posix; then
 fi
 
 eval "$(direnv hook bash)"
-export PATH="$HOME/.cargo/bin:$PATH"

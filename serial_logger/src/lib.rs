@@ -8,13 +8,13 @@ use uart_16550::SerialPort;
 
 const PORT: u16 = 0x3F8;
 
-const COLOR_GREY: &'static str = "\x1b[90;40m";
-const COLOR_WHITE: &'static str = "\x1b[37;40m";
-const COLOR_BLUE: &'static str = "\x1b[34;40m";
-const COLOR_GREEN: &'static str = "\x1b[32;40m";
-const COLOR_YELLOW: &'static str = "\x1b[33;40m";
-const COLOR_RED: &'static str = "\x1b[31;40m";
-const COLOR_BRIGHT_CYAN: &'static str = "\x1b[96;40m";
+const COLOR_GREY: &'static str = "\x1b[90m";
+const COLOR_WHITE: &'static str = "\x1b[37m";
+const COLOR_BLUE: &'static str = "\x1b[34m";
+const COLOR_GREEN: &'static str = "\x1b[32m";
+const COLOR_YELLOW: &'static str = "\x1b[33m";
+const COLOR_RED: &'static str = "\x1b[31m";
+const COLOR_BRIGHT_CYAN: &'static str = "\x1b[96m";
 const COLOR_NORMAL: &'static str = "\x1b[0m";
 
 static LOGGER: SerialLogger = unsafe { SerialLogger::from_port(PORT) };

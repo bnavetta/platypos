@@ -37,6 +37,9 @@ struct Region {
     // Bitmap tree
     bitmaps: [&'static mut [u8]; MAX_ORDER + 1],
 
+    // Free lists for each order
+    free_lists: [LinkedList<FreeBlockAdapter>; MAX_ORDER + 1],
+
     // Link in the global region list
     link: LinkedListLink,
 }
@@ -67,6 +70,8 @@ impl Region {
                 slice::from_raw_parts_mut(start_ptr, bitmap_size as usize)
             };
 
+            region.free_lists[order] = LinkedList::new(FreeBlockAdapter::new());
+
             info!("Order-{} bitmap is {} bytes long", order, region.bitmaps[order].len());
         }
 
@@ -79,6 +84,10 @@ impl Region {
             if nframes <= remaining as usize {
                 info!("Marking order-{} block starting at offset {} as free", order, frame_start);
                 region.bitmaps[order].set_bit(frame_start as usize >> order, false);
+
+                let block = unsafe { FreeBlock::from_address(start + (frame_start * FRAME_SIZE as u64)) };
+                region.free_lists[order].push_back(block);
+
                 frame_start += nframes as u64;
             } else {
                 order -= 1;
@@ -90,6 +99,21 @@ impl Region {
 }
 
 intrusive_adapter!(RegionAdapter = &'static Region : Region { link: LinkedListLink });
+
+struct FreeBlock {
+    link: LinkedListLink
+}
+
+impl FreeBlock {
+    unsafe fn from_address(addr: VirtAddr) -> &'static FreeBlock {
+        let ptr: *mut FreeBlock = addr.as_mut_ptr();
+        let block = ptr.as_mut().unwrap();
+        block.link = LinkedListLink::new();
+        block
+    }
+}
+
+intrusive_adapter!(FreeBlockAdapter = &'static FreeBlock : FreeBlock { link: LinkedListLink });
 
 /// Given an order, returns the number of page frames in a block of that order
 const fn order_frames(order: usize) -> usize {
