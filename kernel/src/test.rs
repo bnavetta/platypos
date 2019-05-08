@@ -4,9 +4,12 @@ use bootloader::{entry_point, BootInfo};
 use log::info;
 
 use crate::qemu;
+use crate::memory::frame;
 
-fn test_kernel_main(_boot_info: &'static BootInfo) -> ! {
+fn test_kernel_main(boot_info: &'static BootInfo) -> ! {
     serial_logger::init().expect("Could not initialize logging");
+
+    frame::init(boot_info);
 
     super::test_main();
     loop {}

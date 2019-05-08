@@ -67,6 +67,14 @@ fn main(boot_info: &'static BootInfo) -> ! {
 
     memory::frame::init(boot_info);
 
+    let mut blocks = [None; 50];
+
+    for i in 0..blocks.len() {
+        blocks[i] = memory::frame::allocate_frames(16);
+    }
+
+    blocks.iter().flatten().for_each(|block| memory::frame::free_frames(*block, 16));
+
     let vga_buffer = 0xb8000 as *mut u8;
 
     for (i, &byte) in HELLO.iter().enumerate() {

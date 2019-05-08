@@ -17,6 +17,12 @@ x86_64 = "~0.3"
 version = "~0.6"
 features = ["map_physical_memory"]
 
+# AtomicCell might be useful
+#[dependencies.crossbeam-utils]
+#version = "~0.6.5"
+#default-features = false
+#features = ["nightly"]
+
 [dependencies.intrusive-collections]
 version = "~0.7.8"
 default-features = false

@@ -14,6 +14,7 @@
 //! * The bitmap starts `2^(MAX_ORDER - k) - 1` bytes from the start of the tree
 //!
 
+use core::cmp::min;
 use core::mem;
 use core::ptr;
 use core::slice;
@@ -22,29 +23,88 @@ use bit_field::BitArray;
 use bootloader::BootInfo;
 use bootloader::bootinfo::{MemoryRegionType, FrameRange};
 use intrusive_collections::{intrusive_adapter, LinkedList, LinkedListLink};
-use log::{info, trace};
-use spin::Mutex;
+use log::{info, trace,};
+use spin::{Mutex, Once};
 use x86_64::VirtAddr;
 
-const MAX_ORDER: usize = 11;
 const FRAME_SIZE: usize = 4096;
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Ord, PartialOrd)]
+struct Order(u8);
+
+impl Order {
+    const MAX: Order = Order(11);
+    const MAX_VAL: usize = 11;
+
+    const MIN: Order = Order(0);
+
+    /// Returns the number of frames in a block of this order
+    const fn frames(&self) -> usize {
+        1usize << self.0
+    }
+
+    /// Returns the number of bytes in a block of this order
+    const fn bytes(&self) -> usize {
+        self.frames() * FRAME_SIZE
+    }
+
+    /// Returns the maximum allowed index for a block of this order. This relies on assuming a
+    /// one-page tree, where the order-11 bitmap occupies 1 byte
+    const fn max_index(&self) -> usize {
+        // See the properties for orders listed above
+        1 << (Order::MAX_VAL - self.as_usize() + 3)
+    }
+
+    fn parent(&self) -> Order {
+        debug_assert!(*self < Order::MAX);
+        Order(self.0 + 1)
+    }
+
+    fn child(&self) -> Order {
+        debug_assert!(self.0 > 0);
+        Order(self.0 - 1)
+    }
+
+    const fn as_usize(&self) -> usize {
+        self.0 as usize
+    }
+}
+
+impl From<u8> for Order {
+    fn from(v: u8) -> Order {
+        debug_assert!((v as usize) <= Order::MAX_VAL);
+        Order(v)
+    }
+}
+
+impl From<usize> for Order {
+    fn from(v: usize) -> Order {
+        debug_assert!(v <= Order::MAX_VAL);
+        Order(v as u8)
+    }
+}
+
+impl Into<usize> for Order {
+    fn into(self) -> usize {
+        self.0 as usize
+    }
+}
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 struct BlockId {
-    order: usize,
+    order: Order,
     index: usize,
 }
 
 impl BlockId {
     // Unfortunately, can't use assertions in const fns
-    fn new(order: usize, index: usize) -> BlockId {
-        debug_assert!(order <= MAX_ORDER);
-        // TODO: check index is valid
+    fn new(order: Order, index: usize) -> BlockId {
+        debug_assert!(index <= order.max_index());
         BlockId { order, index }
     }
 
     #[inline(always)]
-    fn order(&self) -> usize {
+    fn order(&self) -> Order {
         self.order
     }
 
@@ -60,9 +120,9 @@ impl BlockId {
 
     #[inline(always)]
     fn parent(&self) -> Option<BlockId> {
-        if self.order < MAX_ORDER {
+        if self.order < Order::MAX {
             let parent = (self.index & !1) >> 1;
-            Some(BlockId::new(self.order + 1, parent))
+            Some(BlockId::new(self.order.parent(), parent))
         } else {
             None
         }
@@ -70,14 +130,14 @@ impl BlockId {
 
     #[inline(always)]
     fn left_child(&self) -> BlockId {
-        debug_assert!(self.order > 0);
-        BlockId::new(self.order - 1, self.index << 1)
+        debug_assert!(self.order > Order::MIN);
+        BlockId::new(self.order.child(), self.index << 1)
     }
 
     #[inline(always)]
     fn right_child(&self) -> BlockId {
-        debug_assert!(self.order > 0);
-        BlockId::new(self.order - 1, (self.index << 1) + 1)
+        debug_assert!(self.order > Order::MIN);
+        BlockId::new(self.order.child(), (self.index << 1) + 1)
     }
 }
 
@@ -102,37 +162,71 @@ struct RegionInner {
     region_start: VirtAddr,
 
     // Bitmap tree
-    bitmaps: [&'static mut [u8]; MAX_ORDER + 1],
+    bitmaps: [&'static mut [u8]; Order::MAX_VAL + 1],
 
     // Free lists for each order
-    free_lists: [LinkedList<FreeBlockAdapter>; MAX_ORDER + 1],
+    free_lists: [LinkedList<FreeBlockAdapter>; Order::MAX_VAL + 1],
 }
 
 impl RegionInner {
     // Size of the region header (Region struct and bitmaps)
     const HEADER_SIZE: usize = 2 * FRAME_SIZE;
 
-    fn mark_allocated(&mut self, block: BlockId, allocated: bool) {
-        self.bitmaps[block.order()].set_bit(block.index(), allocated)
+    #[inline]
+    fn start_addr(&self) -> VirtAddr {
+        self.region_start
     }
 
-    fn is_allocated(&self, block: BlockId) -> bool {
-        self.bitmaps[block.order()].get_bit(block.index())
+    #[inline]
+    fn end_addr(&self) -> VirtAddr {
+        self.region_start + (self.num_frames * FRAME_SIZE as u64)
     }
 
     // NOTE: to ensure the header is _never_ allocated and make initialization a bit easier, it's
-    // not part of the allocatable region. That's why block_address and block_id add/subtract HEADER_SIZE
+    // not part of the allocatable region. Thus, the start of the data portion of the region starts
+    // 2 pages after the region start.
 
-    fn block_address(&self, block: BlockId) -> VirtAddr {
-        self.region_start + block.index() * order_frames(block.order()) * FRAME_SIZE + RegionInner::HEADER_SIZE
+    #[inline]
+    fn data_start_addr(&self) -> VirtAddr {
+        self.region_start + RegionInner::HEADER_SIZE
     }
 
-    fn block_id(&self, addr: VirtAddr, order: usize) -> BlockId {
-        debug_assert!(addr < self.region_start + self.num_frames as usize * FRAME_SIZE, "Block does not belong to region");
+    #[inline]
+    fn data_frames(&self) -> usize {
+        self.num_frames as usize - 2
+    }
 
-        let frame_offset = ((addr - self.region_start - RegionInner::HEADER_SIZE as u64) / FRAME_SIZE as u64) as usize;
-        let index = frame_offset / order_frames(order);
+    #[inline]
+    fn mark_allocated(&mut self, block: BlockId, allocated: bool) {
+        self.bitmaps[block.order().as_usize()].set_bit(block.index(), allocated)
+    }
+
+    #[inline]
+    fn is_allocated(&self, block: BlockId) -> bool {
+        self.bitmaps[block.order().as_usize()].get_bit(block.index())
+    }
+
+    fn block_address(&self, block: BlockId) -> VirtAddr {
+        self.data_start_addr() + block.index() * block.order().bytes()
+    }
+
+    fn block_id(&self, addr: VirtAddr, order: Order) -> BlockId {
+        debug_assert!(self.contains(addr), "Block {:?} does not belong to region", addr);
+        debug_assert!(addr.is_aligned(FRAME_SIZE as u64), "Address must be page-aligned");
+
+        let index = (addr - self.data_start_addr()) as usize / FRAME_SIZE / order.frames();
         BlockId::new(order, index)
+    }
+
+    /// Returns the highest index within this region for a block of the given order
+    fn max_index(&self, order: Order) -> usize {
+        // subtract 1 since 0-indexed
+        self.data_frames() / order.frames() - 1
+    }
+
+    /// Returns the largest order which can be allocated in this region
+    fn max_order(&self) -> Order {
+        Order::from(min(log2(self.data_frames()), Order::MAX_VAL))
     }
 
     fn free(&mut self, block: BlockId) {
@@ -142,7 +236,7 @@ impl RegionInner {
             // Not at the top, so we can try merging with our sibling
             if self.is_allocated(block.sibling()) {
                 let free_block = unsafe { FreeBlock::create_at(self.block_address(block), block.order()) };
-                self.free_lists[block.order()].push_front(free_block);
+                self.free_lists[block.order().as_usize()].push_front(free_block);
                 self.mark_allocated(block, false);
                 trace!("Freed {:?}", block);
             } else {
@@ -153,29 +247,27 @@ impl RegionInner {
                 let sibling = unsafe { FreeBlock::from_address(self.block_address(block.sibling())) };
                 debug_assert!(sibling.order == block.order(), "Sibling has wrong order");
                 debug_assert!(sibling.link.is_linked(), "Sibling should be in the free list");
-                unsafe { self.free_lists[block.order()].cursor_mut_from_ptr(sibling) }.remove();
+                unsafe { self.free_lists[block.order().as_usize()].cursor_mut_from_ptr(sibling) }.remove();
 
                 self.free(parent);
             }
         } else {
             let free_block = unsafe { FreeBlock::create_at(self.block_address(block), block.order()) };
-            self.free_lists[block.order()].push_front(free_block);
+            self.free_lists[block.order().as_usize()].push_front(free_block);
             self.mark_allocated(block, false);
             trace!("Freed {:?}", block);
         }
     }
 
-    fn alloc(&mut self, order: usize) -> Option<BlockId> {
-        debug_assert!(order <= MAX_ORDER);
-
-        if let Some(block) = self.free_lists[order].pop_front() {
+    fn alloc(&mut self, order: Order) -> Option<BlockId> {
+        if let Some(block) = self.free_lists[order.as_usize()].pop_front() {
             debug_assert!(block.order == order);
             let block_id = self.block_id(VirtAddr::from_ptr(block), order);
             self.mark_allocated(block_id, true);
             trace!("Allocating {:?}", block_id);
             Some(block_id)
-        } else if order < MAX_ORDER {
-            if let Some(parent) = self.alloc(order + 1) {
+        } else if order < Order::MAX {
+            if let Some(parent) = self.alloc(order.parent()) {
                 let block = parent.left_child();
                 let sibling = parent.right_child();
 
@@ -190,10 +282,14 @@ impl RegionInner {
             None
         }
     }
+
+    fn contains(&self, addr: VirtAddr) -> bool {
+        addr >= self.start_addr() && addr < self.end_addr()
+    }
 }
 
 impl Region {
-    const MAX_FRAMES: u64 = 8 * order_frames(MAX_ORDER) as u64;
+    const MAX_FRAMES: u64 = 8 * Order::MAX.frames() as u64;
 
     fn new(start: VirtAddr, num_frames: u64) -> &'static Region {
         assert!(num_frames > 2, "Region of size {} is not large enough", num_frames);
@@ -213,8 +309,8 @@ impl Region {
         // Bitmaps start in the second page of the region
         let bitmaps_start = start + FRAME_SIZE;
 
-        for order in 0..=MAX_ORDER {
-            let bitmap_size = 1 << (MAX_ORDER - order);
+        for order in 0..=Order::MAX_VAL {
+            let bitmap_size = 1 << (Order::MAX_VAL - order);
             let bitmap_addr: VirtAddr = bitmaps_start + (bitmap_size - 1usize);
 
             inner.bitmaps[order] = unsafe {
@@ -224,36 +320,34 @@ impl Region {
             };
 
             inner.free_lists[order] = LinkedList::new(FreeBlockAdapter::new());
-
-            info!("Order-{} bitmap is {} bytes long", order, inner.bitmaps[order].len());
         }
 
         let avail_frames = num_frames - 2; // Header is 2 pages
         let mut frame_start = 0;
-        let mut order = MAX_ORDER;
+        let mut order = Order::MAX;
 
-        while frame_start < num_frames {
-            let remaining = num_frames - frame_start;
-            let nframes = order_frames(order);
-            if nframes <= remaining as usize {
-                info!("Marking order-{} block starting at offset {} as free", order, frame_start);
-                inner.bitmaps[order].set_bit(frame_start as usize >> order, false);
+        while frame_start < avail_frames {
+            let remaining = avail_frames - frame_start;
+            if order.frames() <= remaining as usize {
+                inner.bitmaps[order.as_usize()].set_bit(frame_start as usize >> order.as_usize(), false);
 
                 let block = unsafe { FreeBlock::create_at(start + ((frame_start + 2) * FRAME_SIZE as u64), order) };
-                inner.free_lists[order].push_back(block);
+                inner.free_lists[order.as_usize()].push_back(block);
 
-                frame_start += nframes as u64;
+                frame_start += order.frames() as u64;
             } else {
-                order -= 1;
+                order = order.child();
             }
         }
 
         region
     }
 
+    // TODO: might also need to use x86_64 crate's without_interrupts wrapper
+
     fn alloc(&self, order: usize) -> Option<*mut u8> {
         let mut inner = self.inner.lock();
-        inner.alloc(order)
+        inner.alloc(order.into())
             .map(|id| inner.block_address(id).as_mut_ptr())
         // TODO: memory poisoning would be nice if there's a fast enough way to fill entire pages
     }
@@ -261,14 +355,27 @@ impl Region {
     fn free(&self, order: usize, block: *mut u8) {
         let mut inner = self.inner.lock();
 
-        let id = inner.block_id(VirtAddr::from_ptr(block), order);
+        let id = inner.block_id(VirtAddr::from_ptr(block), order.into());
         inner.free(id);
+    }
+
+    fn contains(&self, addr: *const u8) -> bool {
+        let inner = self.inner.lock();
+        inner.contains(VirtAddr::from_ptr(addr))
     }
 }
 
+// Region otherwise wouldn't be Sync because LinkedListLink isn't Sync. This honestly seems like an
+// issue with intrusive_collections - LinkedList is supposed to be Sync if the value type is Sync,
+// but since LinkedListLink uses Cell, it seems like the value type never _can_ be Sync. Even using
+// Arc doesn't seem like it'd work, since the constraint is on the value type. It should be fine
+// here - the linked list of Regions is only modified when initializing the system, and the mutable
+// parts (RegionInner) are wrapped in a Mutex anyways.
+unsafe impl Sync for Region {}
+
 struct FreeBlock {
     link: LinkedListLink,
-    order: usize, // for debugging
+    order: Order, // for debugging
 }
 
 impl FreeBlock {
@@ -277,7 +384,7 @@ impl FreeBlock {
         ptr.as_mut().unwrap()
     }
 
-    unsafe fn create_at(addr: VirtAddr, order: usize) -> &'static FreeBlock {
+    unsafe fn create_at(addr: VirtAddr, order: Order) -> &'static FreeBlock {
         let ptr: *mut FreeBlock = addr.as_mut_ptr();
         let block = ptr.as_mut().unwrap();
         block.link = LinkedListLink::new();
@@ -287,11 +394,6 @@ impl FreeBlock {
 }
 
 intrusive_adapter!(FreeBlockAdapter = &'static FreeBlock : FreeBlock { link: LinkedListLink });
-
-/// Given an order, returns the number of page frames in a block of that order
-const fn order_frames(order: usize) -> usize {
-    1 << order
-}
 
 intrusive_adapter!(RegionAdapter = &'static Region : Region { link: LinkedListLink });
 
@@ -312,6 +414,7 @@ impl FrameAllocator {
         // We might need multiple Regions to span the range
         while start_frame + Region::MAX_FRAMES <= frame_range.end_frame_number {
             let start_addr = VirtAddr::new(start_frame * (FRAME_SIZE as u64) + map_offset);
+            info!("Adding {}-frame region starting at {:?}", Region::MAX_FRAMES, start_addr);
             self.regions.push_back(Region::new(start_addr, Region::MAX_FRAMES));
             start_frame += Region::MAX_FRAMES;
         }
@@ -320,51 +423,114 @@ impl FrameAllocator {
         if start_frame < frame_range.end_frame_number {
             let start_addr = VirtAddr::new(start_frame * (FRAME_SIZE as u64) + map_offset);
             let num_frames = frame_range.end_frame_number - start_frame;
+            info!("Adding {}-frame region starting at {:?}", num_frames, start_addr);
             self.regions.push_back(Region::new(start_addr, num_frames));
         }
     }
-}
 
+    pub fn allocate_pages(&self, npages: usize) -> Option<*mut u8> {
+        debug_assert!(npages > 0, "Must allocate at least one page");
+        let order = log2(npages.next_power_of_two());
+        debug_assert!(order < Order::MAX_VAL, "Cannot allocate {} pages at once", npages);
 
-pub fn init(boot: &BootInfo) -> FrameAllocator {
-    assert!(mem::size_of::<Region>() <= FRAME_SIZE);
-
-    let mut allocator = FrameAllocator::new();
-
-    for region in boot.memory_map.iter() {
-        if region.region_type == MemoryRegionType::Usable {
-            allocator.add_range(region.range, boot.physical_memory_offset);
-        }
-    }
-
-    for region in allocator.regions.iter() {
-        let addr = VirtAddr::from_ptr(region as *const Region);
-        info!("Region at {:?} ({:?})", addr, addr - boot.physical_memory_offset);
-
-        {
-            let inner = region.inner.lock();
-
-            for order in 0..=MAX_ORDER {
-                let bitmap_addr = VirtAddr::from_ptr(inner.bitmaps[order].as_ptr());
-                info!("    Order {} bitmap at {:?}", order, bitmap_addr);
+        for region in self.regions.iter() {
+            if let Some(allocation) = region.alloc(order) {
+                // TODO: to avoid wasting pages, there should be some way of marking the leftovers as free
+                return Some(allocation);
             }
         }
+
+        None
     }
 
-    allocator
+    pub fn free_pages(&self, npages: usize, allocation: *mut u8) {
+        debug_assert!(npages > 0, "Must free at least one page");
+        let order = log2(npages.next_power_of_two());
+        debug_assert!(order < Order::MAX_VAL, "Cannot free {} pages at once", npages);
+
+        for region in self.regions.iter() {
+            if region.contains(allocation) {
+                region.free(order, allocation);
+                return;
+            }
+        }
+
+        panic!("No region contained {:#?}", allocation);
+    }
+}
+
+/// Computes the integer part of the base-2 logarithm of x
+const fn log2(x: usize) -> usize {
+    // https://en.wikipedia.org/wiki/Find_first_set
+    (mem::size_of::<usize>() * 8) - 1 - (x.leading_zeros() as usize)
+}
+
+//static ALLOCATOR: Mutex<RefCell<FrameAllocator>> = Mutex::new(RefCell::new(FrameAllocator::new()));
+//static ALLOCATOR: Mutex<AtomicCell<FrameAllocator>> = Mutex::new(AtomicCell::new(FrameAllocator::new()));
+static ALLOCATOR: Once<FrameAllocator> = Once::new();
+
+pub fn init(boot: &BootInfo) {
+    assert!(mem::size_of::<Region>() <= FRAME_SIZE);
+
+    ALLOCATOR.call_once(|| {
+        info!("Initializing frame allocator");
+        let mut allocator = FrameAllocator::new();
+
+        for region in boot.memory_map.iter() {
+            if region.region_type == MemoryRegionType::Usable {
+                allocator.add_range(region.range, boot.physical_memory_offset);
+            }
+        }
+
+        allocator
+    });
+}
+
+/// Gets a reference to the global page frame allocator.
+///
+/// # Panics
+///
+/// If the allocator has not been initialized yet
+fn allocator() -> &'static FrameAllocator {
+    ALLOCATOR.wait().expect("Frame allocator not initialized")
+}
+
+pub fn allocate_frames(nframes: usize) -> Option<*mut u8> {
+    allocator().allocate_pages(nframes)
+}
+
+pub fn free_frames(allocation: *mut u8, nframes: usize) {
+    allocator().free_pages(nframes, allocation)
 }
 
 #[cfg(test)]
 #[test_case]
 fn test_block_id() {
-    let b = BlockId::new(0, 0);
-    assert_eq!(b.sibling(), BlockId::new(0, 1));
-    assert_eq!(b.parent(), Some(BlockId::new(1, 0)));
+    let b = BlockId::new(Order(0), 0);
+    assert_eq!(b.sibling(), BlockId::new(Order(0), 1));
+    assert_eq!(b.parent(), Some(BlockId::new(Order(1), 0)));
 
-    let b = BlockId::new(1, 2);
-    assert_eq!(b.parent(), Some(BlockId::new(2, 1)));
-    assert_eq!(b.left_child(), BlockId::new(0, 4));
-    assert_eq!(b.right_child(), BlockId::new(0, 5));
+    let b = BlockId::new(Order(1), 2);
+    assert_eq!(b.parent(), Some(BlockId::new(Order(2), 1)));
+    assert_eq!(b.left_child(), BlockId::new(Order(0), 4));
+    assert_eq!(b.right_child(), BlockId::new(Order(0), 5));
+}
 
+#[cfg(test)]
+#[test_case]
+fn test_block_location() {
+    for region in allocator().regions.iter() {
+        let inner = region.inner.lock();
 
+        for order in 0..=inner.max_order().as_usize() {
+            let order = Order::from(order);
+
+            for index in 0..=inner.max_index(order) {
+                let block_id = BlockId::new(order, index);
+
+                let addr = inner.block_address(block_id);
+                assert_eq!(inner.block_id(addr, order), block_id);
+            }
+        }
+    }
 }
