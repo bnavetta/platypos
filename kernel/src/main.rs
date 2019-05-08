@@ -1,6 +1,8 @@
-#![feature(asm, stdsimd, alloc_error_handler, stmt_expr_attributes)]
+#![feature(asm, stdsimd, alloc_error_handler, stmt_expr_attributes, custom_test_frameworks)]
 #![no_std]
-#![cfg_attr(not(test), no_main)]
+#![no_main]
+#![reexport_test_harness_main = "test_main"]
+#![test_runner(crate::test::test_runner)]
 
 #[macro_use]
 extern crate bootloader;
@@ -14,8 +16,12 @@ use log::{debug, info, warn};
 use raw_cpuid::{CpuId, Hypervisor};
 use serial_logger;
 
-pub mod memory;
+mod memory;
 mod panic;
+mod qemu;
+
+#[cfg(test)]
+mod test;
 
 use memory::alloc::KernelAllocator;
 
@@ -24,10 +30,9 @@ static ALLOC: KernelAllocator = KernelAllocator;
 
 static HELLO: &[u8] = b"Hello World!";
 
+#[cfg(not(test))]
 fn main(boot_info: &'static BootInfo) -> ! {
     serial_logger::init().expect("Could not initialize logging");
-
-    info!("This works! {}", "hi\n");
 
     let cpuid = CpuId::new();
     match cpuid.get_vendor_info() {
@@ -71,7 +76,9 @@ fn main(boot_info: &'static BootInfo) -> ! {
         }
     }
 
-    loop {}
+    loop {
+        x86_64::instructions::hlt();
+    }
 }
 
 #[alloc_error_handler]
@@ -79,4 +86,5 @@ fn handle_alloc_error(layout: ::core::alloc::Layout) -> ! {
     panic!("Could not allocate {} bytes", layout.size());
 }
 
+#[cfg(not(test))]
 entry_point!(main);

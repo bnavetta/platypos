@@ -15,6 +15,7 @@
 //!
 
 use core::mem;
+use core::num::Wrapping;
 use core::ptr;
 use core::slice;
 
@@ -22,19 +23,75 @@ use bit_field::BitArray;
 use bootloader::BootInfo;
 use bootloader::bootinfo::{MemoryRegionType, FrameRange};
 use intrusive_collections::{intrusive_adapter, LinkedList, LinkedListLink};
-use log::info;
+use log::{info, debug};
 use spin::Mutex;
 use x86_64::VirtAddr;
 
 const MAX_ORDER: usize = 11;
 const FRAME_SIZE: usize = 4096;
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+struct BlockId {
+    order: usize,
+    index: usize,
+}
+
+impl BlockId {
+    // Unfortunately, can't use assertions in const fns
+    fn new(order: usize, index: usize) -> BlockId {
+        debug_assert!(order <= MAX_ORDER);
+        // TODO: check index is valid
+        BlockId { order, index }
+    }
+
+    #[inline(always)]
+    fn order(&self) -> usize {
+        self.order
+    }
+
+    #[inline(always)]
+    fn index(&self) -> usize {
+        self.index
+    }
+
+    #[inline(always)]
+    fn sibling(&self) -> BlockId {
+        // From David's fancy bit manipulation
+//        let index = Wrapping(self.index);
+//        let one = Wrapping(1usize);
+//        let sibling = index - one + ((index & one) << 1);
+////        let sibling = (self.index) - 1 + (((self.index) & 1) << 1);
+//        BlockId::new(self.order, sibling.0)
+
+        BlockId::new(self.order, if self.index % 2 == 0 { self.index + 1} else { self.index - 1 })
+    }
+
+    #[inline(always)]
+    fn parent(&self) -> Option<BlockId> {
+        if self.order < MAX_ORDER {
+            let parent = (self.index & !1) >> 1;
+            Some(BlockId::new(self.order + 1, parent))
+        } else {
+            None
+        }
+    }
+
+    #[inline(always)]
+    fn left_child(&self) -> BlockId {
+        debug_assert!(self.order > 0);
+        BlockId::new(self.order - 1, (self.index << 1) + 1)
+    }
+
+    #[inline(always)]
+    fn right_child(&self) -> BlockId {
+        debug_assert!(self.order > 0);
+        BlockId::new(self.order - 1, (self.index + 1) << 1)
+    }
+}
+
 struct Region {
     /// Link in the parent FrameAllocator
     link: LinkedListLink,
-
-    /// Number of 4KiB physical page frames
-    num_frames: u64,
 
     /// Inner, mutable state
     inner: Mutex<RegionInner>,
@@ -46,6 +103,12 @@ struct Region {
 /// Then, we can pass around &'static Region pointers and keep all the state for a region in its
 /// first page.
 struct RegionInner {
+    /// Number of 4KiB physical page frames
+    num_frames: u64,
+
+    /// We hold on to this here for convenience - it's nicer than doing sketchy pointer arithmetic
+    region_start: VirtAddr,
+
     // Bitmap tree
     bitmaps: [&'static mut [u8]; MAX_ORDER + 1],
 
@@ -56,53 +119,72 @@ struct RegionInner {
 // TODO: for consistency, make this just deal with indices internally, except where needed (free list)
 
 impl RegionInner {
-    fn mark_allocated<T>(&mut self, region: &Region, block: &T, order: usize, allocated: bool) {
-        self.bitmaps[order].set_bit(region.block_index(block, order), allocated)
+    fn mark_allocated(&mut self, block: BlockId, allocated: bool) {
+        self.bitmaps[block.order()].set_bit(block.index(), allocated)
     }
 
-    fn is_allocated<T>(&self, region: &Region, block: &T, order: usize) -> bool {
-        self.bitmaps[order].get_bit(region.block_index(block, order))
+    fn is_allocated(&self, block: BlockId) -> bool {
+        self.bitmaps[block.order()].get_bit(block.index())
     }
 
-    fn free(&mut self, region: &Region, block: *mut u8, order: usize) {
-        let index = region.block_index(unsafe { block.as_ref() }.unwrap(), order);
-        assert!(self.bitmaps[order].get_bit(index), "Freeing an already-freed block");
+    fn block_address(&self, block: BlockId) -> VirtAddr {
+        self.region_start + block.index() * order_frames(block.order()) * FRAME_SIZE
+    }
 
-        // From David's fancy bit manipulation
-        let sibling = (index) - 1 + (((index) & 1) << 1);
+    fn block_id(&self, addr: VirtAddr, order: usize) -> BlockId {
+        debug_assert!(addr < self.region_start + self.num_frames as usize * FRAME_SIZE, "Block does not belong to region");
 
-        if self.bitmaps[order].get_bit(sibling) || order == MAX_ORDER {
-            let block = unsafe { FreeBlock::from_address(VirtAddr::from_ptr(block)) };
-            self.free_lists[order].push_back(block);
-            self.mark_allocated(region, block, order, false);
+        let frame_offset = ((addr - self.region_start) / FRAME_SIZE as u64) as usize;
+        let index = frame_offset / order_frames(order);
+        BlockId::new(order, index)
+    }
+
+    fn free(&mut self, block: BlockId) {
+        debug_assert!(self.is_allocated(block), "Freeing a block that isn't allocated");
+
+        if let Some(parent) = block.parent() {
+            // Not at the top, so we can try merging with our sibling
+            if self.is_allocated(block.sibling()) {
+                let free_block = unsafe { FreeBlock::from_address(self.block_address(block), block.order()) };
+                self.free_lists[block.order()].push_front(free_block);
+                self.mark_allocated(block, false);
+            } else {
+                assert!(self.is_allocated(parent), "Parent of allocated block must be allocated");
+
+                // Need to un-free sibling for merging
+                self.mark_allocated(block.sibling(), true);
+                let sibling = unsafe { FreeBlock::from_address(self.block_address(block.sibling()), block.order()) };
+                debug_assert!(sibling.link.is_linked(), "Sibling should be in the free list");
+                unsafe { self.free_lists[block.order()].cursor_mut_from_ptr(sibling) }.remove();
+
+                self.free(parent);
+            }
         } else {
-            // Reunite the buddies!
-
-            let sibling_block: *const FreeBlock = region.block_addr::<FreeBlock>(sibling, order).as_ptr();
-            unsafe { self.free_lists[order].cursor_mut_from_ptr(sibling_block) }.remove();
-            self.bitmaps[order].set_bit(sibling, true);
-
-            let parent_idx = (index - 1) >> 1;
-            assert!(self.bitmaps[order + 1].get_bit(parent_idx), "Parent of allocated block should be allocated");
-
-            self.free(region, region.block_addr::<u8>(parent_idx, order + 1).as_mut_ptr(), order + 1);
+            let free_block = unsafe { FreeBlock::from_address(self.block_address(block), block.order()) };
+            self.free_lists[block.order()].push_front(free_block);
+            self.mark_allocated(block, false);
         }
     }
 
-    fn alloc(&mut self, region: &Region, order: usize) -> Option<*mut u8> {
+    fn alloc(&mut self, order: usize) -> Option<BlockId> {
+        debug_assert!(order <= MAX_ORDER);
+
         if let Some(block) = self.free_lists[order].pop_front() {
-            self.mark_allocated(region, block, order, true);
-
-            unsafe { Some(mem::transmute(block)) }
+            debug_assert!(block.order == order);
+            let block_id = self.block_id(VirtAddr::from_ptr(block), order);
+            self.mark_allocated(block_id, true);
+            debug!("Allocating {:?}", block_id);
+            Some(block_id)
         } else if order < MAX_ORDER {
-            // Split a parent block
+            debug!("Attempting to split an order-{} block", order + 1);
+            if let Some(parent) = self.alloc(order + 1) {
+                let block = parent.left_child();
+                let sibling = parent.right_child();
 
-            let parent = self.alloc(region, order + 1);
-            if let Some(parent) = parent {
-                let buddy = unsafe { parent.offset((order_frames(order) * FRAME_SIZE) as isize) };
-                self.free(region, buddy, order);
-                self.mark_allocated(region, unsafe { parent.as_ref() }.unwrap(), order, true);
-                Some(parent)
+                self.free(sibling);
+                self.mark_allocated(block, true);
+                debug!("Allocating {:?}", block);
+                Some(block)
             } else {
                 None
             }
@@ -127,7 +209,8 @@ impl Region {
 
         let mut inner = region.inner.lock();
 
-        region.num_frames = num_frames;
+        inner.num_frames = num_frames;
+        inner.region_start = start;
 
         // Bitmaps start in the second page of the region
         let bitmaps_start = start + FRAME_SIZE;
@@ -157,7 +240,7 @@ impl Region {
                 info!("Marking order-{} block starting at offset {} as free", order, frame_start);
                 inner.bitmaps[order].set_bit(frame_start as usize >> order, false);
 
-                let block = unsafe { FreeBlock::from_address(start + (frame_start * FRAME_SIZE as u64)) };
+                let block = unsafe { FreeBlock::from_address(start + (frame_start * FRAME_SIZE as u64), order) };
                 inner.free_lists[order].push_back(block);
 
                 frame_start += nframes as u64;
@@ -169,41 +252,32 @@ impl Region {
         region
     }
 
-    fn block_index<T>(&self, block: &T, order: usize) -> usize {
-        let region_addr = (self as *const Region) as usize;
-        let block_addr = (block as *const T) as usize;
-
-        assert!(block_addr < region_addr + self.num_frames as usize * FRAME_SIZE, "Block does not belong to region");
-
-        let frame_offset = (block_addr - region_addr) / FRAME_SIZE;
-        frame_offset / order_frames(order)
-    }
-
-    fn block_addr<T>(&self, index: usize, order: usize) -> VirtAddr {
-        let region_addr = (self as *const Region) as usize;
-        VirtAddr::new((region_addr + order_frames(order) * index) as u64)
-    }
-
     fn alloc(&self, order: usize) -> Option<*mut u8> {
         let mut inner = self.inner.lock();
-        inner.alloc(self, order)
+        inner.alloc(order)
+            .map(|id| inner.block_address(id).as_mut_ptr())
+        // TODO: memory poisoning would be nice if there's a fast enough way to fill entire pages
     }
 
     fn free(&self, order: usize, block: *mut u8) {
         let mut inner = self.inner.lock();
-        inner.free(self, block, order);
+
+        let id = inner.block_id(VirtAddr::from_ptr(block), order);
+        inner.free(id);
     }
 }
 
 struct FreeBlock {
-    link: LinkedListLink
+    link: LinkedListLink,
+    order: usize, // for debugging
 }
 
 impl FreeBlock {
-    unsafe fn from_address(addr: VirtAddr) -> &'static FreeBlock {
+    unsafe fn from_address(addr: VirtAddr, order: usize) -> &'static FreeBlock {
         let ptr: *mut FreeBlock = addr.as_mut_ptr();
         let block = ptr.as_mut().unwrap();
         block.link = LinkedListLink::new();
+        block.order = order;
         block
     }
 }
@@ -273,17 +347,32 @@ pub fn init(boot: &BootInfo) -> FrameAllocator {
         }
 
         for i in 0..20 {
-            let test_block = region.alloc(2);
-            info!("Allocated block {:?}", test_block);
-
-            if i % 2 == 0 {
-                if let Some(test_block) = test_block {
-                    region.free(2, test_block);
-                    info!("Freed block");
-                }
-            }
+            let test_block = region.alloc(5);
+            info!("Allocated test block {:?}", test_block);
         }
+
+//        for i in 0..20 {
+//            let test_block = region.alloc(MAX_ORDER);
+//            info!("Allocated block {:?}", test_block);
+//
+//            if i % 2 == 0 {
+//                if let Some(test_block) = test_block {
+//                    region.free(MAX_ORDER, test_block);
+//                    info!("Freed block");
+//                }
+//            }
+//        }
     }
 
     allocator
+}
+
+#[cfg(test)]
+#[test_case]
+fn test_block_id() {
+    let b = BlockId::new(0, 0);
+    assert_eq!(b.sibling(), BlockId::new(0, 1));
+    assert_eq!(b.parent(), Some(BlockId::new(1, 0)));
+
+    assert_eq!(BlockId::new(1, 2).parent(), Some(BlockId::new(2, 1)));
 }
