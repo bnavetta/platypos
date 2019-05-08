@@ -19,6 +19,7 @@ use serial_logger;
 mod memory;
 mod panic;
 mod qemu;
+mod terminal;
 
 #[cfg(test)]
 mod test;
@@ -28,11 +29,10 @@ use memory::alloc::KernelAllocator;
 #[global_allocator]
 static ALLOC: KernelAllocator = KernelAllocator;
 
-static HELLO: &[u8] = b"Hello World!";
-
 #[cfg(not(test))]
 fn main(boot_info: &'static BootInfo) -> ! {
     serial_logger::init().expect("Could not initialize logging");
+    terminal::init();
 
     let cpuid = CpuId::new();
     match cpuid.get_vendor_info() {
@@ -75,13 +75,10 @@ fn main(boot_info: &'static BootInfo) -> ! {
 
     blocks.iter().flatten().for_each(|block| memory::frame::free_frames(*block, 16));
 
-    let vga_buffer = 0xb8000 as *mut u8;
+    println!("Hello, World!");
 
-    for (i, &byte) in HELLO.iter().enumerate() {
-        unsafe {
-            *vga_buffer.offset(i as isize * 2) = byte;
-            *vga_buffer.offset(i as isize * 2 + 1) = 0xb;
-        }
+    for i in 0..30 {
+        println!("i = {}", i);
     }
 
     loop {
