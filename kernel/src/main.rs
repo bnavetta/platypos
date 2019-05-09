@@ -1,4 +1,4 @@
-#![feature(asm, stdsimd, alloc_error_handler, stmt_expr_attributes, custom_test_frameworks)]
+#![feature(asm, stdsimd, alloc_error_handler, stmt_expr_attributes, custom_test_frameworks, abi_x86_interrupt)]
 #![no_std]
 #![no_main]
 #![reexport_test_harness_main = "test_main"]
@@ -16,6 +16,7 @@ use log::{debug, info, warn};
 use raw_cpuid::{CpuId, Hypervisor};
 use serial_logger;
 
+mod interrupts;
 mod memory;
 mod panic;
 mod qemu;
@@ -29,10 +30,18 @@ use memory::alloc::KernelAllocator;
 #[global_allocator]
 static ALLOC: KernelAllocator = KernelAllocator;
 
-#[cfg(not(test))]
-fn main(boot_info: &'static BootInfo) -> ! {
+pub fn init_core(boot_info: &'static BootInfo) {
+    interrupts::init();
     serial_logger::init().expect("Could not initialize logging");
     terminal::init();
+    memory::frame::init(boot_info);
+
+    info!("Welcome to Platypos!");
+}
+
+#[cfg(not(test))]
+fn main(boot_info: &'static BootInfo) -> ! {
+    init_core(boot_info);
 
     let cpuid = CpuId::new();
     match cpuid.get_vendor_info() {
@@ -65,7 +74,7 @@ fn main(boot_info: &'static BootInfo) -> ! {
         );
     }
 
-    memory::frame::init(boot_info);
+    x86_64::instructions::interrupts::int3();
 
     let mut blocks = [None; 50];
 

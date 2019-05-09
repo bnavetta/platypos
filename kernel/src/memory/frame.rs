@@ -26,6 +26,7 @@ use intrusive_collections::{intrusive_adapter, LinkedList, LinkedListLink};
 use log::{info, trace,};
 use spin::{Mutex, Once};
 use x86_64::VirtAddr;
+use x86_64::instructions::interrupts;
 
 const FRAME_SIZE: usize = 4096;
 
@@ -343,25 +344,29 @@ impl Region {
         region
     }
 
-    // TODO: might also need to use x86_64 crate's without_interrupts wrapper
-
     fn alloc(&self, order: usize) -> Option<*mut u8> {
-        let mut inner = self.inner.lock();
-        inner.alloc(order.into())
-            .map(|id| inner.block_address(id).as_mut_ptr())
-        // TODO: memory poisoning would be nice if there's a fast enough way to fill entire pages
+        interrupts::without_interrupts(|| {
+            let mut inner = self.inner.lock();
+            inner.alloc(order.into())
+                .map(|id| inner.block_address(id).as_mut_ptr())
+            // TODO: memory poisoning would be nice if there's a fast enough way to fill entire pages
+        })
     }
 
     fn free(&self, order: usize, block: *mut u8) {
-        let mut inner = self.inner.lock();
+        interrupts::without_interrupts(|| {
+            let mut inner = self.inner.lock();
 
-        let id = inner.block_id(VirtAddr::from_ptr(block), order.into());
-        inner.free(id);
+            let id = inner.block_id(VirtAddr::from_ptr(block), order.into());
+            inner.free(id);
+        });
     }
 
     fn contains(&self, addr: *const u8) -> bool {
-        let inner = self.inner.lock();
-        inner.contains(VirtAddr::from_ptr(addr))
+        interrupts::without_interrupts(|| {
+            let inner = self.inner.lock();
+            inner.contains(VirtAddr::from_ptr(addr))
+        })
     }
 }
 
@@ -504,32 +509,34 @@ pub fn free_frames(allocation: *mut u8, nframes: usize) {
 }
 
 #[cfg(test)]
-#[test_case]
-fn test_block_id() {
-    let b = BlockId::new(Order(0), 0);
-    assert_eq!(b.sibling(), BlockId::new(Order(0), 1));
-    assert_eq!(b.parent(), Some(BlockId::new(Order(1), 0)));
-
-    let b = BlockId::new(Order(1), 2);
-    assert_eq!(b.parent(), Some(BlockId::new(Order(2), 1)));
-    assert_eq!(b.left_child(), BlockId::new(Order(0), 4));
-    assert_eq!(b.right_child(), BlockId::new(Order(0), 5));
-}
+use crate::tests;
 
 #[cfg(test)]
-#[test_case]
-fn test_block_location() {
-    for region in allocator().regions.iter() {
-        let inner = region.inner.lock();
+tests! {
+    test block_tree {
+        let b = BlockId::new(Order(0), 0);
+        assert_eq!(b.sibling(), BlockId::new(Order(0), 1));
+        assert_eq!(b.parent(), Some(BlockId::new(Order(1), 0)));
 
-        for order in 0..=inner.max_order().as_usize() {
-            let order = Order::from(order);
+        let b = BlockId::new(Order(1), 2);
+        assert_eq!(b.parent(), Some(BlockId::new(Order(2), 1)));
+        assert_eq!(b.left_child(), BlockId::new(Order(0), 4));
+        assert_eq!(b.right_child(), BlockId::new(Order(0), 5));
+    }
 
-            for index in 0..=inner.max_index(order) {
-                let block_id = BlockId::new(order, index);
+    test block_location {
+        for region in allocator().regions.iter() {
+            let inner = region.inner.lock();
 
-                let addr = inner.block_address(block_id);
-                assert_eq!(inner.block_id(addr, order), block_id);
+            for order in 0..=inner.max_order().as_usize() {
+                let order = Order::from(order);
+
+                for index in 0..=inner.max_index(order) {
+                    let block_id = BlockId::new(order, index);
+
+                    let addr = inner.block_address(block_id);
+                    assert_eq!(inner.block_id(addr, order), block_id);
+                }
             }
         }
     }

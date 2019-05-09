@@ -7,6 +7,7 @@ use spin::Mutex;
 use ux::u4;
 use volatile::Volatile;
 use x86_64::VirtAddr;
+use x86_64::instructions::interrupts;
 use core::fmt::Write;
 
 // Largely based on https://os.phil-opp.com/vga-text-mode/ and https://en.wikipedia.org/wiki/VGA-compatible_text_mode
@@ -131,7 +132,7 @@ impl VgaBuffer {
     }
 }
 
-struct VgaWriter {
+pub struct VgaWriter {
     current_row: usize,
     current_column: usize,
     foreground: Color,
@@ -150,20 +151,24 @@ impl VgaWriter {
         }
     }
 
-    fn foreground(&self) -> Color {
+    pub fn foreground(&self) -> Color {
         self.foreground
     }
 
-    fn set_foreground(&mut self, color: Color) {
+    pub fn set_foreground(&mut self, color: Color) {
         self.foreground = color;
     }
 
-    fn background(&self) -> Color {
+    pub fn background(&self) -> Color {
         self.background
     }
 
-    fn set_background(&mut self, color: Color) {
+    pub fn set_background(&mut self, color: Color) {
         self.background = color;
+    }
+
+    fn current_position(&self) -> (usize, usize) {
+        (self.current_row, self.current_column)
     }
 
     fn write_byte(&mut self, byte: u8) {
@@ -206,7 +211,7 @@ impl VgaWriter {
         }
     }
 
-    fn clear(&mut self) {
+    pub fn clear(&mut self) {
         let blank = ScreenCharacter::new(b' ', self.foreground, self.background, false);
         for row in 0..VgaBuffer::HEIGHT {
             for col in 0..VgaBuffer::WIDTH {
@@ -246,34 +251,17 @@ pub fn init(vga_addr: VirtAddr) {
     global_writer.replace(writer);
 }
 
-pub fn clear_screen() {
-    let mut writer = WRITER.lock();
-    writer.as_mut().expect("VGA writer not initialized").clear();
-}
-
-pub fn foreground() -> Color {
-    let mut writer = WRITER.lock();
-    writer.as_mut().expect("VGA writer not initialized").foreground()
-}
-
-pub fn set_foreground(color: Color) {
-    let mut writer = WRITER.lock();
-    writer.as_mut().expect("VGA writer not initialized").set_foreground(color);
-}
-
-pub fn background() -> Color {
-    let mut writer = WRITER.lock();
-    writer.as_mut().expect("VGA writer not initialized").background()
-}
-
-pub fn set_background(color: Color) {
-    let mut writer = WRITER.lock();
-    writer.as_mut().expect("VGA writer not initialized").set_background(color);
+pub fn with_writer<F: FnOnce(&mut VgaWriter) -> T, T>(func: F) -> T {
+    interrupts::without_interrupts(|| {
+        let mut writer = WRITER.lock();
+        func(writer.as_mut().expect("VGA writer not initialized"))
+    })
 }
 
 pub fn vga_print(args: fmt::Arguments) {
-    let mut writer = WRITER.lock();
-    writer.as_mut().expect("VGA writer not initialized").write_fmt(args).unwrap();
+    with_writer(|w| {
+        w.write_fmt(args)
+    }).unwrap();
 }
 
 #[macro_export]

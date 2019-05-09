@@ -73,7 +73,7 @@ impl Log for SerialLogger {
 
             let _ = write!(
                 w,
-                "{}[{:>30}]{} ",
+                "{}[{:<30}]{} ",
                 COLOR_GREY,
                 record.module_path().unwrap_or(record.target()),
                 COLOR_NORMAL
