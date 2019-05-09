@@ -3,6 +3,7 @@ use core::panic::PanicInfo;
 use log::error;
 
 use crate::qemu;
+use crate::util::hlt_loop;
 
 #[panic_handler]
 pub fn panic(info: &PanicInfo) -> ! {
@@ -10,9 +11,7 @@ pub fn panic(info: &PanicInfo) -> ! {
 
     if cfg!(test) {
         qemu::exit(qemu::ExitCode::Failure);
-    }
-
-    loop {
-        x86_64::instructions::hlt();
+    } else {
+        hlt_loop();
     }
 }

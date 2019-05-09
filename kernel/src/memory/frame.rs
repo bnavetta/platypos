@@ -25,9 +25,9 @@ use bootloader::BootInfo;
 use intrusive_collections::{intrusive_adapter, LinkedList, LinkedListLink};
 use log::{info, trace};
 use spin::{Mutex, Once};
-use x86_64::{VirtAddr, PhysAddr};
 use x86_64::instructions::interrupts;
 use x86_64::structures::paging;
+use x86_64::{PhysAddr, VirtAddr};
 
 const FRAME_SIZE: usize = 4096;
 
@@ -460,7 +460,8 @@ impl FrameAllocator {
 
         // We might need multiple Regions to span the range
         while start_frame + Region::MAX_FRAMES <= frame_range.end_frame_number {
-            let start_addr = VirtAddr::new(start_frame * (FRAME_SIZE as u64) + self.physical_memory_offset);
+            let start_addr =
+                VirtAddr::new(start_frame * (FRAME_SIZE as u64) + self.physical_memory_offset);
             info!(
                 "Adding {}-frame region starting at {:?}",
                 Region::MAX_FRAMES,
@@ -473,7 +474,8 @@ impl FrameAllocator {
 
         // Add a Region for any remaining frames less than the max
         if start_frame < frame_range.end_frame_number {
-            let start_addr = VirtAddr::new(start_frame * (FRAME_SIZE as u64) + self.physical_memory_offset);
+            let start_addr =
+                VirtAddr::new(start_frame * (FRAME_SIZE as u64) + self.physical_memory_offset);
             let num_frames = frame_range.end_frame_number - start_frame;
             info!(
                 "Adding {}-frame region starting at {:?}",
@@ -528,24 +530,28 @@ const fn log2(x: usize) -> usize {
     (mem::size_of::<usize>() * 8) - 1 - (x.leading_zeros() as usize)
 }
 
-
 /// Wrapper for allocating frames for page tables
 pub struct PagingAllocator<'a>(&'a FrameAllocator);
 
-unsafe impl <'a, S: paging::PageSize> paging::FrameAllocator<S> for PagingAllocator<'a> {
+unsafe impl<'a, S: paging::PageSize> paging::FrameAllocator<S> for PagingAllocator<'a> {
     fn allocate_frame(&mut self) -> Option<paging::PhysFrame<S>> {
-        self.0.allocate_pages(S::SIZE as usize / FRAME_SIZE).map(|ptr| {
-            let virt_addr = ptr as usize;
-            let addr = PhysAddr::new(virt_addr as u64 - self.0.physical_memory_offset);
-            paging::PhysFrame::from_start_address(addr).expect("Allocator returned a non-page-aligned address")
-        })
+        self.0
+            .allocate_pages(S::SIZE as usize / FRAME_SIZE)
+            .map(|ptr| {
+                let virt_addr = ptr as usize;
+                let addr = PhysAddr::new(virt_addr as u64 - self.0.physical_memory_offset);
+                paging::PhysFrame::from_start_address(addr)
+                    .expect("Allocator returned a non-page-aligned address")
+            })
     }
 }
 
-impl <'a, S: paging::PageSize> paging::FrameDeallocator<S> for PagingAllocator<'a> {
+impl<'a, S: paging::PageSize> paging::FrameDeallocator<S> for PagingAllocator<'a> {
     fn deallocate_frame(&mut self, frame: PhysFrame<S>) {
-        let virt_addr = VirtAddr::new(frame.start_address().as_u64() + self.0.physical_memory_offset);
-        self.0.free_pages(S::SIZE as usize / FRAME_SIZE, virt_addr.as_mut_ptr());
+        let virt_addr =
+            VirtAddr::new(frame.start_address().as_u64() + self.0.physical_memory_offset);
+        self.0
+            .free_pages(S::SIZE as usize / FRAME_SIZE, virt_addr.as_mut_ptr());
     }
 }
 

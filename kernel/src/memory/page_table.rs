@@ -1,16 +1,29 @@
 use bootloader::BootInfo;
 use spin::{Mutex, Once};
 use x86_64::registers::control::{Cr3, Cr3Flags};
-use x86_64::structures::paging::{MappedPageTable, MapperAllSizes, PageTable, PhysFrame, PageSize, Mapper, Size4KiB, Size2MiB, Size1GiB};
+use x86_64::structures::paging::mapper::MapToError;
+use x86_64::structures::paging::{
+    MappedPageTable, Mapper, MapperAllSizes, Page, PageSize, PageTable, PhysFrame, Size1GiB,
+    Size2MiB, Size4KiB,
+};
 use x86_64::{PhysAddr, VirtAddr};
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[derive(Debug)]
 pub enum PageTableError {
     /// The page table address was not page-aligned. Contains the address of the page table
     UnalignedPageTable(PhysAddr),
 
     /// The virtual address was not in the page table. Contains the unmapped virtual address
     AddressNotMapped(VirtAddr),
+
+    /// There was an error mapping a page
+    MappingFailed(MapToError),
+}
+
+impl From<MapToError> for PageTableError {
+    fn from(err: MapToError) -> PageTableError {
+        PageTableError::MappingFailed(err)
+    }
 }
 
 pub struct PageTableState {
@@ -53,8 +66,7 @@ impl PageTableState {
         MappedPageTable::new(
             self.active_table,
             move |frame: PhysFrame| -> *mut PageTable {
-                VirtAddr::new(frame.start_address().as_u64() + physical_memory_offset)
-                    .as_mut_ptr()
+                VirtAddr::new(frame.start_address().as_u64() + physical_memory_offset).as_mut_ptr()
             },
         )
     }
@@ -68,8 +80,7 @@ impl PageTableState {
         MappedPageTable::new(
             self.active_table,
             move |frame: PhysFrame| -> *mut PageTable {
-                VirtAddr::new(frame.start_address().as_u64() + physical_memory_offset)
-                    .as_mut_ptr()
+                VirtAddr::new(frame.start_address().as_u64() + physical_memory_offset).as_mut_ptr()
             },
         )
     }
@@ -79,8 +90,7 @@ impl PageTableState {
         MappedPageTable::new(
             self.active_table,
             move |frame: PhysFrame| -> *mut PageTable {
-                VirtAddr::new(frame.start_address().as_u64() + physical_memory_offset)
-                    .as_mut_ptr()
+                VirtAddr::new(frame.start_address().as_u64() + physical_memory_offset).as_mut_ptr()
             },
         )
     }
@@ -90,11 +100,12 @@ impl PageTableState {
         MappedPageTable::new(
             self.active_table,
             move |frame: PhysFrame| -> *mut PageTable {
-                VirtAddr::new(frame.start_address().as_u64() + physical_memory_offset)
-                    .as_mut_ptr()
+                VirtAddr::new(frame.start_address().as_u64() + physical_memory_offset).as_mut_ptr()
             },
         )
     }
+
+    // Helpers for common tasks
 
     /// Translate a virtual address to a physical address using the current page table.
     pub fn translate(&mut self, addr: VirtAddr) -> Result<PhysAddr, PageTableError> {
@@ -103,6 +114,29 @@ impl PageTableState {
                 .translate_addr(addr)
                 .ok_or_else(|| PageTableError::AddressNotMapped(addr))
         }
+    }
+
+    /// Map a single 4KiB page
+    pub unsafe fn map_page(
+        &mut self,
+        frame: PhysFrame<Size4KiB>,
+        page: Page<Size4KiB>,
+        writable: bool,
+    ) -> Result<(), PageTableError> {
+        use x86_64::structures::paging::PageTableFlags as Flags;
+
+        let mut flags = Flags::PRESENT;
+        if writable {
+            flags |= Flags::WRITABLE;
+        }
+
+        let mut allocator = crate::memory::frame::page_table_allocator();
+
+        self.active_4kib_mapper()
+            .map_to(page, frame, flags, &mut allocator)?
+            .flush();
+
+        Ok(())
     }
 }
 

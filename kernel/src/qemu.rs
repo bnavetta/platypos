@@ -1,4 +1,5 @@
 use x86_64::instructions::port::Port;
+use crate::util::hlt_loop;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExitCode {
@@ -13,7 +14,5 @@ pub fn exit(code: ExitCode) -> ! {
     }
 
     // Not necessary, but makes the compiler happy
-    loop {
-        x86_64::instructions::hlt();
-    }
+    hlt_loop();
 }

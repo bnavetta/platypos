@@ -25,20 +25,30 @@ use raw_cpuid::{CpuId, Hypervisor};
 use serial_logger;
 use x86_64::VirtAddr;
 
+mod gdt;
 mod interrupts;
 mod memory;
 mod panic;
 mod qemu;
 mod terminal;
+mod util;
 
 #[cfg(test)]
 mod test;
 
 pub fn init_core(boot_info: &'static BootInfo) {
-    interrupts::init();
+    // Order is important
+    // 1. Initialize the serial logger so other subsystems can print messages while initializing
+    // 2. Initialize the VGA terminal driver in case anything's printed to the screen
+    // 3. Initialize the memory system, particularly allocation
+    // 4. Initialize the GDT (which allocates an interrupt stack)
+    // 5. Initialize the interrupt handlers
+
     serial_logger::init().expect("Could not initialize logging");
     terminal::init();
     memory::init(boot_info);
+    gdt::init();
+    interrupts::init();
 
     info!("Welcome to Platypos!");
 }
@@ -111,11 +121,11 @@ fn main(boot_info: &'static BootInfo) -> ! {
 
     println!("Welcome to PlatypOS! :)");
 
-    memory::test_mapping();
+    unsafe {
+        *(0xdeadbeef as *mut u64) = 42;
+    };
 
-    loop {
-        x86_64::instructions::hlt();
-    }
+    util::hlt_loop();
 }
 
 #[alloc_error_handler]
