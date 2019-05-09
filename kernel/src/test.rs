@@ -34,7 +34,6 @@ pub trait TestCase {
     fn run(&self);
 }
 
-
 #[macro_export]
 macro_rules! tests {
     { $(

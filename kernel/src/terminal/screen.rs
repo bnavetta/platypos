@@ -3,12 +3,12 @@ use core::fmt;
 use core::mem;
 
 use bit_field::BitField;
+use core::fmt::Write;
 use spin::Mutex;
 use ux::u4;
 use volatile::Volatile;
-use x86_64::VirtAddr;
 use x86_64::instructions::interrupts;
-use core::fmt::Write;
+use x86_64::VirtAddr;
 
 // Largely based on https://os.phil-opp.com/vga-text-mode/ and https://en.wikipedia.org/wiki/VGA-compatible_text_mode
 
@@ -69,10 +69,15 @@ struct ScreenCharacter {
 }
 
 impl ScreenCharacter {
-    const fn new(character: u8, foreground: Color, background: Color, blink: bool) -> ScreenCharacter {
+    const fn new(
+        character: u8,
+        foreground: Color,
+        background: Color,
+        blink: bool,
+    ) -> ScreenCharacter {
         ScreenCharacter {
             character,
-            attribute: (background as u8) << 4 | (foreground as u8) | (blink as u8) << 7
+            attribute: (background as u8) << 4 | (foreground as u8) | (blink as u8) << 7,
         }
     }
 
@@ -120,7 +125,7 @@ impl fmt::Debug for ScreenCharacter {
 
 #[repr(transparent)]
 struct VgaBuffer {
-    chars: [[Volatile<ScreenCharacter>; VgaBuffer::WIDTH]; VgaBuffer::HEIGHT]
+    chars: [[Volatile<ScreenCharacter>; VgaBuffer::WIDTH]; VgaBuffer::HEIGHT],
 }
 
 impl VgaBuffer {
@@ -137,7 +142,7 @@ pub struct VgaWriter {
     current_column: usize,
     foreground: Color,
     background: Color,
-    buffer: &'static mut VgaBuffer
+    buffer: &'static mut VgaBuffer,
 }
 
 impl VgaWriter {
@@ -147,7 +152,7 @@ impl VgaWriter {
             current_column: 0,
             foreground,
             background,
-            buffer
+            buffer,
         }
     }
 
@@ -180,7 +185,9 @@ impl VgaWriter {
                     self.newline();
                 }
 
-                self.buffer.chars[self.current_row][self.current_column].write(ScreenCharacter::new(byte, self.foreground, self.background, false));
+                self.buffer.chars[self.current_row][self.current_column].write(
+                    ScreenCharacter::new(byte, self.foreground, self.background, false),
+                );
                 self.current_column += 1;
             }
         }
@@ -259,9 +266,7 @@ pub fn with_writer<F: FnOnce(&mut VgaWriter) -> T, T>(func: F) -> T {
 }
 
 pub fn vga_print(args: fmt::Arguments) {
-    with_writer(|w| {
-        w.write_fmt(args)
-    }).unwrap();
+    with_writer(|w| w.write_fmt(args)).unwrap();
 }
 
 #[macro_export]

@@ -20,13 +20,14 @@ use core::ptr;
 use core::slice;
 
 use bit_field::BitArray;
+use bootloader::bootinfo::{FrameRange, MemoryRegionType};
 use bootloader::BootInfo;
-use bootloader::bootinfo::{MemoryRegionType, FrameRange};
 use intrusive_collections::{intrusive_adapter, LinkedList, LinkedListLink};
-use log::{info, trace,};
+use log::{info, trace};
 use spin::{Mutex, Once};
-use x86_64::VirtAddr;
+use x86_64::{VirtAddr, PhysAddr};
 use x86_64::instructions::interrupts;
+use x86_64::structures::paging;
 
 const FRAME_SIZE: usize = 4096;
 
@@ -116,7 +117,14 @@ impl BlockId {
 
     #[inline(always)]
     fn sibling(&self) -> BlockId {
-        BlockId::new(self.order, if self.index % 2 == 0 { self.index + 1} else { self.index - 1 })
+        BlockId::new(
+            self.order,
+            if self.index % 2 == 0 {
+                self.index + 1
+            } else {
+                self.index - 1
+            },
+        )
     }
 
     #[inline(always)]
@@ -212,8 +220,15 @@ impl RegionInner {
     }
 
     fn block_id(&self, addr: VirtAddr, order: Order) -> BlockId {
-        debug_assert!(self.contains(addr), "Block {:?} does not belong to region", addr);
-        debug_assert!(addr.is_aligned(FRAME_SIZE as u64), "Address must be page-aligned");
+        debug_assert!(
+            self.contains(addr),
+            "Block {:?} does not belong to region",
+            addr
+        );
+        debug_assert!(
+            addr.is_aligned(FRAME_SIZE as u64),
+            "Address must be page-aligned"
+        );
 
         let index = (addr - self.data_start_addr()) as usize / FRAME_SIZE / order.frames();
         BlockId::new(order, index)
@@ -231,29 +246,42 @@ impl RegionInner {
     }
 
     fn free(&mut self, block: BlockId) {
-        debug_assert!(self.is_allocated(block), "Freeing a block that isn't allocated");
+        debug_assert!(
+            self.is_allocated(block),
+            "Freeing a block that isn't allocated"
+        );
 
         if let Some(parent) = block.parent() {
             // Not at the top, so we can try merging with our sibling
             if self.is_allocated(block.sibling()) {
-                let free_block = unsafe { FreeBlock::create_at(self.block_address(block), block.order()) };
+                let free_block =
+                    unsafe { FreeBlock::create_at(self.block_address(block), block.order()) };
                 self.free_lists[block.order().as_usize()].push_front(free_block);
                 self.mark_allocated(block, false);
                 trace!("Freed {:?}", block);
             } else {
-                assert!(self.is_allocated(parent), "Parent of allocated block must be allocated");
+                assert!(
+                    self.is_allocated(parent),
+                    "Parent of allocated block must be allocated"
+                );
 
                 // Need to un-free sibling for merging
                 self.mark_allocated(block.sibling(), true);
-                let sibling = unsafe { FreeBlock::from_address(self.block_address(block.sibling())) };
+                let sibling =
+                    unsafe { FreeBlock::from_address(self.block_address(block.sibling())) };
                 debug_assert!(sibling.order == block.order(), "Sibling has wrong order");
-                debug_assert!(sibling.link.is_linked(), "Sibling should be in the free list");
-                unsafe { self.free_lists[block.order().as_usize()].cursor_mut_from_ptr(sibling) }.remove();
+                debug_assert!(
+                    sibling.link.is_linked(),
+                    "Sibling should be in the free list"
+                );
+                unsafe { self.free_lists[block.order().as_usize()].cursor_mut_from_ptr(sibling) }
+                    .remove();
 
                 self.free(parent);
             }
         } else {
-            let free_block = unsafe { FreeBlock::create_at(self.block_address(block), block.order()) };
+            let free_block =
+                unsafe { FreeBlock::create_at(self.block_address(block), block.order()) };
             self.free_lists[block.order().as_usize()].push_front(free_block);
             self.mark_allocated(block, false);
             trace!("Freed {:?}", block);
@@ -293,8 +321,16 @@ impl Region {
     const MAX_FRAMES: u64 = 8 * Order::MAX.frames() as u64;
 
     fn new(start: VirtAddr, num_frames: u64) -> &'static Region {
-        assert!(num_frames > 2, "Region of size {} is not large enough", num_frames);
-        assert!(num_frames <= Region::MAX_FRAMES, "Region cannot support {} frames", num_frames);
+        assert!(
+            num_frames > 2,
+            "Region of size {} is not large enough",
+            num_frames
+        );
+        assert!(
+            num_frames <= Region::MAX_FRAMES,
+            "Region cannot support {} frames",
+            num_frames
+        );
 
         let region: *mut Region = start.as_mut_ptr();
         let region: &'static mut Region = unsafe { region.as_mut().unwrap() };
@@ -330,9 +366,12 @@ impl Region {
         while frame_start < avail_frames {
             let remaining = avail_frames - frame_start;
             if order.frames() <= remaining as usize {
-                inner.bitmaps[order.as_usize()].set_bit(frame_start as usize >> order.as_usize(), false);
+                inner.bitmaps[order.as_usize()]
+                    .set_bit(frame_start as usize >> order.as_usize(), false);
 
-                let block = unsafe { FreeBlock::create_at(start + ((frame_start + 2) * FRAME_SIZE as u64), order) };
+                let block = unsafe {
+                    FreeBlock::create_at(start + ((frame_start + 2) * FRAME_SIZE as u64), order)
+                };
                 inner.free_lists[order.as_usize()].push_back(block);
 
                 frame_start += order.frames() as u64;
@@ -347,7 +386,8 @@ impl Region {
     fn alloc(&self, order: usize) -> Option<*mut u8> {
         interrupts::without_interrupts(|| {
             let mut inner = self.inner.lock();
-            inner.alloc(order.into())
+            inner
+                .alloc(order.into())
                 .map(|id| inner.block_address(id).as_mut_ptr())
             // TODO: memory poisoning would be nice if there's a fast enough way to fill entire pages
         })
@@ -403,32 +443,42 @@ intrusive_adapter!(FreeBlockAdapter = &'static FreeBlock : FreeBlock { link: Lin
 intrusive_adapter!(RegionAdapter = &'static Region : Region { link: LinkedListLink });
 
 pub struct FrameAllocator {
+    physical_memory_offset: u64,
     regions: LinkedList<RegionAdapter>,
 }
 
 impl FrameAllocator {
-    const fn new() -> FrameAllocator {
+    const fn new(physical_memory_offset: u64) -> FrameAllocator {
         FrameAllocator {
-            regions: LinkedList::new(RegionAdapter::new())
+            regions: LinkedList::new(RegionAdapter::new()),
+            physical_memory_offset,
         }
     }
 
-    fn add_range(&mut self, frame_range: FrameRange, map_offset: u64) {
+    fn add_range(&mut self, frame_range: FrameRange) {
         let mut start_frame = frame_range.start_frame_number;
 
         // We might need multiple Regions to span the range
         while start_frame + Region::MAX_FRAMES <= frame_range.end_frame_number {
-            let start_addr = VirtAddr::new(start_frame * (FRAME_SIZE as u64) + map_offset);
-            info!("Adding {}-frame region starting at {:?}", Region::MAX_FRAMES, start_addr);
-            self.regions.push_back(Region::new(start_addr, Region::MAX_FRAMES));
+            let start_addr = VirtAddr::new(start_frame * (FRAME_SIZE as u64) + self.physical_memory_offset);
+            info!(
+                "Adding {}-frame region starting at {:?}",
+                Region::MAX_FRAMES,
+                start_addr
+            );
+            self.regions
+                .push_back(Region::new(start_addr, Region::MAX_FRAMES));
             start_frame += Region::MAX_FRAMES;
         }
 
         // Add a Region for any remaining frames less than the max
         if start_frame < frame_range.end_frame_number {
-            let start_addr = VirtAddr::new(start_frame * (FRAME_SIZE as u64) + map_offset);
+            let start_addr = VirtAddr::new(start_frame * (FRAME_SIZE as u64) + self.physical_memory_offset);
             let num_frames = frame_range.end_frame_number - start_frame;
-            info!("Adding {}-frame region starting at {:?}", num_frames, start_addr);
+            info!(
+                "Adding {}-frame region starting at {:?}",
+                num_frames, start_addr
+            );
             self.regions.push_back(Region::new(start_addr, num_frames));
         }
     }
@@ -436,7 +486,11 @@ impl FrameAllocator {
     pub fn allocate_pages(&self, npages: usize) -> Option<*mut u8> {
         debug_assert!(npages > 0, "Must allocate at least one page");
         let order = log2(npages.next_power_of_two());
-        debug_assert!(order < Order::MAX_VAL, "Cannot allocate {} pages at once", npages);
+        debug_assert!(
+            order < Order::MAX_VAL,
+            "Cannot allocate {} pages at once",
+            npages
+        );
 
         for region in self.regions.iter() {
             if let Some(allocation) = region.alloc(order) {
@@ -451,7 +505,11 @@ impl FrameAllocator {
     pub fn free_pages(&self, npages: usize, allocation: *mut u8) {
         debug_assert!(npages > 0, "Must free at least one page");
         let order = log2(npages.next_power_of_two());
-        debug_assert!(order < Order::MAX_VAL, "Cannot free {} pages at once", npages);
+        debug_assert!(
+            order < Order::MAX_VAL,
+            "Cannot free {} pages at once",
+            npages
+        );
 
         for region in self.regions.iter() {
             if region.contains(allocation) {
@@ -470,8 +528,27 @@ const fn log2(x: usize) -> usize {
     (mem::size_of::<usize>() * 8) - 1 - (x.leading_zeros() as usize)
 }
 
-//static ALLOCATOR: Mutex<RefCell<FrameAllocator>> = Mutex::new(RefCell::new(FrameAllocator::new()));
-//static ALLOCATOR: Mutex<AtomicCell<FrameAllocator>> = Mutex::new(AtomicCell::new(FrameAllocator::new()));
+
+/// Wrapper for allocating frames for page tables
+pub struct PagingAllocator<'a>(&'a FrameAllocator);
+
+unsafe impl <'a, S: paging::PageSize> paging::FrameAllocator<S> for PagingAllocator<'a> {
+    fn allocate_frame(&mut self) -> Option<paging::PhysFrame<S>> {
+        self.0.allocate_pages(S::SIZE as usize / FRAME_SIZE).map(|ptr| {
+            let virt_addr = ptr as usize;
+            let addr = PhysAddr::new(virt_addr as u64 - self.0.physical_memory_offset);
+            paging::PhysFrame::from_start_address(addr).expect("Allocator returned a non-page-aligned address")
+        })
+    }
+}
+
+impl <'a, S: paging::PageSize> paging::FrameDeallocator<S> for PagingAllocator<'a> {
+    fn deallocate_frame(&mut self, frame: PhysFrame<S>) {
+        let virt_addr = VirtAddr::new(frame.start_address().as_u64() + self.0.physical_memory_offset);
+        self.0.free_pages(S::SIZE as usize / FRAME_SIZE, virt_addr.as_mut_ptr());
+    }
+}
+
 static ALLOCATOR: Once<FrameAllocator> = Once::new();
 
 pub fn init(boot: &BootInfo) {
@@ -479,11 +556,11 @@ pub fn init(boot: &BootInfo) {
 
     ALLOCATOR.call_once(|| {
         info!("Initializing frame allocator");
-        let mut allocator = FrameAllocator::new();
+        let mut allocator = FrameAllocator::new(boot.physical_memory_offset);
 
         for region in boot.memory_map.iter() {
             if region.region_type == MemoryRegionType::Usable {
-                allocator.add_range(region.range, boot.physical_memory_offset);
+                allocator.add_range(region.range);
             }
         }
 
@@ -508,8 +585,13 @@ pub fn free_frames(allocation: *mut u8, nframes: usize) {
     allocator().free_pages(nframes, allocation)
 }
 
+pub fn page_table_allocator() -> PagingAllocator<'static> {
+    PagingAllocator(allocator())
+}
+
 #[cfg(test)]
 use crate::tests;
+use x86_64::structures::paging::PhysFrame;
 
 #[cfg(test)]
 tests! {

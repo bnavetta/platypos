@@ -17,7 +17,10 @@ pub fn init() {
 }
 
 extern "x86-interrupt" fn breakpoint_handler(stack_frame: &mut InterruptStackFrame) {
-    warn!("Breakpoint exception at {:?}", stack_frame.instruction_pointer);
+    warn!(
+        "Breakpoint exception at {:?}",
+        stack_frame.instruction_pointer
+    );
 }
 
 #[cfg(test)]

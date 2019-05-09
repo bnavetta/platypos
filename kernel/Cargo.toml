@@ -7,6 +7,7 @@ edition = "2018"
 [dependencies]
 kutil = { path = "../kutil" }
 serial_logger = { path = "../serial_logger" }
+array-init = "~0.0.4"
 bit_field = "~0.9.0"
 log = "~0.4.6"
 raw-cpuid = "~6.1"

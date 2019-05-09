@@ -1,4 +1,12 @@
-#![feature(asm, stdsimd, alloc_error_handler, stmt_expr_attributes, custom_test_frameworks, abi_x86_interrupt)]
+#![feature(
+    asm,
+    stdsimd,
+    alloc_error_handler,
+    stmt_expr_attributes,
+    custom_test_frameworks,
+    abi_x86_interrupt,
+    impl_trait_in_bindings
+)]
 #![no_std]
 #![no_main]
 #![reexport_test_harness_main = "test_main"]
@@ -15,6 +23,7 @@ use bootloader::bootinfo::BootInfo;
 use log::{debug, info, warn};
 use raw_cpuid::{CpuId, Hypervisor};
 use serial_logger;
+use x86_64::VirtAddr;
 
 mod interrupts;
 mod memory;
@@ -25,16 +34,11 @@ mod terminal;
 #[cfg(test)]
 mod test;
 
-use memory::alloc::KernelAllocator;
-
-#[global_allocator]
-static ALLOC: KernelAllocator = KernelAllocator;
-
 pub fn init_core(boot_info: &'static BootInfo) {
     interrupts::init();
     serial_logger::init().expect("Could not initialize logging");
     terminal::init();
-    memory::frame::init(boot_info);
+    memory::init(boot_info);
 
     info!("Welcome to Platypos!");
 }
@@ -76,19 +80,38 @@ fn main(boot_info: &'static BootInfo) -> ! {
 
     x86_64::instructions::interrupts::int3();
 
-    let mut blocks = [None; 50];
+    self::memory::page_table::with_page_table(|pt| {
+        let addresses = [
+            // the identity-mapped vga buffer page
+            0xb8000,
+            // some code page
+            0x20010a,
+            // some stack page
+            0x57ac_001f_fe48,
+            // virtual address mapped to physical address 0
+            boot_info.physical_memory_offset,
+        ];
 
-    for i in 0..blocks.len() {
-        blocks[i] = memory::frame::allocate_frames(16);
-    }
+        for &address in &addresses {
+            let addr = VirtAddr::new(address);
+            println!("{:?} is mapped to {:?}", addr, pt.translate(addr));
+        }
+    });
 
-    blocks.iter().flatten().for_each(|block| memory::frame::free_frames(*block, 16));
+    //    let mut blocks = [None; 50];
+    //
+    //    for i in 0..blocks.len() {
+    //        blocks[i] = memory::frame::allocate_frames(16);
+    //    }
+    //
+    //    blocks.iter().flatten().for_each(|block| memory::frame::free_frames(*block, 16));
 
-    println!("Hello, World!");
+    let mut allocator = crate::memory::alloc::KernelAllocator::new();
+    assert_eq!(allocator.allocate(42), None);
 
-    for i in 0..30 {
-        println!("i = {}", i);
-    }
+    println!("Welcome to PlatypOS! :)");
+
+    memory::test_mapping();
 
     loop {
         x86_64::instructions::hlt();
