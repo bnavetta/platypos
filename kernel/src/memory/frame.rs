@@ -220,6 +220,8 @@ impl RegionInner {
     }
 
     fn block_address(&self, block: BlockId) -> VirtAddr {
+        debug_assert!(block.order() <= self.max_order(), "Block does not fit in region");
+        debug_assert!(block.index() <= self.max_index(block.order()), "Block does not fit in region");
         self.data_start_addr() + block.index() * block.order().bytes()
     }
 

@@ -8,8 +8,10 @@ pub mod allocator;
 pub mod frame;
 pub mod page_table;
 
+/// Very simple bump allocator for any allocations that are made while initializing the real
+/// allocator. Does not support deallocation
+#[derive(Debug)]
 struct BootstrapAllocator {
-    heap_start: VirtAddr,
     heap_end: VirtAddr,
     current: VirtAddr,
 }
@@ -17,7 +19,6 @@ struct BootstrapAllocator {
 impl BootstrapAllocator {
     fn new(heap_start: VirtAddr, heap_end: VirtAddr) -> BootstrapAllocator {
         BootstrapAllocator {
-            heap_start,
             heap_end,
             current: heap_start,
         }
@@ -75,7 +76,7 @@ unsafe impl GlobalAlloc for KernelAllocator {
         }
     }
 
-    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+    unsafe fn dealloc(&self, ptr: *mut u8, _layout: Layout) {
         let mut mode = REAL_ALLOCATOR
             .wait()
             .expect("Allocator not bootstrapped")

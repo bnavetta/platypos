@@ -12,14 +12,7 @@
 #![reexport_test_harness_main = "test_main"]
 #![test_runner(crate::test::test_runner)]
 
-extern crate alloc;
-
-use alloc::sync::Arc;
-
-#[macro_use]
-extern crate bootloader;
-extern crate kutil;
-
+use bootloader::entry_point;
 use bootloader::bootinfo::BootInfo;
 use log::{debug, info, warn};
 use raw_cpuid::{CpuId, Hypervisor};

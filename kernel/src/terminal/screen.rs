@@ -1,3 +1,5 @@
+#![allow(dead_code)] // color changing API won't necessarily get used
+
 use core::convert::TryFrom;
 use core::fmt;
 use core::mem;
