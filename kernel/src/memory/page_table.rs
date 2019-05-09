@@ -3,7 +3,7 @@ use spin::{Mutex, Once};
 use x86_64::registers::control::{Cr3, Cr3Flags};
 use x86_64::structures::paging::mapper::MapToError;
 use x86_64::structures::paging::{
-    MappedPageTable, Mapper, MapperAllSizes, Page, PageSize, PageTable, PhysFrame, Size1GiB,
+    MappedPageTable, Mapper, MapperAllSizes, PageTable, PhysFrame, Size1GiB,
     Size2MiB, Size4KiB,
 };
 use x86_64::{PhysAddr, VirtAddr};
@@ -35,6 +35,10 @@ pub struct PageTableState {
 }
 
 impl PageTableState {
+    pub fn initialize(boot_info: &BootInfo) -> PageTableState {
+        PageTableState::from_active_table(boot_info.physical_memory_offset)
+    }
+
     fn from_active_table(physical_memory_offset: u64) -> PageTableState {
         let (table_frame, _) = Cr3::read();
         let table_addr =
@@ -115,48 +119,4 @@ impl PageTableState {
                 .ok_or_else(|| PageTableError::AddressNotMapped(addr))
         }
     }
-
-    /// Map a single 4KiB page
-    pub unsafe fn map_page(
-        &mut self,
-        frame: PhysFrame<Size4KiB>,
-        page: Page<Size4KiB>,
-        writable: bool,
-    ) -> Result<(), PageTableError> {
-        use x86_64::structures::paging::PageTableFlags as Flags;
-
-        let mut flags = Flags::PRESENT;
-        if writable {
-            flags |= Flags::WRITABLE;
-        }
-
-        let mut allocator = crate::memory::frame::page_table_allocator();
-
-        self.active_4kib_mapper()
-            .map_to(page, frame, flags, &mut allocator)?
-            .flush();
-
-        Ok(())
-    }
-}
-
-static PAGE_TABLE_STATE: Once<Mutex<PageTableState>> = Once::new();
-
-pub fn init(boot_info: &BootInfo) {
-    PAGE_TABLE_STATE.call_once(|| {
-        Mutex::new(PageTableState::from_active_table(
-            boot_info.physical_memory_offset,
-        ))
-    });
-}
-
-pub fn with_page_table<F, T>(f: F) -> T
-where
-    F: FnOnce(&mut PageTableState) -> T,
-{
-    let mut state = PAGE_TABLE_STATE
-        .wait()
-        .expect("Page table manager not initialized")
-        .lock();
-    f(&mut *state)
 }

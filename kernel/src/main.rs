@@ -12,18 +12,24 @@
 #![reexport_test_harness_main = "test_main"]
 #![test_runner(crate::test::test_runner)]
 
+extern crate alloc;
+
+use alloc::sync::Arc;
+
 #[macro_use]
 extern crate bootloader;
-extern crate raw_cpuid;
-extern crate x86_64;
-
 extern crate kutil;
 
 use bootloader::bootinfo::BootInfo;
 use log::{debug, info, warn};
 use raw_cpuid::{CpuId, Hypervisor};
 use serial_logger;
+use spin::{Once, Mutex};
 use x86_64::VirtAddr;
+
+use crate::memory::frame::FrameAllocator;
+use crate::memory::page_table::PageTableState;
+use crate::memory::KernelAllocator;
 
 mod gdt;
 mod interrupts;
@@ -36,6 +42,29 @@ mod util;
 #[cfg(test)]
 mod test;
 
+#[global_allocator]
+static ALLOCATOR: KernelAllocator = KernelAllocator::new();
+
+/// Global container for shared kernel services. This minimizes the number of global Onces floating
+/// around and lets init_core enforce subsystem initialization order.
+pub struct KernelState {
+    frame_allocator: FrameAllocator,
+    page_table_state: Mutex<PageTableState>,
+}
+
+impl KernelState {
+    pub fn frame_allocator(&self) -> &FrameAllocator {
+        &self.frame_allocator
+    }
+
+    pub fn with_page_table<F, T>(&self, f: F) -> T where F: FnOnce(&mut PageTableState) -> T {
+        let mut state = self.page_table_state.lock();
+        f(&mut *state)
+    }
+}
+
+static KERNEL_STATE: Once<KernelState> = Once::new();
+
 pub fn init_core(boot_info: &'static BootInfo) {
     // Order is important
     // 1. Initialize the serial logger so other subsystems can print messages while initializing
@@ -46,11 +75,28 @@ pub fn init_core(boot_info: &'static BootInfo) {
 
     serial_logger::init().expect("Could not initialize logging");
     terminal::init();
-    memory::init(boot_info);
+
+    let frame_allocator = unsafe { FrameAllocator::initialize(boot_info) };
+
+    let bootstrap_heap = frame_allocator
+        .allocate_pages(2)
+        .expect("Could not allocate bootstrap heap");
+    let bootstrap_heap_start = VirtAddr::from_ptr(bootstrap_heap);
+    memory::bootstrap_allocator(bootstrap_heap_start, bootstrap_heap_start + 8192u64);
+
+    KERNEL_STATE.call_once(|| KernelState {
+        frame_allocator,
+        page_table_state: Mutex::new(PageTableState::initialize(boot_info)),
+    });
+
     gdt::init();
     interrupts::init();
 
     info!("Welcome to Platypos!");
+}
+
+pub fn kernel_state<'a>() -> &'a KernelState {
+    KERNEL_STATE.wait().expect("Kernel not initialized")
 }
 
 #[cfg(not(test))]
@@ -90,7 +136,7 @@ fn main(boot_info: &'static BootInfo) -> ! {
 
     x86_64::instructions::interrupts::int3();
 
-    self::memory::page_table::with_page_table(|pt| {
+    kernel_state().with_page_table(|pt| {
         let addresses = [
             // the identity-mapped vga buffer page
             0xb8000,
@@ -116,14 +162,14 @@ fn main(boot_info: &'static BootInfo) -> ! {
     //
     //    blocks.iter().flatten().for_each(|block| memory::frame::free_frames(*block, 16));
 
-    let mut allocator = crate::memory::alloc::KernelAllocator::new();
-    assert_eq!(allocator.allocate(42), None);
+    //    let mut allocator = crate::memory::alloc::MemoryAllocator::new();
+    //    assert_eq!(allocator.allocate(42), None);
 
     println!("Welcome to PlatypOS! :)");
 
-    unsafe {
-        *(0xdeadbeef as *mut u64) = 42;
-    };
+//    unsafe {
+//        *(0xdeadbeef as *mut u64) = 42;
+//    };
 
     util::hlt_loop();
 }

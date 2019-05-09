@@ -141,20 +141,20 @@ impl<'a> KeyAdapter<'a> for FreeBlockAdapter {
     }
 }
 
-pub struct KernelAllocator {
-    fixed_free_lists: [RBTree<FreeBlockAdapter>; KernelAllocator::FIXED_FREE_LISTS],
-    approx_free_lists: [RBTree<FreeBlockAdapter>; KernelAllocator::APPROX_FREE_LISTS],
+pub struct MemoryAllocator {
+    fixed_free_lists: [RBTree<FreeBlockAdapter>; MemoryAllocator::FIXED_FREE_LISTS],
+    approx_free_lists: [RBTree<FreeBlockAdapter>; MemoryAllocator::APPROX_FREE_LISTS],
     large_free_list: RBTree<FreeBlockAdapter>,
 }
 
-impl KernelAllocator {
+impl MemoryAllocator {
     const MAX_FIXED_SIZE: usize = 512; // largest size that goes in a fixed free list
-    const FIXED_FREE_LISTS: usize = KernelAllocator::MAX_FIXED_SIZE / ALIGNMENT;
+    const FIXED_FREE_LISTS: usize = MemoryAllocator::MAX_FIXED_SIZE / ALIGNMENT;
     const APPROX_FREE_LISTS: usize = 4;
 
-    pub fn new() -> KernelAllocator {
+    pub fn new() -> MemoryAllocator {
         // TODO: arr! macro seemed nicer, but procedural macros don't seem to work with cargo-xbuild
-        KernelAllocator {
+        MemoryAllocator {
             //            fixed_free_lists: arr![RBTree::new(FreeBlockAdapter::new()); KernelAllocator::FIXED_FREE_LISTS],
             fixed_free_lists: array_init(|_| RBTree::new(FreeBlockAdapter::new())),
             approx_free_lists: array_init(|_| RBTree::new(FreeBlockAdapter::new())),
@@ -166,12 +166,12 @@ impl KernelAllocator {
     fn free_list_containing(&self, size: usize) -> &RBTree<FreeBlockAdapter> {
         debug_assert!(is_aligned(size), "Size {} is not aligned", size);
 
-        if size <= KernelAllocator::MAX_FIXED_SIZE {
+        if size <= MemoryAllocator::MAX_FIXED_SIZE {
             return &self.fixed_free_lists[size / ALIGNMENT];
         } else {
             // There's probably a fancy bit manipulation way to do this
-            for i in 0..KernelAllocator::APPROX_FREE_LISTS {
-                if KernelAllocator::MAX_FIXED_SIZE << i >= size {
+            for i in 0..MemoryAllocator::APPROX_FREE_LISTS {
+                if MemoryAllocator::MAX_FIXED_SIZE << i >= size {
                     return &self.approx_free_lists[i];
                 }
             }
@@ -183,12 +183,12 @@ impl KernelAllocator {
     fn free_list_containing_mut(&mut self, size: usize) -> &mut RBTree<FreeBlockAdapter> {
         debug_assert!(is_aligned(size), "Size {} is not aligned", size);
 
-        if size <= KernelAllocator::MAX_FIXED_SIZE {
+        if size <= MemoryAllocator::MAX_FIXED_SIZE {
             return &mut self.fixed_free_lists[size / ALIGNMENT];
         } else {
             // There's probably a fancy bit manipulation way to do this
-            for i in 0..KernelAllocator::APPROX_FREE_LISTS {
-                if KernelAllocator::MAX_FIXED_SIZE << i >= size {
+            for i in 0..MemoryAllocator::APPROX_FREE_LISTS {
+                if MemoryAllocator::MAX_FIXED_SIZE << i >= size {
                     return &mut self.approx_free_lists[i];
                 }
             }
@@ -233,6 +233,12 @@ impl KernelAllocator {
         }
     }
 }
+
+// Intrusive collections are (AFAICT) impossible to make thread-safe conveniently since they use
+// Cells (which are !Sync). Even Arc can't make things thread-safe, and IDK how to create an adapter
+// for a Mutex-wrapped value. As long as the allocator is only accessed through the mutex in
+// AllocatorMode, I'm pretty sure things should be fine.
+unsafe impl Sync for MemoryAllocator {}
 
 #[cfg(test)]
 use crate::tests;

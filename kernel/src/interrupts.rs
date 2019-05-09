@@ -2,8 +2,8 @@
 //! providing interrupt handlers.
 use log::warn;
 use spin::Once;
-use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode};
 use x86_64::registers::control::Cr2;
+use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode};
 
 static IDT: Once<InterruptDescriptorTable> = Once::new();
 
@@ -45,9 +45,15 @@ extern "x86-interrupt" fn double_fault_handler(
     );
 }
 
-extern "x86-interrupt" fn page_fault_handler(stack_frame: &mut InterruptStackFrame, error_code: PageFaultErrorCode) {
+extern "x86-interrupt" fn page_fault_handler(
+    stack_frame: &mut InterruptStackFrame,
+    error_code: PageFaultErrorCode,
+) {
     let addr = Cr2::read();
-    panic!("Page fault at {:?}\n    %rsp = {:?}\n    error code = {:?}\n    address = {:?}", stack_frame.instruction_pointer, stack_frame.stack_pointer, error_code, addr);
+    panic!(
+        "Page fault at {:?}\n    %rsp = {:?}\n    error code = {:?}\n    address = {:?}",
+        stack_frame.instruction_pointer, stack_frame.stack_pointer, error_code, addr
+    );
 }
 
 #[cfg(test)]

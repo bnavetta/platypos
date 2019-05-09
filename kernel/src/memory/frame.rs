@@ -24,10 +24,14 @@ use bootloader::bootinfo::{FrameRange, MemoryRegionType};
 use bootloader::BootInfo;
 use intrusive_collections::{intrusive_adapter, LinkedList, LinkedListLink};
 use log::{info, trace};
-use spin::{Mutex, Once};
+use spin::Mutex;
+use x86_64::{PhysAddr, VirtAddr};
 use x86_64::instructions::interrupts;
 use x86_64::structures::paging;
-use x86_64::{PhysAddr, VirtAddr};
+use x86_64::structures::paging::PhysFrame;
+
+#[cfg(test)]
+use crate::tests;
 
 const FRAME_SIZE: usize = 4096;
 
@@ -448,6 +452,23 @@ pub struct FrameAllocator {
 }
 
 impl FrameAllocator {
+    // unsafe because this must only be called once
+    pub unsafe fn initialize(boot_info: &BootInfo) -> FrameAllocator {
+        debug_assert!(mem::size_of::<Region>() <= FRAME_SIZE);
+
+        info!("Initializing frame allocator");
+
+        let mut allocator = FrameAllocator::new(boot_info.physical_memory_offset);
+
+        for region in boot_info.memory_map.iter() {
+            if region.region_type == MemoryRegionType::Usable {
+                allocator.add_range(region.range);
+            }
+        }
+
+        allocator
+    }
+
     const fn new(physical_memory_offset: u64) -> FrameAllocator {
         FrameAllocator {
             regions: LinkedList::new(RegionAdapter::new()),
@@ -522,6 +543,10 @@ impl FrameAllocator {
 
         panic!("No region contained {:#?}", allocation);
     }
+
+    pub fn page_table_allocator(&self) -> PageTableAllocator {
+        PageTableAllocator::new(self)
+    }
 }
 
 /// Computes the integer part of the base-2 logarithm of x
@@ -531,9 +556,15 @@ const fn log2(x: usize) -> usize {
 }
 
 /// Wrapper for allocating frames for page tables
-pub struct PagingAllocator<'a>(&'a FrameAllocator);
+pub struct PageTableAllocator<'a>(&'a FrameAllocator);
 
-unsafe impl<'a, S: paging::PageSize> paging::FrameAllocator<S> for PagingAllocator<'a> {
+impl<'a> PageTableAllocator<'a> {
+    pub fn new(allocator: &'a FrameAllocator) -> PageTableAllocator<'a> {
+        PageTableAllocator(allocator)
+    }
+}
+
+unsafe impl<'a, S: paging::PageSize> paging::FrameAllocator<S> for PageTableAllocator<'a> {
     fn allocate_frame(&mut self) -> Option<paging::PhysFrame<S>> {
         self.0
             .allocate_pages(S::SIZE as usize / FRAME_SIZE)
@@ -546,7 +577,7 @@ unsafe impl<'a, S: paging::PageSize> paging::FrameAllocator<S> for PagingAllocat
     }
 }
 
-impl<'a, S: paging::PageSize> paging::FrameDeallocator<S> for PagingAllocator<'a> {
+impl<'a, S: paging::PageSize> paging::FrameDeallocator<S> for PageTableAllocator<'a> {
     fn deallocate_frame(&mut self, frame: PhysFrame<S>) {
         let virt_addr =
             VirtAddr::new(frame.start_address().as_u64() + self.0.physical_memory_offset);
@@ -554,50 +585,6 @@ impl<'a, S: paging::PageSize> paging::FrameDeallocator<S> for PagingAllocator<'a
             .free_pages(S::SIZE as usize / FRAME_SIZE, virt_addr.as_mut_ptr());
     }
 }
-
-static ALLOCATOR: Once<FrameAllocator> = Once::new();
-
-pub fn init(boot: &BootInfo) {
-    assert!(mem::size_of::<Region>() <= FRAME_SIZE);
-
-    ALLOCATOR.call_once(|| {
-        info!("Initializing frame allocator");
-        let mut allocator = FrameAllocator::new(boot.physical_memory_offset);
-
-        for region in boot.memory_map.iter() {
-            if region.region_type == MemoryRegionType::Usable {
-                allocator.add_range(region.range);
-            }
-        }
-
-        allocator
-    });
-}
-
-/// Gets a reference to the global page frame allocator.
-///
-/// # Panics
-///
-/// If the allocator has not been initialized yet
-fn allocator() -> &'static FrameAllocator {
-    ALLOCATOR.wait().expect("Frame allocator not initialized")
-}
-
-pub fn allocate_frames(nframes: usize) -> Option<*mut u8> {
-    allocator().allocate_pages(nframes)
-}
-
-pub fn free_frames(allocation: *mut u8, nframes: usize) {
-    allocator().free_pages(nframes, allocation)
-}
-
-pub fn page_table_allocator() -> PagingAllocator<'static> {
-    PagingAllocator(allocator())
-}
-
-#[cfg(test)]
-use crate::tests;
-use x86_64::structures::paging::PhysFrame;
 
 #[cfg(test)]
 tests! {

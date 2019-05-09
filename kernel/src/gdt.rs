@@ -1,10 +1,10 @@
-use bootloader::BootInfo;
 use log::info;
 use spin::Once;
 use x86_64::instructions::segmentation::set_cs;
 use x86_64::instructions::tables::load_tss;
 use x86_64::structures::gdt::{Descriptor, GlobalDescriptorTable, SegmentSelector};
-use x86_64::structures::paging::{Page, PhysFrame, Size4KiB};
+use x86_64::structures::paging::{Page, PageTableFlags, PhysFrame, Size4KiB};
+use x86_64::structures::paging::mapper::Mapper;
 use x86_64::structures::tss::TaskStateSegment;
 use x86_64::VirtAddr;
 
@@ -27,24 +27,36 @@ pub const FAULT_IST_INDEX: u16 = 0;
 
 pub fn init() {
     let tss = TSS.call_once(|| {
+        let kernel_state = crate::kernel_state();
+
         let mut tss = TaskStateSegment::new();
         tss.interrupt_stack_table[FAULT_IST_INDEX as usize] = VirtAddr::new(FAULT_STACK_END); // Use the end because the stack grows down
 
-        let fault_stack = crate::memory::frame::allocate_frames(FAULT_STACK_FRAMES as usize)
+        let fault_stack = kernel_state.frame_allocator()
+            .allocate_pages(FAULT_STACK_FRAMES as usize)
             .expect("Failed to allocate fault stack");
 
-        crate::memory::page_table::with_page_table(|pt| {
+        kernel_state.with_page_table(|pt| {
             let first_frame = PhysFrame::from_start_address(
                 pt.translate(VirtAddr::from_ptr(fault_stack))
                     .expect("Could not translate fault stack"),
             )
             .expect("Fault stack not page aligned");
             let first_page: Page<Size4KiB> =
-                Page::from_start_address(VirtAddr::new(FAULT_STACK_START)).expect("Fault stack not page aligned");
+                Page::from_start_address(VirtAddr::new(FAULT_STACK_START))
+                    .expect("Fault stack not page aligned");
 
-            for i in 0..FAULT_STACK_FRAMES {
-                unsafe { pt.map_page(first_frame + i, first_page + i, true) }
-                    .expect("Unable to map fault stack");
+            unsafe {
+                let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE;
+                let mut mapper = pt.active_4kib_mapper();
+                let mut allocator = kernel_state.frame_allocator().page_table_allocator();
+
+                for i in 0..FAULT_STACK_FRAMES {
+                    mapper
+                        .map_to(first_page + i, first_frame + i, flags, &mut allocator)
+                        .expect("Unable to map fault stack")
+                        .flush();
+                }
             }
         });
 
