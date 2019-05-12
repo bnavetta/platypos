@@ -2,8 +2,7 @@ use bootloader::BootInfo;
 use x86_64::registers::control::{Cr3, Cr3Flags};
 use x86_64::structures::paging::mapper::MapToError;
 use x86_64::structures::paging::{
-    MappedPageTable, Mapper, MapperAllSizes, PageTable, PhysFrame, Size1GiB,
-    Size2MiB, Size4KiB,
+    MappedPageTable, Mapper, MapperAllSizes, PageTable, PhysFrame, Size1GiB, Size2MiB, Size4KiB,
 };
 use x86_64::{PhysAddr, VirtAddr};
 

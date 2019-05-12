@@ -5,6 +5,7 @@ authors = ["Ben Navetta <ben.navetta@gmail.com>"]
 edition = "2018"
 
 [dependencies]
+apic = { path = "../apic" }
 kutil = { path = "../kutil" }
 serial_logger = { path = "../serial_logger" }
 array-init = "~0.0.4"
@@ -13,7 +14,7 @@ log = "~0.4.6"
 raw-cpuid = "~6.1"
 spin = "~0.5"
 volatile = "~0.2.6"
-x86_64 = "~0.6"
+x86_64 = "~0.7"
 
 [dependencies.bootloader]
 version = "~0.6"
@@ -35,5 +36,6 @@ default-features = false
 
 [package.metadata.bootimage]
 default-target = "x86_64-os.json"
+run-args = ["-device", "isa-debug-exit,iobase=0xf4,iosize=0x04", "-serial", "mon:stdio"]
 test-args = ["-device", "isa-debug-exit,iobase=0xf4,iosize=0x04", "-serial", "mon:stdio"]
 test-success-exit-code = 33         # (0x10 << 1) | 1

@@ -1,6 +1,7 @@
 [workspace]
 members = [
 	"kernel",
+	"apic",
 	"kutil",
 	"serial_logger"
 ]

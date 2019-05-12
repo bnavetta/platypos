@@ -12,12 +12,12 @@
 #![reexport_test_harness_main = "test_main"]
 #![test_runner(crate::test::test_runner)]
 
-use bootloader::entry_point;
 use bootloader::bootinfo::BootInfo;
+use bootloader::entry_point;
 use log::{debug, info, warn};
 use raw_cpuid::{CpuId, Hypervisor};
 use serial_logger;
-use spin::{Once, Mutex};
+use spin::{Mutex, Once};
 use x86_64::VirtAddr;
 
 use crate::memory::frame::FrameAllocator;
@@ -50,7 +50,10 @@ impl KernelState {
         &self.frame_allocator
     }
 
-    pub fn with_page_table<F, T>(&self, f: F) -> T where F: FnOnce(&mut PageTableState) -> T {
+    pub fn with_page_table<F, T>(&self, f: F) -> T
+    where
+        F: FnOnce(&mut PageTableState) -> T,
+    {
         let mut state = self.page_table_state.lock();
         f(&mut *state)
     }
@@ -160,9 +163,11 @@ fn main(boot_info: &'static BootInfo) -> ! {
 
     println!("Welcome to PlatypOS! :)");
 
-//    unsafe {
-//        *(0xdeadbeef as *mut u64) = 42;
-//    };
+    //    unsafe {
+    //        *(0xdeadbeef as *mut u64) = 42;
+    //    };
+
+//    qemu::exit(qemu::ExitCode::Success);
 
     util::hlt_loop();
 }

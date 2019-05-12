@@ -3,8 +3,8 @@ use spin::Once;
 use x86_64::instructions::segmentation::set_cs;
 use x86_64::instructions::tables::load_tss;
 use x86_64::structures::gdt::{Descriptor, GlobalDescriptorTable, SegmentSelector};
-use x86_64::structures::paging::{Page, PageTableFlags, PhysFrame, Size4KiB};
 use x86_64::structures::paging::mapper::Mapper;
+use x86_64::structures::paging::{Page, PageTableFlags, PhysFrame, Size4KiB};
 use x86_64::structures::tss::TaskStateSegment;
 use x86_64::VirtAddr;
 
@@ -32,7 +32,8 @@ pub fn init() {
         let mut tss = TaskStateSegment::new();
         tss.interrupt_stack_table[FAULT_IST_INDEX as usize] = VirtAddr::new(FAULT_STACK_END); // Use the end because the stack grows down
 
-        let fault_stack = kernel_state.frame_allocator()
+        let fault_stack = kernel_state
+            .frame_allocator()
             .allocate_pages(FAULT_STACK_FRAMES as usize)
             .expect("Failed to allocate fault stack");
 

@@ -1,59 +1,64 @@
 //! Interrupt handler configuration. This module is responsible for setting up PlatypOS' IDT and
 //! providing interrupt handlers.
-use log::warn;
+use log::info;
 use spin::Once;
-use x86_64::registers::control::Cr2;
-use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode};
+use x86_64::structures::idt::InterruptDescriptorTable;
+use x86_64::instructions::interrupts as int;
+use x86_64::instructions::port::Port;
 
 static IDT: Once<InterruptDescriptorTable> = Once::new();
 
+mod apic;
+mod handlers;
+
+const INTERRUPT_TIMER: u8 = 32;
+const INTERRUPT_SPURIOUS: u8 = 39;
+const INTERRUPT_APIC_ERROR: u8 = 255;
+
 pub fn init() {
+    assert!(!int::are_enabled(), "Interrupts unexpectedly enabled");
+
     let idt = IDT.call_once(|| {
         let mut idt = InterruptDescriptorTable::new();
-        idt.breakpoint.set_handler_fn(breakpoint_handler);
+        idt.breakpoint
+            .set_handler_fn(self::handlers::breakpoint_handler);
         unsafe {
             idt.double_fault
-                .set_handler_fn(double_fault_handler)
+                .set_handler_fn(self::handlers::double_fault_handler)
                 .set_stack_index(crate::gdt::FAULT_IST_INDEX);
         }
         unsafe {
             idt.page_fault
-                .set_handler_fn(page_fault_handler)
+                .set_handler_fn(self::handlers::page_fault_handler)
                 .set_stack_index(crate::gdt::FAULT_IST_INDEX);
         }
+
+        idt[INTERRUPT_TIMER as usize].set_handler_fn(self::handlers::clock_interrupt_handler);
+
+        idt[INTERRUPT_SPURIOUS as usize].set_handler_fn(self::handlers::spurious_interrupt_handler);
+        idt[INTERRUPT_APIC_ERROR as usize].set_handler_fn(self::handlers::apic_error_interrupt_handler);
+
         idt
     });
 
     idt.load();
+
+    disable_pic();
+    apic::configure_local_apic();
+
+    info!("Enabling interrupts");
+    int::enable();
 }
 
-extern "x86-interrupt" fn breakpoint_handler(stack_frame: &mut InterruptStackFrame) {
-    warn!(
-        "Breakpoint exception at {:?}",
-        stack_frame.instruction_pointer
-    );
-}
+/// Disable the 8259 PIC
+fn disable_pic() {
+    // https://wiki.osdev.org/8259_PIC#Disabling
 
-extern "x86-interrupt" fn double_fault_handler(
-    stack_frame: &mut InterruptStackFrame,
-    _error_code: u64,
-) {
-    // Error code should always be 0 for a double fault
-    panic!(
-        "Double fault at {:?} (%rsp = {:?})",
-        stack_frame.instruction_pointer, stack_frame.stack_pointer
-    );
-}
+    let mut pic1: Port<u8> = Port::new(0xA1);
+    unsafe { pic1.write(0xff); }
 
-extern "x86-interrupt" fn page_fault_handler(
-    stack_frame: &mut InterruptStackFrame,
-    error_code: PageFaultErrorCode,
-) {
-    let addr = Cr2::read();
-    panic!(
-        "Page fault at {:?}\n    %rsp = {:?}\n    error code = {:?}\n    address = {:?}",
-        stack_frame.instruction_pointer, stack_frame.stack_pointer, error_code, addr
-    );
+    let mut pic2: Port<u8> = Port::new(0x21);
+    unsafe { pic2.write(0xff); }
 }
 
 #[cfg(test)]

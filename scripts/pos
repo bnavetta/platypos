@@ -65,10 +65,10 @@ def build(remote):
 @click.option('--debug/--no-debug', default=False)
 def run(debug):
     click.secho(u"🏃‍ Running in QEMU", fg="blue")
-    args = ['bootimage', 'run', '--manifest-path', 'kernel/Cargo.toml', '--', '-serial', 'mon:stdio']
+    args = ['bootimage', 'run', '--manifest-path', 'kernel/Cargo.toml']
 
     if debug:
-        args.extend(['-s', '-S'])
+        args.extend(['--', '-s', '-S'])
 
     exec_command(args)
 

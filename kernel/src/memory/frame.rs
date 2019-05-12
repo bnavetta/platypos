@@ -22,13 +22,14 @@ use core::slice;
 use bit_field::BitArray;
 use bootloader::bootinfo::{FrameRange, MemoryRegionType};
 use bootloader::BootInfo;
+use kutil::log2;
 use intrusive_collections::{intrusive_adapter, LinkedList, LinkedListLink};
 use log::{info, trace};
 use spin::Mutex;
-use x86_64::{PhysAddr, VirtAddr};
 use x86_64::instructions::interrupts;
 use x86_64::structures::paging;
 use x86_64::structures::paging::PhysFrame;
+use x86_64::{PhysAddr, VirtAddr};
 
 #[cfg(test)]
 use crate::tests;
@@ -220,8 +221,14 @@ impl RegionInner {
     }
 
     fn block_address(&self, block: BlockId) -> VirtAddr {
-        debug_assert!(block.order() <= self.max_order(), "Block does not fit in region");
-        debug_assert!(block.index() <= self.max_index(block.order()), "Block does not fit in region");
+        debug_assert!(
+            block.order() <= self.max_order(),
+            "Block does not fit in region"
+        );
+        debug_assert!(
+            block.index() <= self.max_index(block.order()),
+            "Block does not fit in region"
+        );
         self.data_start_addr() + block.index() * block.order().bytes()
     }
 
@@ -549,12 +556,6 @@ impl FrameAllocator {
     pub fn page_table_allocator(&self) -> PageTableAllocator {
         PageTableAllocator::new(self)
     }
-}
-
-/// Computes the integer part of the base-2 logarithm of x
-const fn log2(x: usize) -> usize {
-    // https://en.wikipedia.org/wiki/Find_first_set
-    (mem::size_of::<usize>() * 8) - 1 - (x.leading_zeros() as usize)
 }
 
 /// Wrapper for allocating frames for page tables
