@@ -5,24 +5,26 @@
     stmt_expr_attributes,
     custom_test_frameworks,
     abi_x86_interrupt,
-    impl_trait_in_bindings
+    impl_trait_in_bindings,
+    renamed_spin_loop,
+    duration_constants
 )]
 #![no_std]
 #![no_main]
 #![reexport_test_harness_main = "test_main"]
 #![test_runner(crate::test::test_runner)]
 
-use bootloader::bootinfo::BootInfo;
-use bootloader::entry_point;
+use core::time::Duration;
+
+use bootloader::{bootinfo::BootInfo, entry_point};
 use log::{debug, info, warn};
 use raw_cpuid::{CpuId, Hypervisor};
-use serial_logger;
 use spin::{Mutex, Once};
 use x86_64::VirtAddr;
 
-use crate::memory::frame::FrameAllocator;
-use crate::memory::page_table::PageTableState;
-use crate::memory::KernelAllocator;
+use serial_logger;
+
+use crate::memory::{frame::FrameAllocator, KernelAllocator, page_table::PageTableState};
 
 mod gdt;
 mod interrupts;
@@ -30,6 +32,7 @@ mod memory;
 mod panic;
 mod qemu;
 mod terminal;
+mod timer;
 mod util;
 
 #[cfg(test)]
@@ -86,6 +89,7 @@ pub fn init_core(boot_info: &'static BootInfo) {
     });
 
     gdt::init();
+    timer::pit::init();
     interrupts::init();
 
     info!("Welcome to Platypos!");
@@ -149,25 +153,6 @@ fn main(boot_info: &'static BootInfo) -> ! {
             println!("{:?} is mapped to {:?}", addr, pt.translate(addr));
         }
     });
-
-    //    let mut blocks = [None; 50];
-    //
-    //    for i in 0..blocks.len() {
-    //        blocks[i] = memory::frame::allocate_frames(16);
-    //    }
-    //
-    //    blocks.iter().flatten().for_each(|block| memory::frame::free_frames(*block, 16));
-
-    //    let mut allocator = crate::memory::alloc::MemoryAllocator::new();
-    //    assert_eq!(allocator.allocate(42), None);
-
-    println!("Welcome to PlatypOS! :)");
-
-    //    unsafe {
-    //        *(0xdeadbeef as *mut u64) = 42;
-    //    };
-
-//    qemu::exit(qemu::ExitCode::Success);
 
     util::hlt_loop();
 }

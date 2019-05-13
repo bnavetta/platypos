@@ -1,12 +1,14 @@
 use log::info;
 use spin::Once;
-use x86_64::instructions::segmentation::set_cs;
-use x86_64::instructions::tables::load_tss;
-use x86_64::structures::gdt::{Descriptor, GlobalDescriptorTable, SegmentSelector};
-use x86_64::structures::paging::mapper::Mapper;
-use x86_64::structures::paging::{Page, PageTableFlags, PhysFrame, Size4KiB};
-use x86_64::structures::tss::TaskStateSegment;
-use x86_64::VirtAddr;
+use x86_64::{
+    instructions::{segmentation::set_cs, tables::load_tss},
+    structures::{
+        gdt::{Descriptor, GlobalDescriptorTable, SegmentSelector},
+        paging::{mapper::Mapper, Page, PageTableFlags, PhysFrame, Size4KiB},
+        tss::TaskStateSegment,
+    },
+    VirtAddr,
+};
 
 struct GdtAndSelectors {
     gdt: GlobalDescriptorTable,

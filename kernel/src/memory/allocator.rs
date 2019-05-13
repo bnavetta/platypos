@@ -1,7 +1,8 @@
-use core::alloc::{GlobalAlloc, Layout};
-use core::cmp::max;
-use core::mem;
-use core::ptr;
+use core::{
+    alloc::{GlobalAlloc, Layout},
+    cmp::max,
+    mem, ptr,
+};
 
 use array_init::array_init;
 use bit_field::BitField;

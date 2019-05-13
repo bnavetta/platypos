@@ -2,8 +2,7 @@ use core::panic::PanicInfo;
 
 use log::error;
 
-use crate::qemu;
-use crate::util::hlt_loop;
+use crate::{qemu, util::hlt_loop};
 
 #[panic_handler]
 pub fn panic(info: &PanicInfo) -> ! {

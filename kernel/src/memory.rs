@@ -1,5 +1,7 @@
-use core::alloc::{GlobalAlloc, Layout};
-use core::ptr;
+use core::{
+    alloc::{GlobalAlloc, Layout},
+    ptr,
+};
 
 use spin::{Mutex, Once};
 use x86_64::VirtAddr;

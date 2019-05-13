@@ -2,21 +2,22 @@
 //! providing interrupt handlers.
 use log::info;
 use spin::Once;
-use x86_64::structures::idt::InterruptDescriptorTable;
-use x86_64::instructions::interrupts as int;
-use x86_64::instructions::port::Port;
+use x86_64::{
+    instructions::interrupts as int,
+    structures::idt::InterruptDescriptorTable,
+};
 
 static IDT: Once<InterruptDescriptorTable> = Once::new();
 
 mod apic;
-mod pic;
 mod handlers;
+mod pic;
 
 #[repr(u8)]
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum Interrupt {
-    PicTimer = 32, // IRQ 0
-    PicSpurious = 39, // IRQ 7 for PIC 1 spurious interrupts
+    PicTimer = 32,     // IRQ 0
+    PicSpurious = 39,  // IRQ 7 for PIC 1 spurious interrupts
     PicSpurious2 = 47, // IRQ 15 for PIC 2 spurious interrupts
     ApicTimer = 48,
     ApicError = 49,
@@ -56,9 +57,12 @@ pub fn init() {
         }
 
         // Maybe reusing the handlers isn't the best idea?
-        idt[Interrupt::PicSpurious.as_usize()].set_handler_fn(self::handlers::apic_spurious_interrupt_handler);
-        idt[Interrupt::PicSpurious2.as_usize()].set_handler_fn(self::handlers::apic_spurious_interrupt_handler);
-        idt[Interrupt::ApicSpurious.as_usize()].set_handler_fn(self::handlers::apic_spurious_interrupt_handler);
+        idt[Interrupt::PicSpurious.as_usize()]
+            .set_handler_fn(self::handlers::apic_spurious_interrupt_handler);
+        idt[Interrupt::PicSpurious2.as_usize()]
+            .set_handler_fn(self::handlers::apic_spurious_interrupt_handler);
+        idt[Interrupt::ApicSpurious.as_usize()]
+            .set_handler_fn(self::handlers::apic_spurious_interrupt_handler);
 
         idt[Interrupt::ApicTimer.as_usize()].set_handler_fn(self::handlers::apic_timer_handler);
         idt[Interrupt::ApicError.as_usize()].set_handler_fn(self::handlers::apic_error_handler);
@@ -70,12 +74,24 @@ pub fn init() {
 
     idt.load();
 
-    unsafe { pic::initialize_pic(); }
-//    pic::disable_pic();
-//    apic::configure_local_apic();
+    // There are a couple order-dependent steps:
+    // 1. Configure the PIC and LAPIC
+    // 2. Enable interrupts (so we get interrupts from the PIT)
+    // 3. Configure the LAPIC timer using the PIT
+    // 4. Disable the PIC now that we don't need it anymore
+
+    unsafe {
+        pic::initialize_pic();
+    }
+
+    apic::configure_local_apic();
 
     info!("Enabling interrupts");
     int::enable();
+
+    apic::configure_apic_timer(crate::timer::apic::TIMER_FREQUENCY_HZ as u32);
+    pic::disable_pic();
+    crate::timer::set_source(crate::timer::TimerSource::LocalApicTimer);
 }
 
 #[cfg(test)]

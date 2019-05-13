@@ -14,22 +14,22 @@
 //! * The bitmap starts `2^(MAX_ORDER - k) - 1` bytes from the start of the tree
 //!
 
-use core::cmp::min;
-use core::mem;
-use core::ptr;
-use core::slice;
+use core::{cmp::min, mem, ptr, slice};
 
 use bit_field::BitArray;
-use bootloader::bootinfo::{FrameRange, MemoryRegionType};
-use bootloader::BootInfo;
-use kutil::log2;
+use bootloader::{
+    bootinfo::{FrameRange, MemoryRegionType},
+    BootInfo,
+};
 use intrusive_collections::{intrusive_adapter, LinkedList, LinkedListLink};
+use kutil::log2;
 use log::{info, trace};
 use spin::Mutex;
-use x86_64::instructions::interrupts;
-use x86_64::structures::paging;
-use x86_64::structures::paging::PhysFrame;
-use x86_64::{PhysAddr, VirtAddr};
+use x86_64::{
+    instructions::interrupts,
+    structures::paging::{self, PhysFrame},
+    PhysAddr, VirtAddr,
+};
 
 #[cfg(test)]
 use crate::tests;

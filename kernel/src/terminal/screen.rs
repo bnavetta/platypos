@@ -1,16 +1,13 @@
 #![allow(dead_code)] // color changing API won't necessarily get used
 
-use core::convert::TryFrom;
-use core::fmt;
-use core::mem;
+use core::{convert::TryFrom, fmt, mem};
 
 use bit_field::BitField;
 use core::fmt::Write;
 use spin::Mutex;
 use ux::u4;
 use volatile::Volatile;
-use x86_64::instructions::interrupts;
-use x86_64::VirtAddr;
+use x86_64::{instructions::interrupts, VirtAddr};
 
 // Largely based on https://os.phil-opp.com/vga-text-mode/ and https://en.wikipedia.org/wiki/VGA-compatible_text_mode
 
