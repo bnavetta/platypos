@@ -1,10 +1,11 @@
 use apic::{LocalApic, LocalVectorTable, TimerMode};
 use log::info;
+use pic8259_simple::ChainedPics;
 use x86_64::structures::paging::mapper::Mapper;
 use x86_64::structures::paging::{Page, PageTableFlags, PhysFrame};
 use x86_64::VirtAddr;
 
-use super::{INTERRUPT_TIMER, INTERRUPT_SPURIOUS, INTERRUPT_APIC_ERROR};
+use super::Interrupt;
 
 pub fn local_apic() -> LocalApic {
     unsafe { LocalApic::new(VirtAddr::new(LocalApic::local_apic_base().as_u64()).as_mut_ptr()) }
@@ -42,18 +43,18 @@ pub fn configure_local_apic() {
         lapic.set_performance_counter_table(LocalVectorTable::NMI);
         lapic.set_lint0_table(LocalVectorTable::DISABLED);
         lapic.set_lint1_table(LocalVectorTable::DISABLED);
-        lapic.set_error_table(LocalVectorTable::for_vector_number(INTERRUPT_APIC_ERROR));
+        lapic.set_error_table(LocalVectorTable::for_vector_number(Interrupt::ApicError.as_u8()));
 
         let mut timer_config = lapic.timer_table();
         timer_config.set_masked(false);
-        timer_config.set_vector_number(INTERRUPT_TIMER);
+        timer_config.set_vector_number(Interrupt::ApicTimer.as_u8());
         timer_config.set_timer_mode(TimerMode::Periodic);
         lapic.set_timer_table(timer_config);
 
         lapic.set_timer_initial_count(u32::max_value());
         lapic.set_timer_divide_configuration(16);
 
-        lapic.map_spurious_interrupts(INTERRUPT_SPURIOUS);
+        lapic.map_spurious_interrupts(Interrupt::ApicSpurious.as_u8());
 
         LocalApic::set_local_apic_base(LocalApic::local_apic_base());
         lapic.enable();

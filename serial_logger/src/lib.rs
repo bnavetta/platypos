@@ -5,6 +5,7 @@ use core::fmt::Write;
 use log::{Level, LevelFilter, Log, Metadata, Record, SetLoggerError};
 use spin::Mutex;
 use uart_16550::SerialPort;
+use x86_64::instructions::interrupts::without_interrupts;
 
 const PORT: u16 = 0x3F8;
 
@@ -55,39 +56,41 @@ impl SerialLogger {
 }
 
 impl Log for SerialLogger {
-    fn enabled(&self, metadata: &Metadata) -> bool {
+    fn enabled(&self, _metadata: &Metadata) -> bool {
         true
     }
 
     fn log(&self, record: &Record) {
         if self.enabled(record.metadata()) {
-            let mut w = self.port.lock();
+            without_interrupts(|| { // make sure this can be used in interrupt handlers
+                let mut w = self.port.lock();
 
-            let level_color = match record.level() {
-                Level::Trace => COLOR_WHITE,
-                Level::Debug => COLOR_BLUE,
-                Level::Info => COLOR_GREEN,
-                Level::Warn => COLOR_YELLOW,
-                Level::Error => COLOR_RED,
-            };
+                let level_color = match record.level() {
+                    Level::Trace => COLOR_WHITE,
+                    Level::Debug => COLOR_BLUE,
+                    Level::Info => COLOR_GREEN,
+                    Level::Warn => COLOR_YELLOW,
+                    Level::Error => COLOR_RED,
+                };
 
-            let _ = write!(
-                w,
-                "{}[{:<30}]{} ",
-                COLOR_GREY,
-                record.module_path().unwrap_or(record.target()),
-                COLOR_NORMAL
-            );
-            let _ = write!(w, "{}{:>5}{} ", level_color, record.level(), COLOR_NORMAL);
-            let _ = write!(
-                w,
-                "{}{}:{}{}",
-                COLOR_BRIGHT_CYAN,
-                record.file().unwrap_or("unknown"),
-                record.line().unwrap_or(0),
-                COLOR_NORMAL
-            );
-            let _ = write!(w, " {}-{} {}\n", COLOR_GREY, COLOR_NORMAL, record.args());
+                let _ = write!(
+                    w,
+                    "{}[{:<30}]{} ",
+                    COLOR_GREY,
+                    record.module_path().unwrap_or(record.target()),
+                    COLOR_NORMAL
+                );
+                let _ = write!(w, "{}{:>5}{} ", level_color, record.level(), COLOR_NORMAL);
+                let _ = write!(
+                    w,
+                    "{}{}:{}{}",
+                    COLOR_BRIGHT_CYAN,
+                    record.file().unwrap_or("unknown"),
+                    record.line().unwrap_or(0),
+                    COLOR_NORMAL
+                );
+                let _ = write!(w, " {}-{} {}\n", COLOR_GREY, COLOR_NORMAL, record.args());
+            })
         }
     }
 

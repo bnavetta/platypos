@@ -6,7 +6,6 @@ use bit_field::BitField;
 use kutil::log2;
 use x86_64::registers::model_specific::Msr;
 use x86_64::PhysAddr;
-use crate
 
 // https://wiki.osdev.org/APIC
 
@@ -94,7 +93,7 @@ impl LocalVectorTable {
     }
 
     pub fn set_delivery_mode(&mut self, delivery_mode: DeliveryMode) {
-        self.0.set_bits(8..11, delivery_mode as u32)
+        self.0.set_bits(8..11, delivery_mode as u32);
     }
 }
 
@@ -152,7 +151,7 @@ impl LocalApic {
     }
 
     pub fn id(&mut self) -> u32 {
-        self.read(LocalApicRegister::LocalApicID)
+        self.read(LocalApicRegister::LocalApicID).get_bits(24..32)
     }
 
     pub fn version(&mut self) -> u32 {

@@ -11,6 +11,7 @@ serial_logger = { path = "../serial_logger" }
 array-init = "~0.0.4"
 bit_field = "~0.9.0"
 log = "~0.4.6"
+pic8259_simple = "~0.1.1"
 raw-cpuid = "~6.1"
 spin = "~0.5"
 volatile = "~0.2.6"
