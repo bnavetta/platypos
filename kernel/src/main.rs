@@ -22,7 +22,6 @@ use bootloader::{bootinfo::BootInfo, entry_point};
 use log::{debug, info, warn};
 use raw_cpuid::{CpuId, Hypervisor};
 use spin::{Mutex, Once};
-use x86_64::VirtAddr;
 
 use serial_logger;
 

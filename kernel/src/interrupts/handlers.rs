@@ -58,7 +58,11 @@ pub extern "x86-interrupt" fn apic_timer_handler(_stack_frame: &mut InterruptSta
 
 pub extern "x86-interrupt" fn apic_error_handler(stack_frame: &mut InterruptStackFrame) {
     let mut lapic = local_apic();
-    panic!("APIC error (ESR = {:#x}) at {:#x}", lapic.error_status(), stack_frame.instruction_pointer.as_u64());
+    panic!(
+        "APIC error (ESR = {:#x}) at {:#x}",
+        lapic.error_status(),
+        stack_frame.instruction_pointer.as_u64()
+    );
 }
 
 pub extern "x86-interrupt" fn apic_spurious_interrupt_handler(

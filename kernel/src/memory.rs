@@ -3,11 +3,11 @@ use core::{
     ptr,
 };
 
+use crate::memory::allocator::MemoryAllocator;
+use crate::memory::frame::FrameAllocator;
 use log::{info, trace};
 use spin::{Mutex, Once};
 use x86_64::VirtAddr;
-use crate::memory::allocator::MemoryAllocator;
-use crate::memory::frame::FrameAllocator;
 
 pub mod allocator;
 pub mod frame;
@@ -82,13 +82,24 @@ pub fn bootstrap_allocator(allocator: &FrameAllocator) {
 }
 
 pub fn initialize_allocator() {
-    info!("Switching over to main heap in {:#x}-{:#x}", HEAP_START, HEAP_END);
+    info!(
+        "Switching over to main heap in {:#x}-{:#x}",
+        HEAP_START, HEAP_END
+    );
 
-    let mut mode = REAL_ALLOCATOR.wait().expect("Allocator not bootstrapped").lock();
+    let mut mode = REAL_ALLOCATOR
+        .wait()
+        .expect("Allocator not bootstrapped")
+        .lock();
 
     let allocator = match &*mode {
-        &AllocatorMode::Bootstrap(ref allocator) => MemoryAllocator::new(VirtAddr::new(HEAP_START), VirtAddr::new(HEAP_END), allocator.heap_start, allocator.heap_end),
-        &AllocatorMode::Initialized(_) => panic!("Allocator already initialized")
+        &AllocatorMode::Bootstrap(ref allocator) => MemoryAllocator::new(
+            VirtAddr::new(HEAP_START),
+            VirtAddr::new(HEAP_END),
+            allocator.heap_start,
+            allocator.heap_end,
+        ).expect("Could not create heap"),
+        &AllocatorMode::Initialized(_) => panic!("Allocator already initialized"),
     };
 
     *mode = AllocatorMode::Initialized(allocator);

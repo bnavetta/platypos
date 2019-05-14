@@ -2,7 +2,9 @@ use core::{cmp::max, mem};
 
 use array_init::array_init;
 use bit_field::BitField;
-use intrusive_collections::{intrusive_adapter, KeyAdapter, RBTree, RBTreeLink, UnsafeRef};
+use intrusive_collections::{
+    intrusive_adapter, rbtree::CursorMut, KeyAdapter, RBTree, RBTreeLink, UnsafeRef,
+};
 use log::{error, trace};
 use x86_64::{
     structures::paging::{Page, PhysFrame},
@@ -33,15 +35,22 @@ impl Block {
     const TAG_SIZE: usize = mem::size_of::<usize>(); // The size of a header/footer tag
     const MIN_SIZE: usize = align(mem::size_of::<Block>() + Block::TAG_SIZE); // The smallest allowed block size
 
-    unsafe fn initialize(start_addr: *mut u8, size: usize, allocated: bool) -> &'static mut Block {
-        let block = (start_addr as *mut Block).as_mut().unwrap();
-        block.set_size(size);
-        block.set_allocated(allocated);
+    unsafe fn create_sentinel(addr: VirtAddr) -> &'static mut Block {
+        let tag = Block::TAG_SIZE | 1;
+        let block = addr.as_mut_ptr::<Block>().as_mut().unwrap();
+        block.tag = tag;
+        block.end_tag_mut().write(tag);
+        block
+    }
+
+    unsafe fn from_address(addr: VirtAddr) -> &'static mut Block {
+        let block = addr.as_mut_ptr::<Block>().as_mut().unwrap();
+        assert!(block.tags_match());
         block
     }
 
     unsafe fn from_payload(payload: *mut u8) -> &'static mut Block {
-        (payload.offset(-(Block::TAG_SIZE as isize)) as *mut Block).as_mut().unwrap()
+        Block::from_address(VirtAddr::from_ptr(payload) - Block::TAG_SIZE as u64)
     }
 
     /// Returns this block's address in memory
@@ -116,8 +125,10 @@ impl Block {
         unsafe { self.end_tag_mut().write(self.tag) }
     }
 
+    // TODO: should prev/next assert they're not the prologue/epilogue?
+
     /// Get a reference to the next block in memory
-    fn next(&self) -> &Block {
+    fn next(&self) -> &'static Block {
         let ptr = (self as *const Block) as *const u8;
         unsafe {
             let next_ptr = ptr.add(self.size());
@@ -126,7 +137,7 @@ impl Block {
     }
 
     /// Get a mutable reference to the next block in memory
-    fn next_mut(&self) -> &mut Block {
+    fn next_mut(&self) -> &'static mut Block {
         let ptr = (self as *const Block) as *const u8;
         unsafe {
             let next_ptr = ptr.add(self.size());
@@ -135,7 +146,7 @@ impl Block {
     }
 
     /// Get a reference to the previous block in memory
-    fn prev(&self) -> &Block {
+    fn prev(&self) -> &'static Block {
         let ptr = (self as *const Block) as *const usize;
         unsafe {
             let prev_end_tag = ptr.offset(-1).read();
@@ -146,7 +157,7 @@ impl Block {
     }
 
     /// Get a mutable reference to the previous block in memory
-    fn prev_mut(&self) -> &mut Block {
+    fn prev_mut(&self) -> &'static mut Block {
         let ptr = (self as *const Block) as *const usize;
         unsafe {
             let prev_end_tag = ptr.offset(-1).read();
@@ -159,11 +170,6 @@ impl Block {
     fn free_link(&self) -> &RBTreeLink {
         debug_assert!(!self.is_allocated());
         &self.free_link
-    }
-
-    fn free_link_mut(&mut self) -> &mut RBTreeLink {
-        debug_assert!(!self.is_allocated());
-        &mut self.free_link
     }
 
     fn as_ref(&self) -> UnsafeRef<Block> {
@@ -205,22 +211,56 @@ impl MemoryAllocator {
     const APPROX_FREE_LISTS: usize = 4;
     const EXTEND_PAGES: usize = 4; // How many pages at a time to extend the heap by
 
-    pub fn new(heap_start: VirtAddr, heap_max: VirtAddr, bootstrap_start: VirtAddr, bootstrap_end: VirtAddr) -> MemoryAllocator {
-        assert!(heap_max > heap_start, "Heap maximum {:?} is below heap start {:?}", heap_max, heap_start);
+    pub fn new(
+        heap_start: VirtAddr,
+        heap_max: VirtAddr,
+        bootstrap_start: VirtAddr,
+        bootstrap_end: VirtAddr,
+    ) -> Option<MemoryAllocator> {
+        assert!(
+            heap_max > heap_start,
+            "Heap maximum {:?} is below heap start {:?}",
+            heap_max,
+            heap_start
+        );
         assert!(heap_start.is_aligned(FRAME_SIZE as u64));
         assert!(heap_max.is_aligned(FRAME_SIZE as u64));
         assert!(bootstrap_end > bootstrap_start);
-        assert!(bootstrap_end <= heap_start || bootstrap_start >= heap_max, "Bootstrap and main heaps overlap");
+        assert!(
+            bootstrap_end <= heap_start || bootstrap_start >= heap_max,
+            "Bootstrap and main heaps overlap"
+        );
 
         // TODO: arr! macro seemed nicer, but procedural macros don't seem to work with cargo-xbuild
-        MemoryAllocator {
+        let mut alloc = MemoryAllocator {
             free_lists: array_init(|_| RBTree::new(FreeBlockAdapter::new())),
             heap_start,
             heap_end: heap_start,
             heap_max,
             bootstrap_start,
             bootstrap_end,
+        };
+
+        if let Some(start) = alloc.add_pages(1) {
+            assert_eq!(start, heap_start, "First pages of heap should be at heap_start");
+        } else {
+            return None;
         }
+
+        // Create the two sentinel blocks. The advantage of these is that they make .prev/.next safer,
+        // since they won't progress past the end of the heap. Because we can only allocate in
+        // page-sized chunks, there's also an initial free block
+        let prologue = unsafe { Block::create_sentinel(heap_start)};
+
+        let first_free = prologue.next_mut();
+        first_free.set_size(FRAME_SIZE - 4 * Block::TAG_SIZE);
+        first_free.set_allocated(false);
+
+        unsafe { Block::create_sentinel(VirtAddr::from_ptr(first_free.next_mut() as *mut Block)); }
+
+        alloc.insert_free_block(first_free);
+
+        Some(alloc)
     }
 
     /// Returns the index in the free list array for the list responsible for blocks of the given size
@@ -243,33 +283,84 @@ impl MemoryAllocator {
         }
     }
 
-    /// Attempt to coalesce a block with its neighbors. The block must be free
-    //    fn coalesce(&mut self, block: &mut Block) {
-    //        debug_assert!(!block.is_allocated(), "Block must be free");
-    //
-    //        if !block.prev().is_allocated() {
-    //
-    //        }
-    //    }
-
-    fn insert_free_block(&mut self, block: &mut Block) {
-        assert!(!block.is_allocated(), "Cannot add an allocated block to the free list");
-
-        assert!(block.address() >= self.heap_start, "Block lies outside the heap");
-        assert!(block.end_address() <= self.heap_end, "Block lies outside the heap");
-
-        block.free_link = RBTreeLink::new(); // Reinitialize link, since it could have been used as payload
-        self.free_lists[self.free_list_index(block.size())].insert(block.as_ref());
-
-        // TODO: coalesce
+    fn free_cursor_to(&mut self, block: &mut Block) -> CursorMut<FreeBlockAdapter> {
+        assert!(
+            !block.is_allocated(),
+            "Allocated blocks are not in the free list"
+        );
+        assert!(
+            block.free_link().is_linked(),
+            "Block is not in the free list"
+        );
+        unsafe {
+            self.free_lists[self.free_list_index(block.size())]
+                .cursor_mut_from_ptr(block as *const Block)
+        }
     }
 
-    fn allocate_block(&mut self, block: &'static mut Block, needed_size: usize) -> &'static mut Block {
-        assert!(!block.is_allocated(), "Cannot allocate an already-allocated block");
-        assert!(!block.free_link.is_linked(), "Cannot allocate a block in the free list");
+    fn insert_free_block(&mut self, block: &mut Block) {
+        assert!(
+            !block.is_allocated(),
+            "Cannot add an allocated block to the free list"
+        );
 
-        assert!(block.address() >= self.heap_start, "Block lies outside the heap");
-        assert!(block.end_address() <= self.heap_end, "Block lies outside the heap");
+        assert!(
+            block.address() >= self.heap_start,
+            "Block lies outside the heap"
+        );
+        assert!(
+            block.end_address() <= self.heap_end,
+            "Block lies outside the heap"
+        );
+
+        assert!(block.tags_match(), "Block tags don't match");
+
+        // Try to coalesce with the next block
+        if !block.next().is_allocated() {
+            let next = block.next_mut();
+            self.free_cursor_to(next).remove();
+            block.set_size(block.size() + next.size());
+        }
+
+        // Try to coalesce with the previous block
+        if block.prev().is_allocated() {
+            block.free_link = RBTreeLink::new(); // Reinitialize link, since it could have been used as payload
+            self.free_lists[self.free_list_index(block.size())].insert(block.as_ref());
+        } else {
+            let prev = block.prev_mut();
+            prev.set_size(prev.size() + block.size());
+            // prev should already in the free list
+            assert!(
+                prev.free_link().is_linked(),
+                "Block should be in the free list"
+            );
+        }
+    }
+
+    fn allocate_block(
+        &mut self,
+        block: &'static mut Block,
+        needed_size: usize,
+    ) -> &'static mut Block {
+        assert!(
+            !block.is_allocated(),
+            "Cannot allocate an already-allocated block"
+        );
+        assert!(
+            !block.free_link().is_linked(),
+            "Cannot allocate a block in the free list"
+        );
+
+        assert!(
+            block.address() >= self.heap_start,
+            "Block lies outside the heap"
+        );
+        assert!(
+            block.end_address() <= self.heap_end,
+            "Block lies outside the heap"
+        );
+
+        assert!(block.tags_match(), "Block tags don't match");
 
         block.set_allocated(true);
 
@@ -289,7 +380,10 @@ impl MemoryAllocator {
     pub fn free(&mut self, payload: *mut u8) {
         let payload_addr = VirtAddr::from_ptr(payload);
         if payload_addr >= self.bootstrap_start && payload_addr < self.bootstrap_end {
-            trace!("Leaking bootstrap allocation at {:#x}", payload_addr.as_u64());
+            trace!(
+                "Leaking bootstrap allocation at {:#x}",
+                payload_addr.as_u64()
+            );
             return;
         }
 
@@ -297,7 +391,11 @@ impl MemoryAllocator {
         assert!(payload_addr < self.heap_end);
 
         let block = unsafe { Block::from_payload(payload) };
-        trace!("Freeing a {}-byte block at {:#x}", block.size(), block.address().as_u64());
+        trace!(
+            "Freeing a {}-byte block at {:#x}",
+            block.size(),
+            block.address().as_u64()
+        );
 
         assert!(
             block.is_allocated(),
@@ -316,7 +414,11 @@ impl MemoryAllocator {
                     let block = UnsafeRef::into_raw(block);
 
                     let block = self.allocate_block(block.as_mut().unwrap(), actual_size);
-                    trace!("Allocating a {}-byte block at {:#x}", block.size(), block.address().as_u64());
+                    trace!(
+                        "Allocating a {}-byte block at {:#x}",
+                        block.size(),
+                        block.address().as_u64()
+                    );
                     return Some(block.payload());
                 }
             }
@@ -330,17 +432,39 @@ impl MemoryAllocator {
         }
     }
 
+    /// Extend the heap by a fixed amount, shifting the epilogue as necessary. This can only be
+    /// called once the heap has been set up.
     fn extend_heap(&mut self) -> bool {
-        let new_end = self.heap_end + FRAME_SIZE * MemoryAllocator::EXTEND_PAGES;
+        if let Some(old_end) = self.add_pages(MemoryAllocator::EXTEND_PAGES) {
+            let epilogue = unsafe { Block::from_address(old_end) }.prev_mut();
+
+            epilogue.set_size(MemoryAllocator::EXTEND_PAGES * FRAME_SIZE);
+            epilogue.set_allocated(false);
+
+            // create new epilogue
+            unsafe { Block::create_sentinel(VirtAddr::from_ptr(epilogue.next_mut() as *mut Block)); }
+
+            self.insert_free_block(epilogue);
+
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Adds pages to the heap, returning the old heap end. Returns `None` if allocation failed.
+    /// This does not adjust the epilogue at all, and can be used to create the initial heap.
+    fn add_pages(&mut self, npages: usize) -> Option<VirtAddr> {
+        let new_end = self.heap_end + FRAME_SIZE * npages;
         if new_end > self.heap_max {
-            return false;
+            return None;
         }
 
-        trace!("Extending heap by {} pages", MemoryAllocator::EXTEND_PAGES);
+        trace!("Extending heap by {} pages", npages);
 
         if let Some(memory) = kernel_state()
             .frame_allocator()
-            .allocate_pages(MemoryAllocator::EXTEND_PAGES)
+            .allocate_pages(npages)
         {
             if !kernel_state().with_page_table(|pt| {
                 let phys_start = PhysFrame::containing_address(
@@ -355,7 +479,7 @@ impl MemoryAllocator {
                         ),
                         PhysFrame::range(
                             phys_start,
-                            phys_start + MemoryAllocator::EXTEND_PAGES as u64,
+                            phys_start + npages as u64,
                         ),
                         true,
                     )
@@ -365,22 +489,31 @@ impl MemoryAllocator {
                         error!("Error mapping new page frames into heap: {:?}", e);
                         kernel_state()
                             .frame_allocator()
-                            .free_pages(MemoryAllocator::EXTEND_PAGES, memory);
+                            .free_pages(npages, memory);
                         false
                     }
                 }
             }) {
-                return false;
+                return None;
             }
 
-
-            let block = unsafe { Block::initialize(self.heap_end.as_mut_ptr(), MemoryAllocator::EXTEND_PAGES * FRAME_SIZE, false) };
+            let old_end = self.heap_end;
             self.heap_end = new_end;
-            self.insert_free_block(block);
+            Some(old_end)
 
-            true
+//            let block = unsafe {
+//                Block::initialize(
+//                    self.heap_end.as_mut_ptr(),
+//                    MemoryAllocator::EXTEND_PAGES * FRAME_SIZE,
+//                    false,
+//                )
+//            };
+//            self.heap_end = new_end;
+//            self.insert_free_block(block);
+//
+//            true
         } else {
-            false
+            None
         }
     }
 }
