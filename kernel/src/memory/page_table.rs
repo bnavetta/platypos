@@ -1,12 +1,16 @@
 use bootloader::BootInfo;
+use x86_64::structures::paging::frame::PhysFrameRange;
+use x86_64::structures::paging::page::PageRange;
 use x86_64::{
     registers::control::{Cr3, Cr3Flags},
     structures::paging::{
-        mapper::MapToError, MappedPageTable, Mapper, MapperAllSizes, PageTable, PhysFrame,
-        Size1GiB, Size2MiB, Size4KiB,
+        mapper::MapToError, MappedPageTable, Mapper, MapperAllSizes, PageTable, PageTableFlags,
+        PhysFrame, Size1GiB, Size2MiB, Size4KiB,
     },
     PhysAddr, VirtAddr,
 };
+
+use crate::kernel_state;
 
 #[derive(Debug)]
 pub enum PageTableError {
@@ -118,5 +122,29 @@ impl PageTableState {
                 .translate_addr(addr)
                 .ok_or_else(|| PageTableError::AddressNotMapped(addr))
         }
+    }
+
+    /// Map a contiguous range of physical memory into the current address space
+    pub unsafe fn map_contiguous(
+        &mut self,
+        pages: PageRange,
+        frames: PhysFrameRange,
+        writable: bool,
+    ) -> Result<(), PageTableError> {
+        let mut mapper = self.active_4kib_mapper();
+        let mut allocator = kernel_state().frame_allocator().page_table_allocator();
+
+        let flags = PageTableFlags::PRESENT
+            | if writable {
+                PageTableFlags::WRITABLE
+            } else {
+                PageTableFlags::empty()
+            };
+
+        for (page, frame) in pages.into_iter().zip(frames.into_iter()) {
+            mapper.map_to(page, frame, flags, &mut allocator)?.flush();
+        }
+
+        Ok(())
     }
 }

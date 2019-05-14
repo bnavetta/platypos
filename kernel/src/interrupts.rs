@@ -2,10 +2,7 @@
 //! providing interrupt handlers.
 use log::info;
 use spin::Once;
-use x86_64::{
-    instructions::interrupts as int,
-    structures::idt::InterruptDescriptorTable,
-};
+use x86_64::{instructions::interrupts as int, structures::idt::InterruptDescriptorTable};
 
 static IDT: Once<InterruptDescriptorTable> = Once::new();
 
@@ -27,10 +24,6 @@ pub enum Interrupt {
 impl Interrupt {
     pub fn as_u8(self) -> u8 {
         self as u8
-    }
-
-    pub fn as_u32(self) -> u32 {
-        self.as_u8() as u32
     }
 
     pub fn as_usize(self) -> usize {
@@ -58,9 +51,9 @@ pub fn init() {
 
         // Maybe reusing the handlers isn't the best idea?
         idt[Interrupt::PicSpurious.as_usize()]
-            .set_handler_fn(self::handlers::apic_spurious_interrupt_handler);
+            .set_handler_fn(self::handlers::pic_spurious_interrupt_handler);
         idt[Interrupt::PicSpurious2.as_usize()]
-            .set_handler_fn(self::handlers::apic_spurious_interrupt_handler);
+            .set_handler_fn(self::handlers::pic_spurious_interrupt_handler);
         idt[Interrupt::ApicSpurious.as_usize()]
             .set_handler_fn(self::handlers::apic_spurious_interrupt_handler);
 

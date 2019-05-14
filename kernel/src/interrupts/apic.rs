@@ -6,8 +6,7 @@ use x86_64::{
 };
 
 use super::Interrupt;
-use core::time::Duration;
-use core::cmp::max;
+use core::{cmp::max, time::Duration};
 
 pub fn local_apic() -> LocalApic {
     unsafe { LocalApic::new(VirtAddr::new(LocalApic::local_apic_base().as_u64()).as_mut_ptr()) }
@@ -88,6 +87,8 @@ pub fn configure_apic_timer(frequency: u32) {
     let mut timer_table = lapic.timer_table();
     timer_table.set_timer_mode(TimerMode::Periodic);
     timer_table.set_masked(false);
-    unsafe { lapic.set_timer_table(timer_table); }
+    unsafe {
+        lapic.set_timer_table(timer_table);
+    }
     lapic.set_timer_divide_configuration(16);
 }

@@ -31,10 +31,10 @@ use x86_64::{
     PhysAddr, VirtAddr,
 };
 
+use super::FRAME_SIZE;
+
 #[cfg(test)]
 use crate::tests;
-
-const FRAME_SIZE: usize = 4096;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Ord, PartialOrd)]
 struct Order(u8);

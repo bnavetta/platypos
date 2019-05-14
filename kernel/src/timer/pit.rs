@@ -75,7 +75,11 @@ impl ProgrammableIntervalTimer {
     /// the LowByte/HighByte access mode and operate as a square wave generator.
     pub unsafe fn configure_timer(&mut self, frequency: usize) {
         let divisor = PIT_FREQUENCY_HZ / frequency;
-        self.configure(0, AccessMode::LowByteHighByte, OperatingMode::SquareWaveGenerator);
+        self.configure(
+            0,
+            AccessMode::LowByteHighByte,
+            OperatingMode::SquareWaveGenerator,
+        );
         // low and high bytes of divisor
         self.channel0.write((divisor & 0xFF) as u8);
         self.channel0.write((divisor >> 8) as u8);
@@ -86,7 +90,9 @@ const TIMER_FREQUENCY_HZ: usize = 100;
 
 pub fn init() {
     let mut pit = ProgrammableIntervalTimer::new();
-    unsafe { pit.configure_timer(100); }
+    unsafe {
+        pit.configure_timer(100);
+    }
 }
 
 /// Counter of how many PIT channel 0 interrupts have fired. Note that ticks could be dropped

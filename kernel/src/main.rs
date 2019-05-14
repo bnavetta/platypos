@@ -14,7 +14,9 @@
 #![reexport_test_harness_main = "test_main"]
 #![test_runner(crate::test::test_runner)]
 
-use core::time::Duration;
+extern crate alloc;
+
+use alloc::vec::Vec;
 
 use bootloader::{bootinfo::BootInfo, entry_point};
 use log::{debug, info, warn};
@@ -24,7 +26,7 @@ use x86_64::VirtAddr;
 
 use serial_logger;
 
-use crate::memory::{frame::FrameAllocator, KernelAllocator, page_table::PageTableState};
+use crate::memory::{frame::FrameAllocator, page_table::PageTableState, KernelAllocator};
 
 mod gdt;
 mod interrupts;
@@ -77,11 +79,7 @@ pub fn init_core(boot_info: &'static BootInfo) {
 
     let frame_allocator = unsafe { FrameAllocator::initialize(boot_info) };
 
-    let bootstrap_heap = frame_allocator
-        .allocate_pages(2)
-        .expect("Could not allocate bootstrap heap");
-    let bootstrap_heap_start = VirtAddr::from_ptr(bootstrap_heap);
-    memory::bootstrap_allocator(bootstrap_heap_start, bootstrap_heap_start + 8192u64);
+    memory::bootstrap_allocator(&frame_allocator);
 
     KERNEL_STATE.call_once(|| KernelState {
         frame_allocator,
@@ -91,6 +89,7 @@ pub fn init_core(boot_info: &'static BootInfo) {
     gdt::init();
     timer::pit::init();
     interrupts::init();
+    memory::initialize_allocator();
 
     info!("Welcome to Platypos!");
 }
@@ -134,25 +133,11 @@ fn main(boot_info: &'static BootInfo) -> ! {
         );
     }
 
-    x86_64::instructions::interrupts::int3();
-
-    kernel_state().with_page_table(|pt| {
-        let addresses = [
-            // the identity-mapped vga buffer page
-            0xb8000,
-            // some code page
-            0x20010a,
-            // some stack page
-            0x57ac_001f_fe48,
-            // virtual address mapped to physical address 0
-            boot_info.physical_memory_offset,
-        ];
-
-        for &address in &addresses {
-            let addr = VirtAddr::new(address);
-            println!("{:?} is mapped to {:?}", addr, pt.translate(addr));
-        }
-    });
+    let mut v = Vec::new();
+    for i in 0..10 {
+        v.push(i);
+    }
+    println!("v = {:?}", v);
 
     util::hlt_loop();
 }

@@ -38,18 +38,18 @@ pub extern "x86-interrupt" fn page_fault_handler(
 }
 
 pub extern "x86-interrupt" fn pic_spurious_interrupt_handler(
-    stack_frame: &mut InterruptStackFrame,
+    _stack_frame: &mut InterruptStackFrame,
 ) {
     warn!("Spurious PIC interrupt!");
     //    pic::notify_end_of_interrupt(Interrupt::PicSpurious.as_u8()); // TODO: do these get EOI'd?
 }
 
-pub extern "x86-interrupt" fn pic_timer_handler(stack_frame: &mut InterruptStackFrame) {
+pub extern "x86-interrupt" fn pic_timer_handler(_stack_frame: &mut InterruptStackFrame) {
     crate::timer::pit::pit_timer_callback();
     pic::notify_end_of_interrupt(Interrupt::PicTimer.as_u8());
 }
 
-pub extern "x86-interrupt" fn apic_timer_handler(stack_frame: &mut InterruptStackFrame) {
+pub extern "x86-interrupt" fn apic_timer_handler(_stack_frame: &mut InterruptStackFrame) {
     crate::timer::apic::apic_timer_callback();
 
     let mut lapic = local_apic();
@@ -58,11 +58,11 @@ pub extern "x86-interrupt" fn apic_timer_handler(stack_frame: &mut InterruptStac
 
 pub extern "x86-interrupt" fn apic_error_handler(stack_frame: &mut InterruptStackFrame) {
     let mut lapic = local_apic();
-    panic!("APIC error (ESR = {:#x})", lapic.error_status());
+    panic!("APIC error (ESR = {:#x}) at {:#x}", lapic.error_status(), stack_frame.instruction_pointer.as_u64());
 }
 
 pub extern "x86-interrupt" fn apic_spurious_interrupt_handler(
-    stack_frame: &mut InterruptStackFrame,
+    _stack_frame: &mut InterruptStackFrame,
 ) {
     warn!("Spurious interrupt!");
     let mut lapic = local_apic();

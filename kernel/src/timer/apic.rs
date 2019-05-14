@@ -1,6 +1,8 @@
-use core::sync::atomic::{AtomicUsize, Ordering};
-use core::time::Duration;
-use core::hint::spin_loop;
+use core::{
+    hint::spin_loop,
+    sync::atomic::{AtomicUsize, Ordering},
+    time::Duration,
+};
 
 pub const TIMER_FREQUENCY_HZ: usize = 1000;
 const NANOS_PER_SECOND: u128 = Duration::SECOND.as_nanos();
