@@ -26,6 +26,8 @@ use spin::{Mutex, Once};
 use serial_logger;
 
 use crate::memory::{frame::FrameAllocator, page_table::PageTableState, KernelAllocator};
+use crate::timer::sleep;
+use core::time::Duration;
 
 mod gdt;
 mod interrupts;
@@ -137,6 +139,10 @@ fn main(boot_info: &'static BootInfo) -> ! {
         v.push(i);
     }
     println!("v = {:?}", v);
+
+    println!("Before sleep");
+    sleep(Duration::from_secs(10));
+    println!("After sleep");
 
     util::hlt_loop();
 }

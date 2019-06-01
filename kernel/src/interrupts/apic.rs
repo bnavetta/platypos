@@ -1,5 +1,6 @@
-use apic::{LocalApic, LocalVectorTable, TimerMode};
+use apic::{Apic, LocalApic, DivideConfiguration, TimerMode};
 use log::info;
+use spin::Once;
 use x86_64::{
     structures::paging::{mapper::Mapper, Page, PageTableFlags, PhysFrame},
     VirtAddr,
@@ -8,61 +9,43 @@ use x86_64::{
 use super::Interrupt;
 use core::{cmp::max, time::Duration};
 
-pub fn local_apic() -> LocalApic {
-    unsafe { LocalApic::new(VirtAddr::new(LocalApic::local_apic_base().as_u64()).as_mut_ptr()) }
+static APIC: Once<Apic> = Once::new();
+
+pub fn local_apic() -> LocalApic<'static> {
+    APIC.wait().expect("APIC not initialized").local_apic()
 }
 
 pub fn configure_local_apic() {
     let kernel_state = crate::kernel_state();
 
-    let base_phys_addr = LocalApic::local_apic_base();
-    info!("Local APIC located at {:?}", base_phys_addr);
-    let base_addr = VirtAddr::new(base_phys_addr.as_u64()); // identity-map for now, probably not the best idea
+    let apic = APIC.call_once(|| {
+        // TODO: parse ACPI tables to get max APIC ID
+        Apic::new(1, |base_phys_addr| {
+            let base_addr = VirtAddr::new(base_phys_addr.as_u64()); // identity-map for now, probably not the best idea
 
-    // TODO: will possibly need to map LAPIC for each core separately?
+            kernel_state.with_page_table(|pt| {
+                let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE;
+                unsafe {
+                    pt.active_4kib_mapper()
+                        .map_to(
+                            Page::containing_address(base_addr),
+                            PhysFrame::containing_address(base_phys_addr),
+                            flags,
+                            &mut kernel_state.frame_allocator().page_table_allocator(),
+                        )
+                        .expect("Unable to map LAPIC registers")
+                        .flush();
+                }
+            });
 
-    kernel_state.with_page_table(|pt| {
-        let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE;
-        unsafe {
-            pt.active_4kib_mapper()
-                .map_to(
-                    Page::containing_address(base_addr),
-                    PhysFrame::containing_address(base_phys_addr),
-                    flags,
-                    &mut kernel_state.frame_allocator().page_table_allocator(),
-                )
-                .expect("Unable to map LAPIC registers")
-                .flush();
-        }
+            base_addr.as_mut_ptr()
+        })
     });
 
-    unsafe {
-        let mut lapic = LocalApic::new(base_addr.as_mut_ptr());
-        info!(
-            "Local APIC has ID {:#x} and version {:#x}",
-            lapic.id(),
-            lapic.version()
-        );
+    unsafe { apic.init(Interrupt::ApicSpurious.as_u8()); }
 
-        lapic.set_cmci_table(LocalVectorTable::DISABLED);
-        lapic.set_performance_counter_table(LocalVectorTable::NMI);
-        lapic.set_lint0_table(LocalVectorTable::DISABLED);
-        lapic.set_lint1_table(LocalVectorTable::DISABLED);
-        lapic.set_error_table(LocalVectorTable::for_vector_number(
-            Interrupt::ApicError.as_u8(),
-        ));
-
-        let mut timer_config = lapic.timer_table();
-        timer_config.set_masked(true);
-        timer_config.set_vector_number(Interrupt::ApicTimer.as_u8());
-        timer_config.set_timer_mode(TimerMode::Periodic);
-        lapic.set_timer_table(timer_config);
-
-        lapic.map_spurious_interrupts(Interrupt::ApicSpurious.as_u8());
-
-        LocalApic::set_local_apic_base(LocalApic::local_apic_base());
-        lapic.enable();
-    }
+    let mut lapic = local_apic();
+    info!("Local APIC has ID {:#x} and version {:#x}", lapic.id(), lapic.version());
 }
 
 pub fn configure_apic_timer(frequency: u32) {
@@ -70,8 +53,15 @@ pub fn configure_apic_timer(frequency: u32) {
 
     let mut lapic = local_apic();
 
-    lapic.set_timer_divide_configuration(16);
+    lapic.set_timer_divide_configuration(DivideConfiguration::Divide16);
+
+    let mut lvt = lapic.timer_vector_table();
+    lvt.set_masked(true);
+    lvt.set_timer_mode(TimerMode::Periodic);
+    unsafe { lapic.set_timer_vector_table(lvt); }
+
     lapic.set_timer_initial_count(0xffffffff); // -1
+
     pit_sleep(Duration::from_millis(1));
     let delta = 0xffffffff - lapic.timer_current_count();
 
@@ -84,11 +74,10 @@ pub fn configure_apic_timer(frequency: u32) {
     lapic.set_timer_initial_count(counter_value);
 
     // Now that we've configured the timer, enable interrupts
-    let mut timer_table = lapic.timer_table();
-    timer_table.set_timer_mode(TimerMode::Periodic);
-    timer_table.set_masked(false);
+    let mut lvt = lapic.timer_vector_table();
+    lvt.set_vector(Interrupt::ApicTimer.as_u8());
+    lvt.set_masked(false);
     unsafe {
-        lapic.set_timer_table(timer_table);
+        lapic.set_timer_vector_table(lvt);
     }
-    lapic.set_timer_divide_configuration(16);
 }

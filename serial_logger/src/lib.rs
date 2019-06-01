@@ -62,7 +62,8 @@ impl Log for SerialLogger {
 
     fn log(&self, record: &Record) {
         if self.enabled(record.metadata()) {
-            without_interrupts(|| { // make sure this can be used in interrupt handlers
+            without_interrupts(|| {
+                // make sure this can be used in interrupt handlers
                 let mut w = self.port.lock();
 
                 let level_color = match record.level() {

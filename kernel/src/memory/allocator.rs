@@ -242,7 +242,10 @@ impl MemoryAllocator {
         };
 
         if let Some(start) = alloc.add_pages(1) {
-            assert_eq!(start, heap_start, "First pages of heap should be at heap_start");
+            assert_eq!(
+                start, heap_start,
+                "First pages of heap should be at heap_start"
+            );
         } else {
             return None;
         }
@@ -250,13 +253,15 @@ impl MemoryAllocator {
         // Create the two sentinel blocks. The advantage of these is that they make .prev/.next safer,
         // since they won't progress past the end of the heap. Because we can only allocate in
         // page-sized chunks, there's also an initial free block
-        let prologue = unsafe { Block::create_sentinel(heap_start)};
+        let prologue = unsafe { Block::create_sentinel(heap_start) };
 
         let first_free = prologue.next_mut();
         first_free.set_size(FRAME_SIZE - 4 * Block::TAG_SIZE);
         first_free.set_allocated(false);
 
-        unsafe { Block::create_sentinel(VirtAddr::from_ptr(first_free.next_mut() as *mut Block)); }
+        unsafe {
+            Block::create_sentinel(VirtAddr::from_ptr(first_free.next_mut() as *mut Block));
+        }
 
         alloc.insert_free_block(first_free);
 
@@ -432,6 +437,10 @@ impl MemoryAllocator {
         }
     }
 
+    pub fn reallocate(&mut self, payload: *mut u8, to_size: usize) {
+        // TODO
+    }
+
     /// Extend the heap by a fixed amount, shifting the epilogue as necessary. This can only be
     /// called once the heap has been set up.
     fn extend_heap(&mut self) -> bool {
@@ -442,7 +451,9 @@ impl MemoryAllocator {
             epilogue.set_allocated(false);
 
             // create new epilogue
-            unsafe { Block::create_sentinel(VirtAddr::from_ptr(epilogue.next_mut() as *mut Block)); }
+            unsafe {
+                Block::create_sentinel(VirtAddr::from_ptr(epilogue.next_mut() as *mut Block));
+            }
 
             self.insert_free_block(epilogue);
 
@@ -462,10 +473,7 @@ impl MemoryAllocator {
 
         trace!("Extending heap by {} pages", npages);
 
-        if let Some(memory) = kernel_state()
-            .frame_allocator()
-            .allocate_pages(npages)
-        {
+        if let Some(memory) = kernel_state().frame_allocator().allocate_pages(npages) {
             if !kernel_state().with_page_table(|pt| {
                 let phys_start = PhysFrame::containing_address(
                     pt.translate(VirtAddr::from_ptr(memory))
@@ -477,19 +485,14 @@ impl MemoryAllocator {
                             Page::containing_address(self.heap_end),
                             Page::containing_address(new_end),
                         ),
-                        PhysFrame::range(
-                            phys_start,
-                            phys_start + npages as u64,
-                        ),
+                        PhysFrame::range(phys_start, phys_start + npages as u64),
                         true,
                     )
                 } {
                     Ok(()) => true,
                     Err(e) => {
                         error!("Error mapping new page frames into heap: {:?}", e);
-                        kernel_state()
-                            .frame_allocator()
-                            .free_pages(npages, memory);
+                        kernel_state().frame_allocator().free_pages(npages, memory);
                         false
                     }
                 }
@@ -501,17 +504,17 @@ impl MemoryAllocator {
             self.heap_end = new_end;
             Some(old_end)
 
-//            let block = unsafe {
-//                Block::initialize(
-//                    self.heap_end.as_mut_ptr(),
-//                    MemoryAllocator::EXTEND_PAGES * FRAME_SIZE,
-//                    false,
-//                )
-//            };
-//            self.heap_end = new_end;
-//            self.insert_free_block(block);
-//
-//            true
+        //            let block = unsafe {
+        //                Block::initialize(
+        //                    self.heap_end.as_mut_ptr(),
+        //                    MemoryAllocator::EXTEND_PAGES * FRAME_SIZE,
+        //                    false,
+        //                )
+        //            };
+        //            self.heap_end = new_end;
+        //            self.insert_free_block(block);
+        //
+        //            true
         } else {
             None
         }

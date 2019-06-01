@@ -98,7 +98,8 @@ pub fn initialize_allocator() {
             VirtAddr::new(HEAP_END),
             allocator.heap_start,
             allocator.heap_end,
-        ).expect("Could not create heap"),
+        )
+        .expect("Could not create heap"),
         &AllocatorMode::Initialized(_) => panic!("Allocator already initialized"),
     };
 

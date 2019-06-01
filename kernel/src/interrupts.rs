@@ -17,7 +17,6 @@ pub enum Interrupt {
     PicSpurious = 39,  // IRQ 7 for PIC 1 spurious interrupts
     PicSpurious2 = 47, // IRQ 15 for PIC 2 spurious interrupts
     ApicTimer = 48,
-    ApicError = 49,
     ApicSpurious = 255,
 }
 
@@ -58,7 +57,6 @@ pub fn init() {
             .set_handler_fn(self::handlers::apic_spurious_interrupt_handler);
 
         idt[Interrupt::ApicTimer.as_usize()].set_handler_fn(self::handlers::apic_timer_handler);
-        idt[Interrupt::ApicError.as_usize()].set_handler_fn(self::handlers::apic_error_handler);
 
         idt[Interrupt::PicTimer.as_usize()].set_handler_fn(self::handlers::pic_timer_handler);
 
