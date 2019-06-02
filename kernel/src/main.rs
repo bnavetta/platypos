@@ -88,6 +88,7 @@ pub fn init_core(boot_info: &'static BootInfo) {
     });
 
     gdt::init();
+    timer::init();
     timer::pit::init();
     interrupts::init();
     memory::initialize_allocator();
@@ -140,9 +141,13 @@ fn main(boot_info: &'static BootInfo) -> ! {
     }
     println!("v = {:?}", v);
 
-    println!("Before sleep");
+    let wall_clock = timer::real_time_timer();
+    let start = wall_clock.current_timestamp();
+    println!("Before sleep: timestamp = {:?}", start);
     sleep(Duration::from_secs(10));
-    println!("After sleep");
+    let end = wall_clock.current_timestamp();
+    println!("After sleep: timestamp = {:?}", end);
+    println!("Difference is {:?}", end - start);
 
     util::hlt_loop();
 }

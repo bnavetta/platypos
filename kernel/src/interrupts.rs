@@ -6,7 +6,7 @@ use x86_64::{instructions::interrupts as int, structures::idt::InterruptDescript
 
 static IDT: Once<InterruptDescriptorTable> = Once::new();
 
-mod apic;
+pub mod apic;
 mod handlers;
 mod pic;
 
