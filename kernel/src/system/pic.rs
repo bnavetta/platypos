@@ -15,16 +15,19 @@ pub fn notify_end_of_interrupt(interrupt: u8) {
     }
 }
 
-pub unsafe fn initialize_pic() {
+/// Initialize the chained 8259 PICs, remapping their IRQs.
+pub fn init() {
     PICS.call_once(|| {
-        let mut pics = ChainedPics::new(PIC_1_OFFSET, PIC_2_OFFSET);
-        pics.initialize();
-        Mutex::new(pics)
+        Mutex::new(unsafe {
+            let mut pics = ChainedPics::new(PIC_1_OFFSET, PIC_2_OFFSET);
+            pics.initialize();
+            pics
+        })
     });
 }
 
 /// Disable the 8259 PIC
-pub fn disable_pic() {
+pub fn disable() {
     // https://wiki.osdev.org/8259_PIC#Disabling
 
     let mut pic1: Port<u8> = Port::new(0xA1);

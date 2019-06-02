@@ -26,16 +26,16 @@ use spin::{Mutex, Once};
 use serial_logger;
 
 use crate::memory::{frame::FrameAllocator, page_table::PageTableState, KernelAllocator};
-use crate::timer::sleep;
+use crate::time::sleep;
 use core::time::Duration;
 
-mod gdt;
+mod system;
 mod interrupts;
 mod memory;
 mod panic;
 mod qemu;
 mod terminal;
-mod timer;
+mod time;
 mod util;
 
 #[cfg(test)]
@@ -67,6 +67,7 @@ impl KernelState {
 
 static KERNEL_STATE: Once<KernelState> = Once::new();
 
+/// Primary initialization of kernel subsystems
 pub fn init_core(boot_info: &'static BootInfo) {
     // Order is important
     // 1. Initialize the serial logger so other subsystems can print messages while initializing
@@ -87,11 +88,13 @@ pub fn init_core(boot_info: &'static BootInfo) {
         page_table_state: Mutex::new(PageTableState::initialize(boot_info)),
     });
 
-    gdt::init();
-    timer::init();
-    timer::pit::init();
-    interrupts::init();
+    system::gdt::init();
+    system::pic::init();
+    system::apic::init();
     memory::initialize_allocator();
+    interrupts::init();
+    time::init();
+    system::pic::disable();
 
     info!("Welcome to Platypos!");
 }
@@ -103,25 +106,6 @@ pub fn kernel_state<'a>() -> &'a KernelState {
 #[cfg(not(test))]
 fn main(boot_info: &'static BootInfo) -> ! {
     init_core(boot_info);
-
-    let cpuid = CpuId::new();
-    match cpuid.get_vendor_info() {
-        Some(info) => debug!("CPU: {}", info),
-        None => warn!("CPUID not supported"),
-    }
-
-    if let Some(hypervisor) = cpuid.get_hypervisor_info() {
-        let hypervisor_name = match hypervisor.identify() {
-            Hypervisor::Xen => "Xen",
-            Hypervisor::VMware => "VMware",
-            Hypervisor::HyperV => "HyperV",
-            Hypervisor::KVM => "KVM",
-            Hypervisor::Unknown(_, _, _) => "Unknown",
-        };
-        debug!("Running under {}", hypervisor_name);
-    } else {
-        debug!("Not running in a hypervisor");
-    }
 
     info!("Physical Memory Map:");
     for region in boot_info.memory_map.iter() {
@@ -141,13 +125,9 @@ fn main(boot_info: &'static BootInfo) -> ! {
     }
     println!("v = {:?}", v);
 
-    let wall_clock = timer::real_time_timer();
-    let start = wall_clock.current_timestamp();
-    println!("Before sleep: timestamp = {:?}", start);
+    println!("Before sleep");
     sleep(Duration::from_secs(10));
-    let end = wall_clock.current_timestamp();
-    println!("After sleep: timestamp = {:?}", end);
-    println!("Difference is {:?}", end - start);
+    println!("After sleep");
 
     util::hlt_loop();
 }

@@ -6,16 +6,23 @@ use x86_64::{
     VirtAddr,
 };
 
-use super::Interrupt;
 use core::{cmp::max, time::Duration};
+
+use crate::interrupts::Interrupt;
 
 static APIC: Once<Apic> = Once::new();
 
+/// Execute a closure with the local APIC associated with the current processor.
+///
+/// # Panics
+/// * If in a nested call to `with_local_apic`
+/// * If the local APIC has not yet been initialized.
 pub fn with_local_apic<F, T>(f: F) -> T where F: FnOnce(&mut dyn LocalApic) -> T {
     APIC.wait().expect("APIC not initialized").with_local_apic(f)
 }
 
-pub fn configure_local_apic() {
+/// Initialize the APIC. This should only be called once, on the bootstrap processor.
+pub fn init() {
     let kernel_state = crate::kernel_state();
 
     let apic = APIC.call_once(|| {
@@ -56,7 +63,7 @@ pub fn configure_local_apic() {
 }
 
 pub fn configure_apic_timer(frequency: u32) {
-    use crate::timer::pit::pit_sleep;
+    use crate::time::pit::pit_sleep;
 
     with_local_apic(|lapic| {
         lapic.set_timer_divide_configuration(DivideConfiguration::Divide16);

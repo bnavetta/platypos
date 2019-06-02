@@ -5,8 +5,7 @@ use x86_64::{
 };
 
 use crate::interrupts::Interrupt;
-
-use super::{apic::with_local_apic, pic};
+use crate::system::{apic, pic};
 
 pub extern "x86-interrupt" fn general_protection_fault_handler(
     stack_frame: &mut InterruptStackFrame,
@@ -55,14 +54,14 @@ pub extern "x86-interrupt" fn pic_spurious_interrupt_handler(
 }
 
 pub extern "x86-interrupt" fn pic_timer_handler(_stack_frame: &mut InterruptStackFrame) {
-    crate::timer::pit::pit_timer_callback();
+    crate::time::pit::pit_timer_callback();
     pic::notify_end_of_interrupt(Interrupt::PicTimer.as_u8());
 }
 
 pub extern "x86-interrupt" fn apic_timer_handler(_stack_frame: &mut InterruptStackFrame) {
-    crate::timer::apic::apic_timer_callback();
+    crate::time::apic::apic_timer_callback();
 
-    with_local_apic(|lapic| lapic.end_of_interrupt());
+    apic::with_local_apic(|lapic| lapic.end_of_interrupt());
 }
 
 pub extern "x86-interrupt" fn apic_spurious_interrupt_handler(

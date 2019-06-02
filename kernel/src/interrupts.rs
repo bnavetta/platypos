@@ -4,11 +4,11 @@ use log::info;
 use spin::Once;
 use x86_64::{instructions::interrupts as int, structures::idt::InterruptDescriptorTable};
 
+use crate::system::gdt::FAULT_IST_INDEX;
+
 static IDT: Once<InterruptDescriptorTable> = Once::new();
 
-pub mod apic;
 mod handlers;
-mod pic;
 
 #[repr(u8)]
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -42,12 +42,12 @@ pub fn init() {
         unsafe {
             idt.double_fault
                 .set_handler_fn(self::handlers::double_fault_handler)
-                .set_stack_index(crate::gdt::FAULT_IST_INDEX);
+                .set_stack_index(FAULT_IST_INDEX);
         }
         unsafe {
             idt.page_fault
                 .set_handler_fn(self::handlers::page_fault_handler)
-                .set_stack_index(crate::gdt::FAULT_IST_INDEX);
+                .set_stack_index(FAULT_IST_INDEX);
         }
 
         // Maybe reusing the handlers isn't the best idea?
@@ -67,24 +67,8 @@ pub fn init() {
 
     idt.load();
 
-    // There are a couple order-dependent steps:
-    // 1. Configure the PIC and LAPIC
-    // 2. Enable interrupts (so we get interrupts from the PIT)
-    // 3. Configure the LAPIC timer using the PIT
-    // 4. Disable the PIC now that we don't need it anymore
-
-    unsafe {
-        pic::initialize_pic();
-    }
-
-    apic::configure_local_apic();
-
     info!("Enabling interrupts");
     int::enable();
-
-    apic::configure_apic_timer(crate::timer::apic::TIMER_FREQUENCY_HZ as u32);
-    pic::disable_pic();
-    crate::timer::set_source(crate::timer::TimerSource::LocalApicTimer);
 }
 
 #[cfg(test)]

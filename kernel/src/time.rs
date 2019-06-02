@@ -44,6 +44,10 @@ pub fn init() {
         debug!("Using invariant TSC as real-time timer");
         REAL_TIME_TIMER.call_once(|| Box::new(tsc::Tsc::new()));
     }
+
+    self::pit::init();
+    crate::system::apic::configure_apic_timer(crate::time::apic::TIMER_FREQUENCY_HZ as u32);
+    set_source(crate::time::TimerSource::LocalApicTimer);
 }
 
 pub fn real_time_timer() -> &'static dyn RealTimeTimer {
