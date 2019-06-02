@@ -3,11 +3,14 @@ use core::mem;
 use bit_field::BitField;
 use x86_64::PhysAddr;
 
-use super::{ApicImplementation, IA32_APIC_BASE_MSR};
+use super::{LocalApic, IA32_APIC_BASE_MSR};
 use crate::spurious_interrupt::SpuriousInterruptVectorRegister;
 use crate::timer::{DivideConfiguration, TimerVectorTable};
 
+/// Zeroed-out local vector table, except for the mask bit
 const MASKED_LVT_VALUE: u32 = 0x00010000;
+/// Local vector table to deliver as a NMI, used for the performance monitoring interrupt
+const NMI_LVD_VALUE: u64 = 0x400;
 
 #[repr(usize)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -20,7 +23,6 @@ enum LocalApicRegister {
     ErrorStatus = 0x280,
 
     // LVTs for interrupts
-    CorrectedMachineCheckInterruptTable = 0x2F0,
     TimerTable = 0x320,
     ThermalMonitorTable = 0x330,
     PerformanceCounterTable = 0x340,
@@ -88,25 +90,23 @@ impl XApic {
     }
 }
 
-impl ApicImplementation for XApic {
-    fn local_apic_id(&mut self) -> u32 {
+impl LocalApic for XApic {
+    fn id(&mut self) -> u32 {
         self.read(LocalApicRegister::LocalApicID).get_bits(24..32)
     }
 
-    fn local_apic_version(&mut self) -> u8 {
+    fn version(&mut self) -> u8 {
         (self.read(LocalApicRegister::LocalApicVersion) & 0xFF) as u8
     }
 
     fn mask_all_interrupts(&mut self) {
         unsafe {
-            self.write(LocalApicRegister::CorrectedMachineCheckInterruptTable, MASKED_LVT_VALUE);
             self.write(LocalApicRegister::TimerTable, MASKED_LVT_VALUE);
             self.write(LocalApicRegister::ThermalMonitorTable, MASKED_LVT_VALUE);
             self.write(LocalApicRegister::PerformanceCounterTable, MASKED_LVT_VALUE);
             self.write(LocalApicRegister::LINT0Table, MASKED_LVT_VALUE);
             self.write(LocalApicRegister::LINT1Table, MASKED_LVT_VALUE);
             self.write(LocalApicRegister::ErrorTable, MASKED_LVT_VALUE);
-
         }
     }
 

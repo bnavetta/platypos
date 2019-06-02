@@ -21,7 +21,10 @@ impl Tsc {
     pub fn is_supported() -> bool {
         let cpuid = CpuId::new();
 
-        let has_tsc = cpuid.get_feature_info().map(|f| f.has_tsc()).unwrap_or(false);
+        let has_tsc = cpuid
+            .get_feature_info()
+            .map(|f| f.has_tsc())
+            .unwrap_or(false);
         if !has_tsc {
             warn!("TSC is not supported");
             return false;
@@ -49,11 +52,12 @@ impl Tsc {
     /// TODO: I _think_ that all cores start at 0 at the same time (on reset), so we don't need a per-core adjustment/synchronization
     pub fn new() -> Tsc {
         let cpuid = CpuId::new();
-        let frequency = cpuid.get_tsc_info().expect("EAX_TIME_STAMP_COUNTER_INFO leaf not supported").tsc_frequency();
+        let frequency = cpuid
+            .get_tsc_info()
+            .expect("EAX_TIME_STAMP_COUNTER_INFO leaf not supported")
+            .tsc_frequency();
 
-        Tsc {
-            frequency
-        }
+        Tsc { frequency }
     }
 
     /// Get the current TSC value

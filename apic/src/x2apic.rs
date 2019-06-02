@@ -3,7 +3,7 @@ use core::mem;
 use raw_cpuid::CpuId;
 use x86_64::registers::model_specific::Msr;
 
-use super::ApicImplementation;
+use super::LocalApic;
 use crate::spurious_interrupt::SpuriousInterruptVectorRegister;
 use crate::timer::{DivideConfiguration, TimerVectorTable};
 
@@ -12,7 +12,6 @@ const LAPIC_VERSION_MSR: Msr = Msr::new(0x803);
 const EOI_MSR: Msr = Msr::new(0x80B);
 const SPURIOUS_INTERRUPT_VECTOR_REGISTER_MSR: Msr = Msr::new(0x80F);
 
-const CMCI_LVT_MSR: Msr = Msr::new(0x82f);
 const TIMER_LVT_MSR: Msr = Msr::new(0x832);
 const THERMAL_SENSOR_LVT_MSR: Msr = Msr::new(0x833);
 const PERFORMANCE_MONITORING_LVT_MSR: Msr = Msr::new(0x834);
@@ -26,6 +25,8 @@ const TIMER_DIVIDE_CONFIGURATION_MSR: Msr = Msr::new(0x83E);
 
 /// Zeroed-out local vector table, except for the mask bit
 const MASKED_LVT_VALUE: u64 = 0x00010000;
+/// Local vector table to deliver as a NMI, used for the performance monitoring interrupt
+const NMI_LVD_VALUE: u64 = 0x400;
 
 /// Local APIC driver based on the x2 APIC specification
 pub struct X2Apic {}
@@ -51,12 +52,12 @@ impl X2Apic {
     }
 }
 
-impl ApicImplementation for X2Apic {
-    fn local_apic_id(&mut self) -> u32 {
+impl LocalApic for X2Apic {
+    fn id(&mut self) -> u32 {
         unsafe { LAPIC_ID_MSR.read() as u32 }
     }
 
-    fn local_apic_version(&mut self) -> u8 {
+    fn version(&mut self) -> u8 {
         unsafe { LAPIC_VERSION_MSR.read() as u8 }
     }
 
@@ -66,8 +67,6 @@ impl ApicImplementation for X2Apic {
 
         unsafe {
             self.set_timer_vector_table(timer_table);
-
-            CMCI_LVT_MSR.write(MASKED_LVT_VALUE);
             THERMAL_SENSOR_LVT_MSR.write(MASKED_LVT_VALUE);
             PERFORMANCE_MONITORING_LVT_MSR.write(MASKED_LVT_VALUE);
             LINT0_LVT_MSR.write(MASKED_LVT_VALUE);

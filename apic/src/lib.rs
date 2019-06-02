@@ -1,12 +1,13 @@
 #![no_std]
 
-#[macro_use] extern crate alloc;
+#[macro_use]
+extern crate alloc;
 
-use core::ptr;
 use alloc::vec::Vec;
+use core::ptr;
 
-use bit_field::{BitField, BitArray};
-use log::debug;
+use bit_field::{BitArray, BitField};
+use log::{debug, trace};
 use raw_cpuid::CpuId;
 use spin::Mutex;
 use x86_64::instructions::interrupts::without_interrupts;
@@ -19,7 +20,7 @@ mod x2apic;
 mod xapic;
 
 pub use crate::spurious_interrupt::SpuriousInterruptVectorRegister;
-pub use crate::timer::{DivideConfiguration, TimerVectorTable, TimerMode};
+pub use crate::timer::{DivideConfiguration, TimerMode, TimerVectorTable};
 use crate::x2apic::X2Apic;
 use crate::xapic::XApic;
 
@@ -28,6 +29,7 @@ use crate::xapic::XApic;
 const IA32_APIC_BASE_MSR: Msr = Msr::new(0x1B);
 
 /// Enumeration of APIC operating modes.
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum ApicMode {
     XApic,
     X2Apic,
@@ -59,6 +61,7 @@ impl Apic {
     /// Hardware-enable the local APIC. Note that on some older architectures, the local APIC cannot
     /// be reenabled if it is hardware-disabled.
     pub unsafe fn hardware_enable() {
+        trace!("Hardware-enabling the APIC");
         let mut base_msr = IA32_APIC_BASE_MSR.read();
         base_msr.set_bit(11, true);
         IA32_APIC_BASE_MSR.write(base_msr);
@@ -88,6 +91,7 @@ impl Apic {
             ApicMode::X2Apic => base_msr.set_bit(10, true),
         };
 
+        trace!("Switching APIC to {:?} mode", mode);
         IA32_APIC_BASE_MSR.write(base_msr);
     }
 
@@ -115,14 +119,17 @@ impl Apic {
     {
         assert!(Apic::is_supported());
 
-        let in_use = Mutex::new(vec![0u64; (max_apic_id + u64::BIT_LENGTH) / u64::BIT_LENGTH]);
+        let in_use = Mutex::new(vec![
+            0u64;
+            (max_apic_id + u64::BIT_LENGTH) / u64::BIT_LENGTH
+        ]);
 
         if X2Apic::is_supported() {
             debug!("Using x2APIC");
             Apic {
                 use_x2apic: true,
                 mmio_base: ptr::null_mut(),
-                in_use
+                in_use,
             }
         } else {
             // LAPIC base is page-aligned, and the MSR doesn't just contain the address
@@ -136,7 +143,7 @@ impl Apic {
             Apic {
                 use_x2apic: false,
                 mmio_base: mapped_base,
-                in_use
+                in_use,
             }
         }
     }
@@ -145,34 +152,48 @@ impl Apic {
     /// being used, put it in a well-known state with all local interrupts masked, and enable it.
     pub unsafe fn init(&self, spurious_interrupt_vector: u8) {
         Apic::hardware_enable(); // I _think_ this has to be done first?
-        // Need to be in the right mode to actually configure
+                                 // Need to be in the right mode to actually configure
         if self.use_x2apic {
             Apic::set_operating_mode(ApicMode::X2Apic);
         } else {
             Apic::set_operating_mode(ApicMode::XApic);
         }
 
-        let mut lapic = self.local_apic();
-
-        lapic.mask_all_interrupts();
-        lapic.set_spurious_vector(spurious_interrupt_vector);
-        lapic.software_enable();
+        self.with_local_apic(|lapic| {
+            trace!("Masking all local APIC interrupts");
+            lapic.mask_all_interrupts();
+            lapic.set_spurious_vector(spurious_interrupt_vector);
+            trace!("Software-enabling local APIC");
+            lapic.software_enable();
+        });
     }
 
-    pub fn local_apic(&self) -> LocalApic {
-        let wrapper = if self.use_x2apic {
-            ApicWrapper::X2Apic(X2Apic::new())
-        } else {
-            ApicWrapper::XApic(unsafe { XApic::new(self.mmio_base) })
-        };
+    /// Execute a closure with the current processor's local APIC.
+    ///
+    /// # Panics
+    /// If this function is called recursively. There can be only one reference to the local APIC
+    /// at a time.
+    pub fn with_local_apic<F, T>(&self, f: F) -> T where F: FnOnce(&mut dyn LocalApic) -> T {
+        without_interrupts(|| {
+            let local_apic_id = if self.use_x2apic {
+                X2Apic::new().id()
+            } else {
+                unsafe { XApic::new(self.mmio_base) }.id()
+            };
 
-        let mut local_apic = LocalApic { parent: self, inner: wrapper };
+            assert!(!self.is_local_apic_used(local_apic_id), "Local APIC for processor {} already in use", local_apic_id);
 
-        let local_apic_id = local_apic.id();
-        assert!(!self.is_local_apic_used(local_apic_id));
-        self.mark_local_apic_used(local_apic_id, true);
-
-        local_apic
+            self.mark_local_apic_used(local_apic_id, true);
+            let ret = if self.use_x2apic {
+                let mut local_apic = X2Apic::new();
+                f(&mut local_apic)
+            } else {
+                let mut local_apic = unsafe { XApic::new(self.mmio_base) };
+                f(&mut local_apic)
+            };
+            self.mark_local_apic_used(local_apic_id, false);
+            ret
+        })
     }
 
     fn mark_local_apic_used(&self, apic_id: u32, used: bool) {
@@ -193,150 +214,16 @@ impl Apic {
 unsafe impl core::marker::Sync for Apic {}
 unsafe impl core::marker::Send for Apic {}
 
-/// Holds the local APIC implementation
-enum ApicWrapper {
-    XApic(XApic),
-    X2Apic(X2Apic)
-}
-
-/// A handle to the local APIC corresponding to the current processor. On each processor, there can
-/// be only one reference to the local APIC at a time. When this handle is dropped, then the local
-/// APIC is made available again.
-pub struct LocalApic<'a> {
-    parent: &'a Apic,
-    inner: ApicWrapper,
-}
-
-// doesn't implement ApicImplementation, this lets us control which parts are exposed
-impl <'a> LocalApic <'a> {
-    /// Returns the local APIC's ID. The APIC ID is only 32 bits in x2APIC mode. In xAPIC mode, only
-    /// the lower 8 bits are used.
-    pub fn id(&mut self) -> u32 {
-        match self.inner {
-            ApicWrapper::XApic(ref mut apic) => apic.local_apic_id(),
-            ApicWrapper::X2Apic(ref mut apic) => apic.local_apic_id()
-        }
-    }
-
-    /// Returns the local APIC version. This is 8 bits in both x2APIC mode and xAPIC mode.
-    pub fn version(&mut self) -> u8 {
-        match self.inner {
-            ApicWrapper::XApic(ref mut apic) => apic.local_apic_version(),
-            ApicWrapper::X2Apic(ref mut apic) => apic.local_apic_version(),
-        }
-    }
-
-    /// Signal that an interrupt has been processed
-    pub fn end_of_interrupt(&mut self) {
-        match self.inner {
-            ApicWrapper::XApic(ref mut apic) => apic.end_of_interrupt(),
-            ApicWrapper::X2Apic(ref mut apic) => apic.end_of_interrupt(),
-        }
-    }
-
-    /// Get the initial count for the local APIC timer.
-    pub fn timer_initial_count(&mut self) -> u32 {
-        match self.inner {
-            ApicWrapper::XApic(ref mut apic) => apic.timer_initial_count(),
-            ApicWrapper::X2Apic(ref mut apic) => apic.timer_initial_count(),
-        }
-    }
-
-    /// Set the initial count for the local APIC timer.
-    pub fn set_timer_initial_count(&mut self, count: u32) {
-        match self.inner {
-            ApicWrapper::XApic(ref mut apic) => apic.set_timer_initial_count(count),
-            ApicWrapper::X2Apic(ref mut apic) => apic.set_timer_initial_count(count),
-        }
-    }
-
-    /// Get the timer's current count
-    pub fn timer_current_count(&mut self) -> u32 {
-        match self.inner {
-            ApicWrapper::XApic(ref mut apic) => apic.timer_current_count(),
-            ApicWrapper::X2Apic(ref mut apic) => apic.timer_current_count(),
-        }
-    }
-
-    /// Get the local vector table for the APIC timer. This table determines how APIC timer
-    /// interrupts are delivered.
-    pub fn timer_vector_table(&mut self) -> TimerVectorTable {
-        match self.inner {
-            ApicWrapper::XApic(ref mut apic) => apic.timer_vector_table(),
-            ApicWrapper::X2Apic(ref mut apic) => apic.timer_vector_table(),
-        }
-    }
-
-    /// Set the local vector table for the APIC timer.
-    ///
-    /// # Unsafety
-    /// This can unmask timer interrupts and change the vector they're delivered on. If the timer
-    /// interrupt handler is not properly configured, interrupts can cause CPU exceptions.
-    pub unsafe fn set_timer_vector_table(&mut self, table: TimerVectorTable) {
-        match self.inner {
-            ApicWrapper::XApic(ref mut apic) => apic.set_timer_vector_table(table),
-            ApicWrapper::X2Apic(ref mut apic) => apic.set_timer_vector_table(table),
-        }
-    }
-
-    /// Get the divide configuration for the APIC timer. The APIC timer frequency is the processor
-    /// bus clock or core crystal clock frequency divided by this value. See section 10.5.4 of
-    /// volume 3A of the Intel manual
-    pub fn timer_divide_configuration(&mut self) -> DivideConfiguration {
-        match self.inner {
-            ApicWrapper::XApic(ref mut apic) => apic.timer_divide_configuration(),
-            ApicWrapper::X2Apic(ref mut apic) => apic.timer_divide_configuration(),
-        }
-    }
-
-    /// Set the divide configuration for the APIC timer.
-    pub fn set_timer_divide_configuration(&mut self, configuration: DivideConfiguration) {
-        match self.inner {
-            ApicWrapper::XApic(ref mut apic) => apic.set_timer_divide_configuration(configuration),
-            ApicWrapper::X2Apic(ref mut apic) => apic.set_timer_divide_configuration(configuration),
-        }
-    }
-
-    unsafe fn set_spurious_vector(&mut self, vector: u8) {
-        match self.inner {
-            ApicWrapper::XApic(ref mut apic) => apic.set_spurious_vector(vector),
-            ApicWrapper::X2Apic(ref mut apic) => apic.set_spurious_vector(vector),
-        }
-    }
-
-    unsafe fn software_enable(&mut self) {
-        match self.inner {
-            ApicWrapper::XApic(ref mut apic) => apic.software_enable(),
-            ApicWrapper::X2Apic(ref mut apic) => apic.software_enable(),
-        }
-    }
-
-    fn mask_all_interrupts(&mut self) {
-        match self.inner {
-            ApicWrapper::XApic(ref mut apic) => apic.mask_all_interrupts(),
-            ApicWrapper::X2Apic(ref mut apic) => apic.mask_all_interrupts(),
-        }
-    }
-}
-
-impl <'a> Drop for LocalApic<'a> {
-    fn drop(&mut self) {
-        let apic_id = self.id();
-        debug_assert!(self.parent.is_local_apic_used(apic_id));
-        self.parent.mark_local_apic_used(apic_id, false);
-    }
-}
-
 /// Abstraction for different APIC operating modes. Both the xAPIC and x2APIC support most of the
 /// same registers, but they're accessed in different ways. This trait hides those implementation
 /// details.
-trait ApicImplementation {
+pub trait LocalApic {
     /// Returns the local APIC's ID. The APIC ID is only 32 bits in x2APIC mode. In xAPIC mode, only
     /// the lower 8 bits are used.
-    fn local_apic_id(&mut self) -> u32;
+    fn id(&mut self) -> u32;
 
     /// Returns the local APIC version. This is 8 bits in both x2APIC mode and xAPIC mode.
-    fn local_apic_version(&mut self) -> u8;
+    fn version(&mut self) -> u8;
 
     /// Mask all interrupts which the local APIC can deliver. This is used to put the APIC in a
     /// well-known state upon initialization.

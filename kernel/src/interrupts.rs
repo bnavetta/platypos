@@ -37,6 +37,8 @@ pub fn init() {
         let mut idt = InterruptDescriptorTable::new();
         idt.breakpoint
             .set_handler_fn(self::handlers::breakpoint_handler);
+        idt.general_protection_fault
+            .set_handler_fn(self::handlers::general_protection_fault_handler);
         unsafe {
             idt.double_fault
                 .set_handler_fn(self::handlers::double_fault_handler)

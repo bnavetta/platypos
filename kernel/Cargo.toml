@@ -47,6 +47,6 @@ default-features = false
 [package.metadata.bootimage]
 default-target = "x86_64-os.json"
 #run-args = ["-accel", "hvf", "-cpu", "host,migratable=no", "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04", "-serial", "mon:stdio"]
-run-args = ["-cpu", "max,migratable=no", "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04", "-serial", "mon:stdio"]
+run-args = ["-machine", "accel=kvm", "-cpu", "host,migratable=no", "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04", "-serial", "mon:stdio"]
 test-args = ["-device", "isa-debug-exit,iobase=0xf4,iosize=0x04", "-serial", "mon:stdio"]
 test-success-exit-code = 33         # (0x10 << 1) | 1

@@ -47,7 +47,9 @@ pub fn init() {
 }
 
 pub fn real_time_timer() -> &'static dyn RealTimeTimer {
-    &**REAL_TIME_TIMER.wait().expect("Real-time timer not configured")
+    &**REAL_TIME_TIMER
+        .wait()
+        .expect("Real-time timer not configured")
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]

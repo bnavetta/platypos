@@ -6,7 +6,17 @@ use x86_64::{
 
 use crate::interrupts::Interrupt;
 
-use super::{apic::local_apic, pic};
+use super::{apic::with_local_apic, pic};
+
+pub extern "x86-interrupt" fn general_protection_fault_handler(
+    stack_frame: &mut InterruptStackFrame,
+    error_code: u64,
+) {
+    panic!(
+        "General protection fault at {:?} (segment selector index {})",
+        stack_frame.instruction_pointer, error_code
+    );
+}
 
 pub extern "x86-interrupt" fn breakpoint_handler(stack_frame: &mut InterruptStackFrame) {
     warn!(
@@ -52,8 +62,7 @@ pub extern "x86-interrupt" fn pic_timer_handler(_stack_frame: &mut InterruptStac
 pub extern "x86-interrupt" fn apic_timer_handler(_stack_frame: &mut InterruptStackFrame) {
     crate::timer::apic::apic_timer_callback();
 
-    let mut lapic = local_apic();
-    lapic.end_of_interrupt();
+    with_local_apic(|lapic| lapic.end_of_interrupt());
 }
 
 pub extern "x86-interrupt" fn apic_spurious_interrupt_handler(

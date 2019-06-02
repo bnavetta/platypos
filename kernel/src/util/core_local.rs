@@ -5,5 +5,4 @@ use hashbrown::HashMap;
 
 pub struct CoreLocal<T> {
     init: Box<Fn() -> T>,
-
 }
