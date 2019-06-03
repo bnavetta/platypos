@@ -59,8 +59,6 @@ pub extern "x86-interrupt" fn pic_timer_handler(_stack_frame: &mut InterruptStac
 }
 
 pub extern "x86-interrupt" fn apic_timer_handler(_stack_frame: &mut InterruptStackFrame) {
-    crate::time::apic::apic_timer_callback();
-
     apic::with_local_apic(|lapic| lapic.end_of_interrupt());
 }
 

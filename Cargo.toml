@@ -3,7 +3,7 @@ members = [
 	"kernel",
 	"apic",
 	"kutil",
-	"serial_logger"
+	"serial_logger",
 ]
 
 [profile.dev]

@@ -1,14 +1,11 @@
 use log::info;
 use spin::Once;
-use x86_64::{
-    instructions::{segmentation::set_cs, tables::load_tss},
-    structures::{
-        gdt::{Descriptor, GlobalDescriptorTable, SegmentSelector},
-        paging::{mapper::Mapper, Page, PageTableFlags, PhysFrame, Size4KiB},
-        tss::TaskStateSegment,
-    },
-    VirtAddr,
-};
+use x86_64::instructions::segmentation::set_cs;
+use x86_64::instructions::tables::load_tss;
+use x86_64::structures::gdt::{GlobalDescriptorTable, Descriptor, SegmentSelector};
+use x86_64::structures::tss::TaskStateSegment;
+use x86_64::structures::paging::{Mapper, PageTableFlags, Page, PhysFrame, Size4KiB};
+use x86_64::VirtAddr;
 
 struct GdtAndSelectors {
     gdt: GlobalDescriptorTable,
@@ -50,13 +47,17 @@ pub fn init() {
                     .expect("Fault stack not page aligned");
 
             unsafe {
-                let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE;
                 let mut mapper = pt.active_4kib_mapper();
                 let mut allocator = kernel_state.frame_allocator().page_table_allocator();
 
                 for i in 0..FAULT_STACK_FRAMES {
                     mapper
-                        .map_to(first_page + i, first_frame + i, flags, &mut allocator)
+                        .map_to(
+                            first_page + i,
+                            first_frame + i,
+                            PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
+                            &mut allocator,
+                        )
                         .expect("Unable to map fault stack")
                         .flush();
                 }

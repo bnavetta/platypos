@@ -4,7 +4,7 @@ use core::time::Duration;
 use log::warn;
 use raw_cpuid::CpuId;
 
-use super::RealTimeTimer;
+use super::WallClockTimer;
 
 /// Time Stamp Counter driver. The TSC is a 64-bit register that counts the number of cycles since
 /// reset. It has a somewhat troubled history, but on recent processors, the fixed rate is pretty
@@ -12,6 +12,7 @@ use super::RealTimeTimer;
 ///
 /// See [Wikipedia](https://en.wikipedia.org/wiki/Time_Stamp_Counter)
 pub struct Tsc {
+    use_rdtscp: bool,
     frequency: u64,
 }
 
@@ -21,30 +22,22 @@ impl Tsc {
     pub fn is_supported() -> bool {
         let cpuid = CpuId::new();
 
-        let has_tsc = cpuid
+        cpuid
             .get_feature_info()
             .map(|f| f.has_tsc())
-            .unwrap_or(false);
-        if !has_tsc {
-            warn!("TSC is not supported");
-            return false;
-        }
+            .unwrap_or(false)
+    }
 
-        if let Some(function_info) = cpuid.get_extended_function_info() {
-            if !function_info.has_rdtscp() {
-                warn!("rdtscp instruction is not supported");
-                return false;
-            }
+    /// Check if the TSC is invariant. An invariant TSC runs at a constant rate in ACPI P-, C-, and
+    /// T- states. See section 17.17.1 of the Intel manual.
+    pub fn is_invariant() -> bool {
+        // TODO: invariant TSC seems like something separate from being constant-rate, maybe we don't care as much about it?
+        let cpuid = CpuId::new();
 
-            if !function_info.has_invariant_tsc() {
-                warn!("Invariant TSC is not supported");
-                return false;
-            }
-
-            return true;
-        } else {
-            return false;
-        }
+        cpuid
+            .get_extended_function_info()
+            .map(|f| f.has_invariant_tsc())
+            .unwrap_or(false)
     }
 
     /// Create a new Tsc instance.
@@ -57,20 +50,46 @@ impl Tsc {
             .expect("EAX_TIME_STAMP_COUNTER_INFO leaf not supported")
             .tsc_frequency();
 
-        Tsc { frequency }
+        let use_rdtscp = cpuid
+            .get_extended_function_info()
+            .map(|f| f.has_rdtscp())
+            .unwrap_or(false);
+
+        Tsc {
+            frequency,
+            use_rdtscp,
+        }
     }
 
     /// Get the current TSC value
     fn current_count(&self) -> u64 {
-        let mut aux: u32 = 0;
-        unsafe { __rdtscp(&mut aux) }
+        if self.use_rdtscp {
+            let mut aux: u32 = 0;
+            unsafe { __rdtscp(&mut aux) }
+        } else {
+            // TODO: cpuid to synchronize?
+            unsafe { _rdtsc() }
+        }
     }
 }
 
-impl RealTimeTimer for Tsc {
+pub struct TscTimer {
+    tsc: Tsc, // TODO: make this per-processor
+}
+
+impl TscTimer {
+    pub fn new() -> TscTimer {
+        debug_assert!(Tsc::is_supported());
+        TscTimer {
+            tsc: Tsc::new()
+        }
+    }
+}
+
+impl WallClockTimer for TscTimer {
     fn current_timestamp(&self) -> Duration {
-        let ticks = self.current_count();
+        let ticks = self.tsc.current_count();
         // Multiply ticks by 1e9 to do math in nanoseconds for higher precision
-        Duration::from_nanos(ticks * 1000000000 / self.frequency)
+        Duration::from_nanos(ticks * 1000000000 / self.tsc.frequency)
     }
 }

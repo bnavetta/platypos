@@ -3,7 +3,7 @@ use serial_logger;
 use bootloader::{entry_point, BootInfo};
 use log::info;
 
-use crate::qemu;
+use crate::util::qemu;
 
 fn test_kernel_main(boot_info: &'static BootInfo) -> ! {
     super::init_core(boot_info);

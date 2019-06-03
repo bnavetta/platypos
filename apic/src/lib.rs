@@ -173,7 +173,10 @@ impl Apic {
     /// # Panics
     /// If this function is called recursively. There can be only one reference to the local APIC
     /// at a time.
-    pub fn with_local_apic<F, T>(&self, f: F) -> T where F: FnOnce(&mut dyn LocalApic) -> T {
+    pub fn with_local_apic<F, T>(&self, f: F) -> T
+    where
+        F: FnOnce(&mut dyn LocalApic) -> T,
+    {
         without_interrupts(|| {
             let local_apic_id = if self.use_x2apic {
                 X2Apic::new().id()
@@ -181,7 +184,11 @@ impl Apic {
                 unsafe { XApic::new(self.mmio_base) }.id()
             };
 
-            assert!(!self.is_local_apic_used(local_apic_id), "Local APIC for processor {} already in use", local_apic_id);
+            assert!(
+                !self.is_local_apic_used(local_apic_id),
+                "Local APIC for processor {} already in use",
+                local_apic_id
+            );
 
             self.mark_local_apic_used(local_apic_id, true);
             let ret = if self.use_x2apic {

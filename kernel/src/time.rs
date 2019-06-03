@@ -1,62 +1,55 @@
 use alloc::boxed::Box;
 use core::time::Duration;
-use log::debug;
 
+use log::debug;
 use spin::Once;
 
-pub mod apic;
 pub mod pit;
 mod tsc;
+pub mod hpet;
 
 // See https://forum.osdev.org/viewtopic.php?f=1&t=29461&start=0 for a discussion of different
 // timer sources.
 
-/// A timer usable for scheduler preemption. Ideally, it is inherently interrupt-driven and
-/// processor-local. The timer guarantees that it will generate a preemption event at the configured
-/// time slice duration, independently on each processor. This trait does not specify what happens
-/// on a preemption event because it is expected that implementations will be configured with a
-/// callback on initialization.
-trait SchedulerTimer {
-    /// Configure the time slice for clock interrupts (preemption events).
-    fn set_time_slice(&mut self, time_slice: Duration);
-}
-
-/// Timer for keeping track of "real time" since startup.
-trait RealTimeTimer {
-    /// Returns the amount of real, or wall-clock, time that has elapsed since this timer was
-    /// created.
+/// Timer for keeping track of elapsed time since startup.
+trait WallClockTimer: Send + Sync {
+    /// Returns the amount of real, or wall-clock, time that has elapsed since system startup.
     fn current_timestamp(&self) -> Duration;
 }
 
 /// Timer for delays/sleeps.
-/// TODO: this should integrate with the scheduler instead of blocking the current processor
 trait SleepTimer {
-    /// Block for the specified duration.
+    /// Block for the specified duration without yielding to the scheduler.
+    fn delay(&self, duration: Duration);
+
+    /// Block for the specified duration. This may use the scheduler to yield, depending on the
+    /// implementation.
     fn sleep(&self, duration: Duration);
 }
 
-struct TimerSources {
-    real_time: &'static dyn RealTimeTimer,
-    sleep: &'static dyn SleepTimer,
-    scheduler: &'static dyn SchedulerTimer,
-}
-
-static TIMER_SOURCES: Once<TimerSources> = Once::new();
+static WALL_CLOCK: Once<Box<dyn WallClockTimer>> = Once::new();
 
 pub fn init() {
-    if tsc::Tsc::is_supported() {
-        debug!("Using invariant TSC as real-time timer");
-        REAL_TIME_TIMER.call_once(|| Box::new(tsc::Tsc::new()));
-    }
+    // TODO: have TscTimer keep track of current count. Then, can get time from RTC at init and
+    // add the WallClockTimer duration to that to get an actual timestamp
 
-    self::pit::init();
-    crate::system::apic::configure_apic_timer(crate::time::apic::TIMER_FREQUENCY_HZ as u32);
-    set_source(crate::time::TimerSource::LocalApicTimer);
+//    if tsc::Tsc::is_supported() {
+//        debug!("Using TSC for wall-clock timer");
+//        WALL_CLOCK.call_once(|| Box::new(tsc::TscTimer::new()));
+//    }
+
+    if hpet::is_supported() {
+        WALL_CLOCK.call_once(|| Box::new(hpet::HpetTimer));
+    }
+}
+
+pub fn current_timestamp() -> Duration {
+    WALL_CLOCK.wait().expect("No wall-clock timer configured").current_timestamp()
 }
 
 struct NoOp;
 
-impl RealTimeTimer for NoOp {
+impl WallClockTimer for NoOp {
     fn current_timestamp(&self) -> Duration {
         Duration::new(0, 0)
     }

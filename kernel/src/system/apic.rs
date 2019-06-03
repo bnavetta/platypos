@@ -17,8 +17,13 @@ static APIC: Once<Apic> = Once::new();
 /// # Panics
 /// * If in a nested call to `with_local_apic`
 /// * If the local APIC has not yet been initialized.
-pub fn with_local_apic<F, T>(f: F) -> T where F: FnOnce(&mut dyn LocalApic) -> T {
-    APIC.wait().expect("APIC not initialized").with_local_apic(f)
+pub fn with_local_apic<F, T>(f: F) -> T
+where
+    F: FnOnce(&mut dyn LocalApic) -> T,
+{
+    APIC.wait()
+        .expect("APIC not initialized")
+        .with_local_apic(f)
 }
 
 /// Initialize the APIC. This should only be called once, on the bootstrap processor.

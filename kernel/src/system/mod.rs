@@ -3,5 +3,5 @@
 //! like the APIC, and don't quite belong in any of them.
 
 pub mod apic;
-pub mod pic;
 pub mod gdt;
+pub mod pic;

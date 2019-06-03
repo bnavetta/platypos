@@ -19,23 +19,20 @@ extern crate alloc;
 use alloc::vec::Vec;
 
 use bootloader::{bootinfo::BootInfo, entry_point};
-use log::{debug, info, warn};
-use raw_cpuid::{CpuId, Hypervisor};
+use log::info;
 use spin::{Mutex, Once};
 
 use serial_logger;
 
 use crate::memory::{frame::FrameAllocator, page_table::PageTableState, KernelAllocator};
-use crate::time::sleep;
-use core::time::Duration;
 
-mod system;
 mod interrupts;
 mod memory;
 mod panic;
-mod qemu;
+mod system;
 mod terminal;
 mod time;
+mod topology;
 mod util;
 
 #[cfg(test)]
@@ -92,9 +89,10 @@ pub fn init_core(boot_info: &'static BootInfo) {
     system::pic::init();
     system::apic::init();
     memory::initialize_allocator();
+    topology::acpi::discover();
     interrupts::init();
     time::init();
-    system::pic::disable();
+    system::pic::disable(); // Note: the PIC has to be disabled _after_ the timer system is initialized, since it's used for measuring frequency
 
     info!("Welcome to Platypos!");
 }
@@ -125,9 +123,12 @@ fn main(boot_info: &'static BootInfo) -> ! {
     }
     println!("v = {:?}", v);
 
-    println!("Before sleep");
-    sleep(Duration::from_secs(10));
-    println!("After sleep");
+    let start = time::current_timestamp();
+    for i in v {
+        println!("{}", i);
+    }
+    let end = time::current_timestamp();
+    println!("Took {:?} to run", end - start);
 
     util::hlt_loop();
 }
