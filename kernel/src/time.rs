@@ -2,8 +2,6 @@ use alloc::boxed::Box;
 use core::time::Duration;
 use log::debug;
 
-use crossbeam_utils::atomic::AtomicCell;
-use lazy_static::lazy_static;
 use spin::Once;
 
 pub mod apic;
@@ -24,7 +22,7 @@ trait SchedulerTimer {
 }
 
 /// Timer for keeping track of "real time" since startup.
-pub trait RealTimeTimer {
+trait RealTimeTimer {
     /// Returns the amount of real, or wall-clock, time that has elapsed since this timer was
     /// created.
     fn current_timestamp(&self) -> Duration;
@@ -37,7 +35,13 @@ trait SleepTimer {
     fn sleep(&self, duration: Duration);
 }
 
-static REAL_TIME_TIMER: Once<Box<dyn RealTimeTimer + Sync + Send>> = Once::new();
+struct TimerSources {
+    real_time: &'static dyn RealTimeTimer,
+    sleep: &'static dyn SleepTimer,
+    scheduler: &'static dyn SchedulerTimer,
+}
+
+static TIMER_SOURCES: Once<TimerSources> = Once::new();
 
 pub fn init() {
     if tsc::Tsc::is_supported() {
@@ -50,30 +54,10 @@ pub fn init() {
     set_source(crate::time::TimerSource::LocalApicTimer);
 }
 
-pub fn real_time_timer() -> &'static dyn RealTimeTimer {
-    &**REAL_TIME_TIMER
-        .wait()
-        .expect("Real-time timer not configured")
-}
+struct NoOp;
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
-pub enum TimerSource {
-    ProgrammableIntervalTimer,
-    LocalApicTimer,
-}
-
-lazy_static! {
-    static ref SOURCE: AtomicCell<TimerSource> =
-        AtomicCell::new(TimerSource::ProgrammableIntervalTimer);
-}
-
-pub fn sleep(duration: Duration) {
-    match SOURCE.load() {
-        TimerSource::ProgrammableIntervalTimer => pit::pit_sleep(duration),
-        TimerSource::LocalApicTimer => apic::apic_sleep(duration),
+impl RealTimeTimer for NoOp {
+    fn current_timestamp(&self) -> Duration {
+        Duration::new(0, 0)
     }
-}
-
-pub fn set_source(source: TimerSource) {
-    SOURCE.store(source);
 }
