@@ -68,7 +68,7 @@ pub fn init() {
 }
 
 pub fn configure_apic_timer(frequency: u32) {
-    use crate::time::pit::pit_sleep;
+    use crate::time::delay;
 
     with_local_apic(|lapic| {
         lapic.set_timer_divide_configuration(DivideConfiguration::Divide16);
@@ -82,7 +82,7 @@ pub fn configure_apic_timer(frequency: u32) {
 
         lapic.set_timer_initial_count(0xffffffff); // -1
 
-        pit_sleep(Duration::from_millis(1));
+        delay(Duration::from_millis(1));
         let delta = 0xffffffff - lapic.timer_current_count();
 
         // Multiply by 16 because of divider and 1000 because we slept for a millisecond

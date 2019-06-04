@@ -17,17 +17,22 @@ trait WallClockTimer: Send + Sync {
     fn current_timestamp(&self) -> Duration;
 }
 
-/// Timer for delays/sleeps.
+/// Timer for sleeps.
 trait SleepTimer {
-    /// Block for the specified duration without yielding to the scheduler.
-    fn delay(&self, duration: Duration);
-
     /// Block for the specified duration. This may use the scheduler to yield, depending on the
     /// implementation.
     fn sleep(&self, duration: Duration);
 }
 
+/// Timer for delays. The difference between a delay and a sleep is that a delay does not require
+/// interrupts or scheduler support.
+trait DelayTimer: Send + Sync {
+    /// Block for the specified duration without yielding to the scheduler.
+    fn delay(&self, duration: Duration);
+}
+
 static WALL_CLOCK: Once<Box<dyn WallClockTimer>> = Once::new();
+static DELAY: Once<Box<dyn DelayTimer>> = Once::new();
 
 pub fn init() {
     pit::init();
@@ -42,6 +47,7 @@ pub fn init() {
 
     if hpet::is_supported() {
         WALL_CLOCK.call_once(|| Box::new(hpet::HpetTimer));
+        DELAY.call_once(|| Box::new(hpet::HpetTimer));
     }
 }
 
@@ -49,10 +55,6 @@ pub fn current_timestamp() -> Duration {
     WALL_CLOCK.wait().expect("No wall-clock timer configured").current_timestamp()
 }
 
-struct NoOp;
-
-impl WallClockTimer for NoOp {
-    fn current_timestamp(&self) -> Duration {
-        Duration::new(0, 0)
-    }
+pub fn delay(duration: Duration) {
+    DELAY.wait().expect("No delay timer configured").delay(duration);
 }

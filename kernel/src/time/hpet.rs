@@ -1,4 +1,5 @@
 use core::time::Duration;
+use core::hint::spin_loop;
 
 use bit_field::BitField;
 use log::debug;
@@ -7,7 +8,7 @@ use x86_64::{PhysAddr, VirtAddr};
 use x86_64::structures::paging::{Page, PhysFrame, Mapper, PageTableFlags};
 
 use crate::kernel_state;
-use super::WallClockTimer;
+use super::{WallClockTimer, DelayTimer};
 
 const GENERAL_CAPABILITIES_REGISTER: usize = 0x00;
 const GENERAL_CONFIGURATION_REGISTER: usize = 0x010;
@@ -23,9 +24,7 @@ pub struct Hpet {
 impl Hpet {
     fn new(base: *mut u8) -> Hpet {
         // get tick period out of general capabilities register
-        debug!("TICK READ");
         let tick_period = unsafe { (base.add(GENERAL_CAPABILITIES_REGISTER) as *const u64).read_volatile() }.get_bits(32..64);
-        debug!("END TICK READ");
 
         let hpet = Hpet {
             base,
@@ -55,10 +54,7 @@ impl Hpet {
     }
 
     pub fn capabilities(&self) -> Capabilities {
-        debug!("CAP READ");
-        let caps = Capabilities(unsafe { self.read(GENERAL_CAPABILITIES_REGISTER) });
-        debug!("END CAP READ");
-        caps
+        Capabilities(unsafe { self.read(GENERAL_CAPABILITIES_REGISTER) })
     }
 
     pub fn main_counter(&self) -> u64 {
@@ -66,13 +62,9 @@ impl Hpet {
     }
 
     pub unsafe fn enable(&mut self) {
-        debug!("ENABLE READ");
         let mut config = self.read(GENERAL_CONFIGURATION_REGISTER);
-        debug!("END ENABLE READ");
         config.set_bit(0, true); // bit 0 is the enable bit
-        debug!("ENABLE WRITE");
         self.write(GENERAL_CONFIGURATION_REGISTER, config);
-        debug!("END ENABLE WRITE");
     }
 
     pub fn disable(&mut self) {
@@ -83,9 +75,7 @@ impl Hpet {
     }
 
     pub fn is_enabled(&self) -> bool {
-        debug!("IS ENABLED READ");
         let config = unsafe { self.read(GENERAL_CONFIGURATION_REGISTER) };
-        debug!("END IS ENABLED READ");
         config.get_bit(0)
     }
 
@@ -205,5 +195,19 @@ pub struct HpetTimer;
 impl WallClockTimer for HpetTimer {
     fn current_timestamp(&self) -> Duration {
         HPET.wait().expect("HPET not configured").current_timestamp()
+    }
+}
+impl DelayTimer for HpetTimer {
+    fn delay(&self, duration: Duration) {
+        let hpet = HPET.wait().expect("HPET not configured");
+
+        // duration in ns * (1000000 femtoseconds / 1ns) * (1 tick / hpet.tick_period femtoseconds)
+        let ticks: u64 = (duration.as_nanos() * 1000000 / hpet.tick_period as u128) as u64;
+
+        // TODO: overflow
+        let target = hpet.main_counter() + ticks;
+        while hpet.main_counter() < target {
+            spin_loop();
+        }
     }
 }

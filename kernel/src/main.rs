@@ -95,15 +95,7 @@ pub fn init_core(boot_info: &'static BootInfo) {
     interrupts::init();
     time::init();
 
-    crate::system::apic::with_local_apic(|lapic| {
-        lapic.set_timer_divide_configuration(apic::DivideConfiguration::Divide16);
-        lapic.set_timer_initial_count(1000000000);
-        let mut table = lapic.timer_vector_table();
-        table.set_vector(interrupts::Interrupt::ApicTimer.as_u8());
-        table.set_masked(false);
-        table.set_timer_mode(apic::TimerMode::Periodic);
-        unsafe { lapic.set_timer_vector_table(table); }
-    });
+    crate::system::apic::configure_apic_timer(1);
 
     system::pic::disable();
 
