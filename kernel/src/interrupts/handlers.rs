@@ -1,4 +1,4 @@
-use log::warn;
+use log::{warn, trace};
 use x86_64::{
     registers::control::Cr2,
     structures::idt::{InterruptStackFrame, PageFaultErrorCode},
@@ -50,15 +50,25 @@ pub extern "x86-interrupt" fn pic_spurious_interrupt_handler(
     _stack_frame: &mut InterruptStackFrame,
 ) {
     warn!("Spurious PIC interrupt!");
-    //    pic::notify_end_of_interrupt(Interrupt::PicSpurious.as_u8()); // TODO: do these get EOI'd?
+}
+
+pub extern "x86-interrupt" fn pic2_spurious_interrupt_handler(
+    _stack_frame: &mut InterruptStackFrame,
+) {
+    warn!("Spurious interrupt on secondary PIC!");
+    // need to use something so that IRQ is acknowledged on primary PIC since it doesn't know that
+    // this is a spurious interrupt on the secondary one
+    pic::notify_end_of_interrupt(7);
 }
 
 pub extern "x86-interrupt" fn pic_timer_handler(_stack_frame: &mut InterruptStackFrame) {
+    warn!("PIT interrupt");
     crate::time::pit::pit_timer_callback();
     pic::notify_end_of_interrupt(Interrupt::PicTimer.as_u8());
 }
 
 pub extern "x86-interrupt" fn apic_timer_handler(_stack_frame: &mut InterruptStackFrame) {
+    trace!("Local APIC timer interrupt");
     apic::with_local_apic(|lapic| lapic.end_of_interrupt());
 }
 

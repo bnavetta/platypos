@@ -17,6 +17,7 @@
 extern crate alloc;
 
 use alloc::vec::Vec;
+use core::time::Duration;
 
 use bootloader::{bootinfo::BootInfo, entry_point};
 use log::info;
@@ -88,11 +89,23 @@ pub fn init_core(boot_info: &'static BootInfo) {
     system::gdt::init();
     system::pic::init();
     system::apic::init();
+
     memory::initialize_allocator();
     topology::acpi::discover();
     interrupts::init();
     time::init();
-    system::pic::disable(); // Note: the PIC has to be disabled _after_ the timer system is initialized, since it's used for measuring frequency
+
+    crate::system::apic::with_local_apic(|lapic| {
+        lapic.set_timer_divide_configuration(apic::DivideConfiguration::Divide16);
+        lapic.set_timer_initial_count(1000000000);
+        let mut table = lapic.timer_vector_table();
+        table.set_vector(interrupts::Interrupt::ApicTimer.as_u8());
+        table.set_masked(false);
+        table.set_timer_mode(apic::TimerMode::Periodic);
+        unsafe { lapic.set_timer_vector_table(table); }
+    });
+
+    system::pic::disable();
 
     info!("Welcome to Platypos!");
 }
@@ -123,12 +136,7 @@ fn main(boot_info: &'static BootInfo) -> ! {
     }
     println!("v = {:?}", v);
 
-    let start = time::current_timestamp();
-    for i in v {
-        println!("{}", i);
-    }
-    let end = time::current_timestamp();
-    println!("Took {:?} to run", end - start);
+    println!("Time since boot: {:?}", time::current_timestamp());
 
     util::hlt_loop();
 }

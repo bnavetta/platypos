@@ -15,37 +15,37 @@ pub mod page_table;
 
 pub const FRAME_SIZE: usize = 4096;
 
-pub const HEAP_START: u64 = 0xfffffbbbbbbb0000;
-pub const HEAP_END: u64 = 0xfffffbbcbbbb0000; // 4GiB
+pub const HEAP_START: u64 = 0xfffffb0000000000;
+pub const HEAP_END: u64 = 0xfffffb0100000000; // 4GiB
 
 /// Very simple bump allocator for any allocations that are made while initializing the real
 /// allocator. Does not support deallocation
 #[derive(Debug)]
 struct BootstrapAllocator {
-    heap_start: VirtAddr,
-    heap_end: VirtAddr,
+    heap: frame::FrameAllocation,
+    heap_end: u64, // first address after the heap
     current: VirtAddr,
 }
 
 impl BootstrapAllocator {
-    fn new(heap_start: VirtAddr, heap_end: VirtAddr) -> BootstrapAllocator {
+    fn new(allocation: frame::FrameAllocation) -> BootstrapAllocator {
         BootstrapAllocator {
-            heap_start,
-            heap_end,
-            current: heap_start,
+            heap: allocation,
+            heap_end: (allocation.start_address() + (FRAME_SIZE * allocation.npages()) as u64).as_u64(),
+            current: allocation.start_address(),
         }
     }
 
     fn alloc(&mut self, layout: Layout) -> *mut u8 {
         let start = x86_64::align_up(self.current.as_u64(), layout.align() as u64);
         let new_end = start + layout.size() as u64;
-        if new_end > self.heap_end.as_u64() {
+        if new_end > self.heap_end {
             ptr::null_mut()
         } else {
             trace!(
                 "Allocating {} bytes from bootstrap region ({} bytes remaining)",
                 layout.size(),
-                self.heap_end.as_u64() - new_end
+                self.heap_end - new_end
             );
             self.current = VirtAddr::new(new_end);
             VirtAddr::new(start).as_mut_ptr()
@@ -66,18 +66,14 @@ pub fn bootstrap_allocator(allocator: &FrameAllocator) {
     let bootstrap_heap = allocator
         .allocate_pages(2)
         .expect("Could not allocate bootstrap heap");
-    let heap_start = VirtAddr::from_ptr(bootstrap_heap);
-    let heap_end = heap_start + 2 * FRAME_SIZE as u64;
 
     info!(
-        "Bootstrap heap starting at {:#x} and ending at {:#x}",
-        heap_start.as_u64(),
-        heap_end.as_u64()
+        "Bootstrap heap starting at {:#x} and extending for {} pages",
+        bootstrap_heap.start_address().as_u64(),
+        bootstrap_heap.npages()
     );
     REAL_ALLOCATOR.call_once(|| {
-        Mutex::new(AllocatorMode::Bootstrap(BootstrapAllocator::new(
-            heap_start, heap_end,
-        )))
+        Mutex::new(AllocatorMode::Bootstrap(BootstrapAllocator::new(bootstrap_heap)))
     });
 }
 
@@ -96,8 +92,8 @@ pub fn initialize_allocator() {
         &AllocatorMode::Bootstrap(ref allocator) => MemoryAllocator::new(
             VirtAddr::new(HEAP_START),
             VirtAddr::new(HEAP_END),
-            allocator.heap_start,
-            allocator.heap_end,
+            allocator.heap.start_address(),
+            VirtAddr::new(allocator.heap_end),
         )
         .expect("Could not create heap"),
         &AllocatorMode::Initialized(_) => panic!("Allocator already initialized"),

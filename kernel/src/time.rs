@@ -30,6 +30,8 @@ trait SleepTimer {
 static WALL_CLOCK: Once<Box<dyn WallClockTimer>> = Once::new();
 
 pub fn init() {
+    pit::init();
+
     // TODO: have TscTimer keep track of current count. Then, can get time from RTC at init and
     // add the WallClockTimer duration to that to get an actual timestamp
 

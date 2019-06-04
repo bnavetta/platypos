@@ -1,15 +1,12 @@
-use core::{cmp::max, mem};
+use core::{cmp::max, mem, fmt};
 
 use array_init::array_init;
 use bit_field::BitField;
-use intrusive_collections::{
-    intrusive_adapter, rbtree::CursorMut, KeyAdapter, RBTree, RBTreeLink, UnsafeRef,
-};
+use intrusive_collections::{LinkedList, LinkedListLink, UnsafeRef, intrusive_adapter};
+use intrusive_collections::linked_list::CursorMut;
 use log::{error, trace};
-use x86_64::{
-    structures::paging::{Page, PhysFrame},
-    VirtAddr,
-};
+use x86_64::structures::paging::{Page, PhysFrame};
+use x86_64::VirtAddr;
 
 use super::FRAME_SIZE;
 use crate::kernel_state;
@@ -27,24 +24,25 @@ const fn is_aligned(value: usize) -> bool {
 
 #[repr(C)] // So we know field order matches definition
 pub struct Block {
-    tag: usize,
-    free_link: RBTreeLink, // ONLY VALID IF FREE
+    tag: u32,
+    free_link: LinkedListLink, // ONLY VALID IF FREE
 }
 
 impl Block {
-    const TAG_SIZE: usize = mem::size_of::<usize>(); // The size of a header/footer tag
+    const TAG_SIZE: usize = mem::size_of::<u32>(); // The size of a header/footer tag
     const MIN_SIZE: usize = align(mem::size_of::<Block>() + Block::TAG_SIZE); // The smallest allowed block size
 
     unsafe fn create_sentinel(addr: VirtAddr) -> &'static mut Block {
-        let tag = Block::TAG_SIZE | 1;
+        let tag = (2 * Block::TAG_SIZE) | 1;
         let block = addr.as_mut_ptr::<Block>().as_mut().unwrap();
-        block.tag = tag;
-        block.end_tag_mut().write(tag);
+        block.tag = tag as u32;
+        block.end_tag_mut().write(tag as u32);
         block
     }
 
     unsafe fn from_address(addr: VirtAddr) -> &'static mut Block {
         let block = addr.as_mut_ptr::<Block>().as_mut().unwrap();
+        assert!(block.size() >= 2 * Block::TAG_SIZE, "Invalid block"); // won't detect unexpected sentinel-sized blocks
         assert!(block.tags_match());
         block
     }
@@ -75,19 +73,19 @@ impl Block {
 
     /// Returns the size of this block
     fn size(&self) -> usize {
-        self.tag & !1
+        (self.tag & !1) as usize
     }
 
-    fn end_tag(&self) -> *const usize {
+    fn end_tag(&self) -> *const u32 {
         let ptr = (self as *const Block) as *const u8;
         let tag_ptr = unsafe { ptr.add(self.size() - Block::TAG_SIZE) };
-        tag_ptr as *const usize
+        tag_ptr as *const u32
     }
 
-    fn end_tag_mut(&mut self) -> *mut usize {
+    fn end_tag_mut(&mut self) -> *mut u32 {
         let ptr = (self as *mut Block) as *mut u8;
         let tag_ptr = unsafe { ptr.add(self.size() - Block::TAG_SIZE) };
-        tag_ptr as *mut usize
+        tag_ptr as *mut u32
     }
 
     /// Returns whether or not the start and end tags match
@@ -109,8 +107,9 @@ impl Block {
             size,
             Block::MIN_SIZE
         );
+        debug_assert!(size <= u32::max_value() as usize, "Size {} is greater than maximum block size");
 
-        let mut tag = size;
+        let mut tag = size as u32;
         tag.set_bit(0, self.is_allocated());
 
         self.tag = tag;
@@ -145,29 +144,28 @@ impl Block {
         }
     }
 
+    /// Get the block previous to an address.
+    ///
+    /// # Unsafety
+    /// The caller must ensure that the given address is actually right after a block in memory.
+    unsafe fn prev_to(addr: VirtAddr) -> &'static mut Block {
+        let ptr = addr.as_ptr::<u32>();
+        let prev_size = ptr.sub(1).read() & !1;
+        let prev_ptr = (ptr as *const u8).sub(prev_size as usize);
+        (prev_ptr as *mut Block).as_mut().unwrap()
+    }
+
     /// Get a reference to the previous block in memory
     fn prev(&self) -> &'static Block {
-        let ptr = (self as *const Block) as *const usize;
-        unsafe {
-            let prev_end_tag = ptr.offset(-1).read();
-            let prev_size = prev_end_tag & !1;
-            let next_ptr = (ptr as *const u8).sub(prev_size);
-            (next_ptr as *const Block).as_ref().unwrap()
-        }
+        unsafe { Block::prev_to(VirtAddr::from_ptr(self)) }
     }
 
     /// Get a mutable reference to the previous block in memory
     fn prev_mut(&self) -> &'static mut Block {
-        let ptr = (self as *const Block) as *const usize;
-        unsafe {
-            let prev_end_tag = ptr.offset(-1).read();
-            let prev_size = prev_end_tag & !1;
-            let next_ptr = (ptr as *const u8).sub(prev_size);
-            (next_ptr as *mut Block).as_mut().unwrap()
-        }
+        unsafe { Block::prev_to(VirtAddr::from_ptr(self)) }
     }
 
-    fn free_link(&self) -> &RBTreeLink {
+    fn free_link(&self) -> &LinkedListLink {
         debug_assert!(!self.is_allocated());
         &self.free_link
     }
@@ -177,19 +175,82 @@ impl Block {
     }
 }
 
-intrusive_adapter!(FreeBlockAdapter = UnsafeRef<Block> : Block { free_link: RBTreeLink });
+impl fmt::Debug for Block {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_struct("Block")
+            .field("size", &self.size())
+            .field("allocated", &self.is_allocated())
+            .field("address", &self.address())
+            .finish()
+    }
+}
 
-// Key blocks by their memory address
-impl<'a> KeyAdapter<'a> for FreeBlockAdapter {
-    type Key = usize;
+intrusive_adapter!(FreeBlockAdapter = UnsafeRef<Block> : Block { free_link: LinkedListLink });
 
-    fn get_key(&self, value: &'a Block) -> usize {
-        (value as *const Block) as usize
+struct FreeList {
+    list: LinkedList<FreeBlockAdapter>,
+    min_size: usize,
+    max_size: usize,
+    fixed_size: bool
+}
+
+impl FreeList {
+    #[inline]
+    fn check_size(&self, block: &Block) {
+        if self.fixed_size {
+            assert_eq!(block.size(), self.max_size, "Block of size {} does not belong in this free list (must be of size {})", block.size(), self.max_size);
+        } else {
+            assert!(block.size() >= self.min_size, "Block of size {} is too small to be in this free list (must be at least {})", block.size(), self.min_size);
+            assert!(block.size() < self.max_size, "Block of size {} is too large to be in this free list (must be less than {})", block.size(), self.max_size);
+        }
+    }
+
+    fn insert(&mut self, block: &Block) {
+        trace!("Inserting {:?} into {:?}", block, self);
+        self.check_size(block);
+        self.list.push_front(block.as_ref());
+    }
+
+    fn pop(&mut self) -> Option<&'static mut Block> {
+        self.list.pop_front().map(|block| {
+            let block = unsafe { UnsafeRef::into_raw(block).as_mut().unwrap() };
+            trace!("Removing {:?} from {:?}", block, self);
+            self.check_size(block);
+            block
+        })
+    }
+
+    fn remove(&mut self, block: &Block) {
+        trace!("Removing {:?} from {:?}", block, self);
+        assert!(
+            !block.is_allocated(),
+            "Allocated blocks are not in the free list"
+        );
+        assert!(
+            block.free_link().is_linked(),
+            "Block is not in the free list"
+        );
+        self.check_size(block);
+        unsafe { self.list.cursor_mut_from_ptr(block) }.remove();
+    }
+}
+
+impl fmt::Debug for FreeList {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if self.fixed_size {
+            f.debug_struct("FreeList")
+                .field("block_size", &self.max_size)
+                .finish()
+        } else {
+            f.debug_struct("FreeList")
+                .field("block_size", &(self.min_size..self.max_size))
+                .finish()
+        }
     }
 }
 
 pub struct MemoryAllocator {
-    free_lists: [RBTree<FreeBlockAdapter>;
+    free_lists: [FreeList;
         MemoryAllocator::FIXED_FREE_LISTS + MemoryAllocator::APPROX_FREE_LISTS + 1],
 
     // The allocatable portion of memory is between heap_start and heap_end. This region is allowed
@@ -207,7 +268,7 @@ pub struct MemoryAllocator {
 
 impl MemoryAllocator {
     const MAX_FIXED_SIZE: usize = 512; // largest size that goes in a fixed free list
-    const FIXED_FREE_LISTS: usize = MemoryAllocator::MAX_FIXED_SIZE / ALIGNMENT;
+    const FIXED_FREE_LISTS: usize = (MemoryAllocator::MAX_FIXED_SIZE - Block::MIN_SIZE) / ALIGNMENT;
     const APPROX_FREE_LISTS: usize = 4;
     const EXTEND_PAGES: usize = 4; // How many pages at a time to extend the heap by
 
@@ -231,15 +292,44 @@ impl MemoryAllocator {
             "Bootstrap and main heaps overlap"
         );
 
-        // TODO: arr! macro seemed nicer, but procedural macros don't seem to work with cargo-xbuild
         let mut alloc = MemoryAllocator {
-            free_lists: array_init(|_| RBTree::new(FreeBlockAdapter::new())),
+            free_lists: array_init(|i| {
+                let list = LinkedList::new(FreeBlockAdapter::new());
+                if i < MemoryAllocator::FIXED_FREE_LISTS {
+                    FreeList {
+                        list,
+                        min_size: 0, // unused,
+                        max_size: Block::MIN_SIZE + i * ALIGNMENT,
+                        fixed_size: true,
+                    }
+                } else if i < MemoryAllocator::FIXED_FREE_LISTS + MemoryAllocator::APPROX_FREE_LISTS {
+                    FreeList {
+                        list,
+                        min_size: MemoryAllocator::MAX_FIXED_SIZE << (i - MemoryAllocator::FIXED_FREE_LISTS),
+                        max_size: MemoryAllocator::MAX_FIXED_SIZE << (i - MemoryAllocator::FIXED_FREE_LISTS + 1),
+                        fixed_size: false
+                    }
+                } else {
+                    // max-size free list
+                    FreeList {
+                        list,
+                        min_size: MemoryAllocator::MAX_FIXED_SIZE << MemoryAllocator::APPROX_FREE_LISTS,
+                        max_size: u32::max_value() as usize,
+                        fixed_size: false,
+                    }
+                }
+            }),
             heap_start,
             heap_end: heap_start,
             heap_max,
             bootstrap_start,
             bootstrap_end,
         };
+
+        trace!("Free lists:");
+        for list in alloc.free_lists.iter() {
+            trace!("    - {:?}", list);
+        }
 
         if let Some(start) = alloc.add_pages(1) {
             assert_eq!(
@@ -273,11 +363,11 @@ impl MemoryAllocator {
         debug_assert!(is_aligned(size), "Size {} is not aligned", size);
 
         if size <= MemoryAllocator::MAX_FIXED_SIZE {
-            size / ALIGNMENT
+            (size - Block::MIN_SIZE) / ALIGNMENT
         } else if size <= MemoryAllocator::MAX_FIXED_SIZE << MemoryAllocator::APPROX_FREE_LISTS {
             // There's probably a fancy bit manipulation way to do this
             for i in 0..MemoryAllocator::APPROX_FREE_LISTS {
-                if MemoryAllocator::MAX_FIXED_SIZE << i >= size {
+                if self.free_lists[MemoryAllocator::FIXED_FREE_LISTS + i].max_size > size {
                     return MemoryAllocator::FIXED_FREE_LISTS + i;
                 }
             }
@@ -285,21 +375,6 @@ impl MemoryAllocator {
             unreachable!("Size {} should be in approximate free-list region", size);
         } else {
             self.free_lists.len() - 1
-        }
-    }
-
-    fn free_cursor_to(&mut self, block: &mut Block) -> CursorMut<FreeBlockAdapter> {
-        assert!(
-            !block.is_allocated(),
-            "Allocated blocks are not in the free list"
-        );
-        assert!(
-            block.free_link().is_linked(),
-            "Block is not in the free list"
-        );
-        unsafe {
-            self.free_lists[self.free_list_index(block.size())]
-                .cursor_mut_from_ptr(block as *const Block)
         }
     }
 
@@ -323,22 +398,26 @@ impl MemoryAllocator {
         // Try to coalesce with the next block
         if !block.next().is_allocated() {
             let next = block.next_mut();
-            self.free_cursor_to(next).remove();
+            self.free_lists[self.free_list_index(next.size())].remove(next);
             block.set_size(block.size() + next.size());
         }
 
         // Try to coalesce with the previous block
         if block.prev().is_allocated() {
-            block.free_link = RBTreeLink::new(); // Reinitialize link, since it could have been used as payload
-            self.free_lists[self.free_list_index(block.size())].insert(block.as_ref());
+            block.free_link = LinkedListLink::new(); // Reinitialize link, since it could have been used as payload
+            self.free_lists[self.free_list_index(block.size())].insert(block);
         } else {
             let prev = block.prev_mut();
-            prev.set_size(prev.size() + block.size());
             // prev should already in the free list
             assert!(
                 prev.free_link().is_linked(),
                 "Block should be in the free list"
             );
+
+            // Re-link prev, since its new size could put it in a different free list
+            self.free_lists[self.free_list_index(prev.size())].remove(prev);
+            prev.set_size(prev.size() + block.size());
+            self.free_lists[self.free_list_index(prev.size())].insert(prev);
         }
     }
 
@@ -366,6 +445,7 @@ impl MemoryAllocator {
         );
 
         assert!(block.tags_match(), "Block tags don't match");
+        assert!(block.size() >= needed_size, "Block isn't large enough");
 
         block.set_allocated(true);
 
@@ -414,18 +494,14 @@ impl MemoryAllocator {
         let actual_size = max(Block::MIN_SIZE, align(size) + 2 * Block::TAG_SIZE);
 
         for i in self.free_list_index(actual_size)..self.free_lists.len() {
-            if let Some(block) = self.free_lists[i].front_mut().remove() {
-                unsafe {
-                    let block = UnsafeRef::into_raw(block);
-
-                    let block = self.allocate_block(block.as_mut().unwrap(), actual_size);
-                    trace!(
-                        "Allocating a {}-byte block at {:#x}",
-                        block.size(),
-                        block.address().as_u64()
-                    );
-                    return Some(block.payload());
-                }
+            if let Some(block) = self.free_lists[i].pop() {
+                let block = self.allocate_block(block, actual_size);
+                trace!(
+                    "Allocating a {}-byte block at {:#x}",
+                    block.size(),
+                    block.address().as_u64()
+                );
+                return Some(block.payload());
             }
         }
 
@@ -445,7 +521,7 @@ impl MemoryAllocator {
     /// called once the heap has been set up.
     fn extend_heap(&mut self) -> bool {
         if let Some(old_end) = self.add_pages(MemoryAllocator::EXTEND_PAGES) {
-            let epilogue = unsafe { Block::from_address(old_end) }.prev_mut();
+            let epilogue = unsafe { Block::prev_to(old_end) };
 
             epilogue.set_size(MemoryAllocator::EXTEND_PAGES * FRAME_SIZE);
             epilogue.set_allocated(false);
@@ -475,10 +551,7 @@ impl MemoryAllocator {
 
         if let Some(memory) = kernel_state().frame_allocator().allocate_pages(npages) {
             if !kernel_state().with_page_table(|pt| {
-                let phys_start = PhysFrame::containing_address(
-                    pt.translate(VirtAddr::from_ptr(memory))
-                        .expect("Could not translate allocated page frames"),
-                );
+                let phys_start = memory.start_frame();
                 match unsafe {
                     pt.map_contiguous(
                         Page::range(
@@ -492,7 +565,7 @@ impl MemoryAllocator {
                     Ok(()) => true,
                     Err(e) => {
                         error!("Error mapping new page frames into heap: {:?}", e);
-                        kernel_state().frame_allocator().free_pages(npages, memory);
+                        kernel_state().frame_allocator().free_pages(memory);
                         false
                     }
                 }
@@ -503,18 +576,6 @@ impl MemoryAllocator {
             let old_end = self.heap_end;
             self.heap_end = new_end;
             Some(old_end)
-
-        //            let block = unsafe {
-        //                Block::initialize(
-        //                    self.heap_end.as_mut_ptr(),
-        //                    MemoryAllocator::EXTEND_PAGES * FRAME_SIZE,
-        //                    false,
-        //                )
-        //            };
-        //            self.heap_end = new_end;
-        //            self.insert_free_block(block);
-        //
-        //            true
         } else {
             None
         }

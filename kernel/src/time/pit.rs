@@ -2,10 +2,13 @@ use core::{
     sync::atomic::{AtomicUsize, Ordering},
     time::Duration,
 };
+use core::hint::spin_loop;
 
 use bit_field::BitField;
-use core::hint::spin_loop;
+use spin::{Once, Mutex};
+use log::debug;
 use x86_64::instructions::port::{Port, PortWriteOnly};
+use x86_64::instructions::interrupts::without_interrupts;
 
 // This is approximate, it's 1193181.6666 repeating
 const PIT_FREQUENCY_HZ: usize = 1193182;
@@ -28,7 +31,6 @@ pub enum OperatingMode {
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 #[allow(dead_code)]
 pub enum AccessMode {
-    LatchCountValueCommand = 0,
     LowByteOnly = 1,
     HighByteOnly = 2,
     LowByteHighByte = 3,
@@ -68,7 +70,8 @@ impl ProgrammableIntervalTimer {
         config.set_bits(4..6, access_mode as u8);
         config.set_bits(6..8, channel);
 
-        self.command.write(channel);
+        debug!("Configuring PIT channel {} with access mode {:?} and operating mode {:?}", channel, access_mode, operating_mode);
+        self.command.write(config);
     }
 
     /// Configure the PIT to send clock interrupts at `frequency`. The timer is configured to use
@@ -84,14 +87,63 @@ impl ProgrammableIntervalTimer {
         self.channel0.write((divisor & 0xFF) as u8);
         self.channel0.write((divisor >> 8) as u8);
     }
+
+    fn latch_channel(&mut self, channel: u8) {
+        assert!(channel == 0 || channel == 2, "Invalid PIT channel");
+        unsafe { self.command.write(channel << 6); }
+    }
+
+    fn current_count(&mut self, channel: u8, access_mode: AccessMode) -> u16 {
+        without_interrupts(|| {
+            if access_mode == AccessMode::LowByteHighByte {
+                self.latch_channel(channel);
+            }
+
+            let port = match channel {
+                0 => &mut self.channel0,
+                2 => &mut self.channel2,
+                _ => panic!("Invalid PIT channel")
+            };
+
+            match access_mode {
+                AccessMode::LowByteOnly => unsafe { port.read() as u16  },
+                AccessMode::HighByteOnly => unsafe { (port.read() as u16) << 8 },
+                AccessMode::LowByteHighByte => {
+                    let low = unsafe { port.read() as u16 };
+                    let high = unsafe { port.read() as u16 };
+                    low + high << 8
+                }
+            }
+        })
+    }
 }
 
-const TIMER_FREQUENCY_HZ: usize = 100;
+const TIMER_FREQUENCY_HZ: usize = 1000;
 
 pub fn init() {
     let mut pit = ProgrammableIntervalTimer::new();
     unsafe {
-        pit.configure_timer(100);
+        pit.configure_timer(TIMER_FREQUENCY_HZ);
+    }
+
+    PIT.call_once(|| Mutex::new(pit));
+}
+
+static PIT: Once<Mutex<ProgrammableIntervalTimer>> = Once::new();
+
+pub fn current_count() -> u16 {
+    let mut pit = PIT.wait().expect("PIT not initialized").lock();
+    pit.current_count(0, AccessMode::LowByteHighByte)
+}
+
+// TODO: overflow
+pub fn pit_delay(duration: Duration) {
+    let ticks = ((duration.as_nanos() * TIMER_FREQUENCY_HZ as u128) / NANOS_PER_SECOND) as u16;
+    let mut pit = PIT.wait().expect("PIT not initialized").lock();
+    let initial = pit.current_count(0, AccessMode::LowByteHighByte);
+
+    while pit.current_count(0, AccessMode::LowByteHighByte) - initial < ticks {
+        spin_loop()
     }
 }
 
@@ -102,6 +154,8 @@ static COUNTER: AtomicUsize = AtomicUsize::new(0);
 pub fn pit_timer_callback() {
     COUNTER.fetch_add(1, Ordering::SeqCst);
 }
+
+// TODO: PIT interrupts seem broken
 
 /// Sleep for `duration` using the PIT. This relies on the PIT being configured for the expected
 /// frequency.

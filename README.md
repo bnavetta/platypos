@@ -13,6 +13,6 @@ there).
 
 * `0xfffffa0000000000-0xfffffa0000040000` - ACPI table mappings (only used during `topology::acpi::discover`)
 * `0xfffffa0000040000-0xfffffa0000041000` - HPET registers
-* `0xfffffbbbbbbb0000-0xfffffbbcbbbb0000` - Kernel heap
+* `0xfffffb0000000000-0xfffffb0100000000` - Kernel heap
 * `0xfffffbffffffc000-0xfffffbffffffe000` - fault-handling stack
 * `0xfffffc0000000000-???`                - physical memory map

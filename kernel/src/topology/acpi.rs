@@ -44,7 +44,7 @@ impl AcpiHandler for FixedRangeAcpiHandler {
             .address_range
             .next()
             .expect("Could not allocate page for ACPI table mapping");
-        for claimed in 1..pages {
+        for _ in 1..pages {
             self.address_range
                 .next()
                 .expect("Could not allocate page for ACPI table mapping");

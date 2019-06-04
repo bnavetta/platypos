@@ -25,11 +25,11 @@ use intrusive_collections::{intrusive_adapter, LinkedList, LinkedListLink};
 use kutil::log2;
 use log::{info, trace};
 use spin::Mutex;
-use x86_64::{
-    instructions::interrupts,
-    structures::paging::{self, PhysFrame},
-    PhysAddr, VirtAddr,
-};
+use x86_64::instructions::interrupts;
+use x86_64::structures::paging::{self, PhysFrame, Page};
+use x86_64::structures::paging::frame::PhysFrameRange;
+use x86_64::structures::paging::page::PageRange;
+use x86_64::{PhysAddr, VirtAddr};
 
 use super::FRAME_SIZE;
 
@@ -396,29 +396,29 @@ impl Region {
         region
     }
 
-    fn alloc(&self, order: usize) -> Option<*mut u8> {
+    fn alloc(&self, order: usize) -> Option<VirtAddr> {
         interrupts::without_interrupts(|| {
             let mut inner = self.inner.lock();
             inner
                 .alloc(order.into())
-                .map(|id| inner.block_address(id).as_mut_ptr())
+                .map(|id| inner.block_address(id))
             // TODO: memory poisoning would be nice if there's a fast enough way to fill entire pages
         })
     }
 
-    fn free(&self, order: usize, block: *mut u8) {
+    fn free(&self, order: usize, block: VirtAddr) {
         interrupts::without_interrupts(|| {
             let mut inner = self.inner.lock();
 
-            let id = inner.block_id(VirtAddr::from_ptr(block), order.into());
+            let id = inner.block_id(block, order.into());
             inner.free(id);
         });
     }
 
-    fn contains(&self, addr: *const u8) -> bool {
+    fn contains(&self, addr: VirtAddr) -> bool {
         interrupts::without_interrupts(|| {
             let inner = self.inner.lock();
-            inner.contains(VirtAddr::from_ptr(addr))
+            inner.contains(addr)
         })
     }
 }
@@ -515,7 +515,7 @@ impl FrameAllocator {
         }
     }
 
-    pub fn allocate_pages(&self, npages: usize) -> Option<*mut u8> {
+    pub fn allocate_pages(&self, npages: usize) -> Option<FrameAllocation> {
         debug_assert!(npages > 0, "Must allocate at least one page");
         let order = log2(npages.next_power_of_two());
         debug_assert!(
@@ -527,25 +527,58 @@ impl FrameAllocator {
         for region in self.regions.iter() {
             if let Some(allocation) = region.alloc(order) {
                 // TODO: to avoid wasting pages, there should be some way of marking the leftovers as free
-                return Some(allocation);
+
+                let phys_start = PhysFrame::from_start_address(PhysAddr::new(allocation.as_u64() - self.physical_memory_offset)).expect("Allocation was not page-aligned");
+                let virt_start = Page::from_start_address(allocation).expect("Allocation was not page-aligned");
+
+                return Some(FrameAllocation {
+                    start: phys_start,
+                    mapped_start: virt_start,
+                    npages
+                });
             }
         }
 
         None
     }
 
-    pub fn free_pages(&self, npages: usize, allocation: *mut u8) {
-        debug_assert!(npages > 0, "Must free at least one page");
-        let order = log2(npages.next_power_of_two());
+    pub fn free_at_pointer<T>(&self, npages: usize, addr: *mut T) {
+        self.free_at_address(npages, VirtAddr::from_ptr(addr));
+    }
+
+    pub fn free_at_address(&self, npages: usize, addr: VirtAddr) {
+        let phys_addr = PhysAddr::new(addr.as_u64() - self.physical_memory_offset);
+        let allocation = FrameAllocation {
+            start: PhysFrame::from_start_address(phys_addr).expect("Allocation not page-aligned"),
+            mapped_start: Page::from_start_address(addr).expect("Allocation not page-aligned"),
+            npages
+        };
+        self.free_pages(allocation);
+    }
+
+    pub fn free_at_phys_address(&self, npages: usize, addr: PhysAddr) {
+        let start_frame = PhysFrame::from_start_address(addr).expect("Allocation not page-aligned");
+        let start_page = Page::containing_address(VirtAddr::new(addr.as_u64() + self.physical_memory_offset));
+        let allocation = FrameAllocation {
+            start: start_frame,
+            mapped_start: start_page,
+            npages
+        };
+        self.free_pages(allocation)
+    }
+
+    pub fn free_pages(&self, allocation: FrameAllocation) {
+        debug_assert!(allocation.npages > 0, "Must free at least one page");
+        let order = allocation.order();
         debug_assert!(
             order < Order::MAX_VAL,
             "Cannot free {} pages at once",
-            npages
+            allocation.npages
         );
 
         for region in self.regions.iter() {
-            if region.contains(allocation) {
-                region.free(order, allocation);
+            if region.contains(allocation.start_address()) {
+                region.free(order, allocation.start_address());
                 return;
             }
         }
@@ -555,6 +588,47 @@ impl FrameAllocator {
 
     pub fn page_table_allocator(&self) -> PageTableAllocator {
         PageTableAllocator::new(self)
+    }
+}
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub struct FrameAllocation {
+    start: PhysFrame,
+    mapped_start: Page,
+    npages: usize,
+}
+
+impl FrameAllocation {
+    pub fn start_frame(&self) -> PhysFrame {
+        self.start
+    }
+
+    pub fn start_phys_address(&self) -> PhysAddr {
+        self.start.start_address()
+    }
+
+    pub fn start_address(&self) -> VirtAddr {
+        self.mapped_start.start_address()
+    }
+
+    pub fn start_ptr<T>(&self) -> *mut T {
+        self.start_address().as_mut_ptr()
+    }
+
+    pub fn npages(&self) -> usize {
+        self.npages
+    }
+
+    pub fn as_frame_range(&self) -> PhysFrameRange {
+        PhysFrame::range(self.start, self.start + self.npages as u64)
+    }
+
+    pub fn as_page_range(&self) -> PageRange {
+        Page::range(self.mapped_start, self.mapped_start + self.npages as u64)
+    }
+
+    fn order(&self) -> usize {
+        log2(self.npages.next_power_of_two())
     }
 }
 
@@ -571,21 +645,14 @@ unsafe impl<'a, S: paging::PageSize> paging::FrameAllocator<S> for PageTableAllo
     fn allocate_frame(&mut self) -> Option<paging::PhysFrame<S>> {
         self.0
             .allocate_pages(S::SIZE as usize / FRAME_SIZE)
-            .map(|ptr| {
-                let virt_addr = ptr as usize;
-                let addr = PhysAddr::new(virt_addr as u64 - self.0.physical_memory_offset);
-                paging::PhysFrame::from_start_address(addr)
-                    .expect("Allocator returned a non-page-aligned address")
-            })
+            // use start address to convert between page sizes
+            .map(|alloc| PhysFrame::from_start_address(alloc.start_phys_address()).unwrap())
     }
 }
 
 impl<'a, S: paging::PageSize> paging::FrameDeallocator<S> for PageTableAllocator<'a> {
     fn deallocate_frame(&mut self, frame: PhysFrame<S>) {
-        let virt_addr =
-            VirtAddr::new(frame.start_address().as_u64() + self.0.physical_memory_offset);
-        self.0
-            .free_pages(S::SIZE as usize / FRAME_SIZE, virt_addr.as_mut_ptr());
+        self.0.free_at_phys_address(S::SIZE as usize / FRAME_SIZE, frame.start_address());
     }
 }
 

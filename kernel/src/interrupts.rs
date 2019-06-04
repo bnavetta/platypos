@@ -5,6 +5,7 @@ use spin::Once;
 use x86_64::{instructions::interrupts as int, structures::idt::InterruptDescriptorTable};
 
 use crate::system::gdt::FAULT_IST_INDEX;
+use crate::system::pic::{PIC_1_OFFSET, PIC_2_OFFSET};
 
 static IDT: Once<InterruptDescriptorTable> = Once::new();
 
@@ -13,9 +14,9 @@ mod handlers;
 #[repr(u8)]
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum Interrupt {
-    PicTimer = 32,     // IRQ 0
-    PicSpurious = 39,  // IRQ 7 for PIC 1 spurious interrupts
-    PicSpurious2 = 47, // IRQ 15 for PIC 2 spurious interrupts
+    PicTimer = PIC_1_OFFSET,     // IRQ 0
+    PicSpurious = PIC_1_OFFSET + 7,  // IRQ 7 for PIC 1 spurious interrupts
+    PicSpurious2 = PIC_2_OFFSET + 7, // IRQ 15 for PIC 2 spurious interrupts
     ApicTimer = 48,
     ApicSpurious = 255,
 }
@@ -50,11 +51,10 @@ pub fn init() {
                 .set_stack_index(FAULT_IST_INDEX);
         }
 
-        // Maybe reusing the handlers isn't the best idea?
         idt[Interrupt::PicSpurious.as_usize()]
             .set_handler_fn(self::handlers::pic_spurious_interrupt_handler);
         idt[Interrupt::PicSpurious2.as_usize()]
-            .set_handler_fn(self::handlers::pic_spurious_interrupt_handler);
+            .set_handler_fn(self::handlers::pic2_spurious_interrupt_handler);
         idt[Interrupt::ApicSpurious.as_usize()]
             .set_handler_fn(self::handlers::apic_spurious_interrupt_handler);
 

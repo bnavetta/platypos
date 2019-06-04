@@ -4,7 +4,7 @@ use x86_64::instructions::segmentation::set_cs;
 use x86_64::instructions::tables::load_tss;
 use x86_64::structures::gdt::{GlobalDescriptorTable, Descriptor, SegmentSelector};
 use x86_64::structures::tss::TaskStateSegment;
-use x86_64::structures::paging::{Mapper, PageTableFlags, Page, PhysFrame, Size4KiB};
+use x86_64::structures::paging::{Mapper, PageTableFlags, Page};
 use x86_64::VirtAddr;
 
 struct GdtAndSelectors {
@@ -36,13 +36,11 @@ pub fn init() {
             .allocate_pages(FAULT_STACK_FRAMES as usize)
             .expect("Failed to allocate fault stack");
 
+        info!("Fault-handler stack starting at physical address {:#x}, mapped to {:#x}", fault_stack.start_phys_address().as_u64(), FAULT_STACK_START);
+
         kernel_state.with_page_table(|pt| {
-            let first_frame = PhysFrame::from_start_address(
-                pt.translate(VirtAddr::from_ptr(fault_stack))
-                    .expect("Could not translate fault stack"),
-            )
-            .expect("Fault stack not page aligned");
-            let first_page: Page<Size4KiB> =
+            let first_frame = fault_stack.start_frame();
+            let first_page =
                 Page::from_start_address(VirtAddr::new(FAULT_STACK_START))
                     .expect("Fault stack not page aligned");
 
