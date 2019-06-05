@@ -91,6 +91,7 @@ impl Context {
     /// Assumes that the context's stack pointer points to a valid memory location in the current
     /// address space with room for `value`
     pub unsafe fn push_stack<T: Copy>(&mut self, value: T) {
+        debug_assert!(mem::size_of::<T>() > 0, "Cannot push zero-sized type on to the stack");
         self.rsp -= mem::size_of::<T>();
         *(self.rsp as *mut T) = value;
     }
@@ -101,6 +102,7 @@ impl Context {
     /// Assumes that the context's stack pointer points to a valid memory location in the current
     /// address space and that the value at the top of the stack is of type `T`.
     pub unsafe fn pop_stack<T: Copy>(&mut self) -> T {
+        debug_assert!(mem::size_of::<T>() > 0, "Cannot pop zero-sized type off of the stack");
         let value = *(self.rsp as *const T);
         self.rsp += mem::size_of::<T>();
         value
