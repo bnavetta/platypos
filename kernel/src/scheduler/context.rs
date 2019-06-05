@@ -20,8 +20,8 @@ pub struct Context {
     rbx: usize,
     rbp: usize,
     r12: usize,
-    pub r13: usize,
-    pub r14: usize,
+    r13: usize,
+    r14: usize,
     r15: usize,
 }
 
@@ -65,6 +65,26 @@ impl Context {
         context
     }
 
+    /// Change the initial arguments for a context created by [`Context::calling`](#method.calling).
+    /// This must be done before ever switching to the context. It is intended for self-referential
+    /// context setups, or ones with circular dependencies between contexts, such as coroutines.
+    ///
+    /// # Unsafety
+    /// Will arbitrarily overwrite registers if the context was not created by `Context::calling` or
+    /// has already run.
+    pub unsafe fn replace_initial_args(
+        &mut self,
+        arg0: usize,
+        arg1: usize,
+        arg2: usize,
+        arg3: usize,
+    ) {
+        self.r12 = arg0;
+        self.r13 = arg1;
+        self.r14 = arg2;
+        self.r15 = arg3;
+    }
+
     /// Push a value onto this context's stack
     ///
     /// # Unsafety
@@ -102,11 +122,20 @@ impl Context {
         context_switch(self, to);
     }
 
+    /// Switch to this context. This will not save the prior context and is intended for switching
+    /// to the very first context
+    ///
+    /// # Unsafety
+    /// See [`switch`](#method.switch)
+    pub unsafe fn make_active(&mut self) {
+        context_make_active(self);
+    }
     // TODO: also have distinct get/set APIs?
 }
 
 extern "sysv64" {
     fn context_switch(from: &mut Context, to: &mut Context);
+    fn context_make_active(context: &mut Context);
 }
 
 // Naked functions with arguments don't really work - since there's no normal prelude, they
@@ -130,7 +159,8 @@ extern "sysv64" {
 
 // self is in rdi and to is in rsi
 
-global_asm!(r"#
+global_asm!(
+    r"#
     .global context_switch
 context_switch:
     # Save the PML4
@@ -176,7 +206,34 @@ context_switch:
 
     # Switched the stack, so we're done!
     retq
-#");
+
+# This is a one-directional form of context_switch, for switching to the very first context
+    .global context_make_active
+context_make_active:
+    # Check if we need to change the PML4
+    movq %cr3, %rax
+    movq (%rdi), %rcx
+    cmpq %rax, %rcx
+    jne .same_pml4_ma
+    movq %rcx, %cr3
+.same_pml4_ma:
+    # Set RFLAGS
+    pushq 8(%rdi)
+    popfq
+
+    # Set callee-save registers
+    movq 24(%rdi), %rbx
+    movq 40(%rdi), %r12
+    movq 48(%rdi), %r13
+    movq 56(%rdi), %r14
+    movq 64(%rdi), %r15
+    movq 32(%rdi), %rbp
+    movq 16(%rdi), %rsp
+
+    # Return into the new context!
+    retq
+#"
+);
 
 /// Initial function used for new contexts. This wrapper performs setup to call the desired initial
 /// function with the expected ABI. It's fine to make it a naked function since it takes no arguments

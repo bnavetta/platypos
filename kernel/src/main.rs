@@ -135,20 +135,21 @@ fn main(boot_info: &'static BootInfo) -> ! {
 
     println!("Time since boot: {:?}", time::current_timestamp());
 
-    let bootstrap_stack_allocation = kernel_state().frame_allocator().allocate_pages(1).expect("Could not allocate bootstrap stack");
+    let bootstrap_stack_allocation = kernel_state()
+        .frame_allocator()
+        .allocate_pages(1)
+        .expect("Could not allocate bootstrap stack");
     let bootstrap_stack = bootstrap_stack_allocation.start_address() + 4095u64; // since stack grows down
-    let current_pagetable = kernel_state().with_page_table(|pt| {
-        pt.current_pml4_location()
-    });
-    let mut bootstrap_context = Context::calling(current_pagetable, bootstrap_stack, bootstrap, 1, 2, 3, 4);
+    let current_pagetable = kernel_state().with_page_table(|pt| pt.current_pml4_location());
+    let mut bootstrap_context =
+        Context::calling(current_pagetable, bootstrap_stack, bootstrap, 1, 2, 3, 4);
 
-    let mut dummy_context = Context::new(current_pagetable, VirtAddr::new(0));
-    unsafe { dummy_context.switch(&mut bootstrap_context); }
+    unsafe { bootstrap_context.make_active() };
 
-    util::hlt_loop();
+    panic!("Bootstrap returned");
 }
 
-fn bootstrap(a: usize, b: usize, c: usize, d: usize) -> !{
+fn bootstrap(a: usize, b: usize, c: usize, d: usize) -> ! {
     println!("a = {}, b = {}, c = {}, d = {}", a, b, c, d);
 
     let alloc = kernel_state().frame_allocator();
@@ -158,12 +159,21 @@ fn bootstrap(a: usize, b: usize, c: usize, d: usize) -> !{
 
     let mut c1 = Context::calling(pt, s1, coro, 1, 0, 0, 0);
     let mut c2 = Context::calling(pt, s2, coro, 2, 0, 0, 0);
-    c1.r13 = &c1 as *const Context as usize;
-    c1.r14 = &c2 as *const Context as usize;
-    c2.r13 = &c2 as *const Context as usize;
-    c2.r14 = &c1 as *const Context as usize;
-
-    unsafe { Context::new(pt, VirtAddr::new(0)).switch(&mut c1); }
+    unsafe {
+        c1.replace_initial_args(
+            1,
+            &c1 as *const Context as usize,
+            &c2 as *const Context as usize,
+            0,
+        );
+        c2.replace_initial_args(
+            2,
+            &c2 as *const Context as usize,
+            &c1 as *const Context as usize,
+            0,
+        );
+        c1.make_active();
+    }
 
     util::hlt_loop();
 }
