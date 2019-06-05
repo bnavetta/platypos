@@ -7,7 +7,9 @@
     abi_x86_interrupt,
     impl_trait_in_bindings,
     renamed_spin_loop,
-    duration_constants
+    duration_constants,
+    naked_functions,
+    global_asm
 )]
 #![no_std]
 #![no_main]
@@ -26,10 +28,13 @@ use spin::{Mutex, Once};
 use serial_logger;
 
 use crate::memory::{frame::FrameAllocator, page_table::PageTableState, KernelAllocator};
+use crate::scheduler::context::Context;
+use x86_64::VirtAddr;
 
 mod interrupts;
 mod memory;
 mod panic;
+mod scheduler;
 mod system;
 mod terminal;
 mod time;
@@ -130,7 +135,49 @@ fn main(boot_info: &'static BootInfo) -> ! {
 
     println!("Time since boot: {:?}", time::current_timestamp());
 
+    let bootstrap_stack_allocation = kernel_state().frame_allocator().allocate_pages(1).expect("Could not allocate bootstrap stack");
+    let bootstrap_stack = bootstrap_stack_allocation.start_address() + 4095u64; // since stack grows down
+    let current_pagetable = kernel_state().with_page_table(|pt| {
+        pt.current_pml4_location()
+    });
+    let mut bootstrap_context = Context::calling(current_pagetable, bootstrap_stack, bootstrap, 1, 2, 3, 4);
+
+    let mut dummy_context = Context::new(current_pagetable, VirtAddr::new(0));
+    unsafe { dummy_context.switch(&mut bootstrap_context); }
+
     util::hlt_loop();
+}
+
+fn bootstrap(a: usize, b: usize, c: usize, d: usize) -> !{
+    println!("a = {}, b = {}, c = {}, d = {}", a, b, c, d);
+
+    let alloc = kernel_state().frame_allocator();
+    let s1 = alloc.allocate_pages(1).unwrap().start_address() + 4095u64;
+    let s2 = alloc.allocate_pages(1).unwrap().start_address() + 4095u64;
+    let pt = kernel_state().with_page_table(|pt| pt.current_pml4_location());
+
+    let mut c1 = Context::calling(pt, s1, coro, 1, 0, 0, 0);
+    let mut c2 = Context::calling(pt, s2, coro, 2, 0, 0, 0);
+    c1.r13 = &c1 as *const Context as usize;
+    c1.r14 = &c2 as *const Context as usize;
+    c2.r13 = &c2 as *const Context as usize;
+    c2.r14 = &c1 as *const Context as usize;
+
+    unsafe { Context::new(pt, VirtAddr::new(0)).switch(&mut c1); }
+
+    util::hlt_loop();
+}
+
+fn coro(id: usize, this: usize, other: usize, _: usize) -> ! {
+    loop {
+        println!("In coroutine {}", id);
+        unsafe {
+            let this = (this as *mut Context).as_mut().unwrap();
+            let other = (other as *mut Context).as_mut().unwrap();
+
+            this.switch(other);
+        }
+    }
 }
 
 #[alloc_error_handler]
