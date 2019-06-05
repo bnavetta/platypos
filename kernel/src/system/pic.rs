@@ -1,8 +1,8 @@
+use bit_field::BitField;
+use log::debug;
 use pic8259_simple::ChainedPics;
 use spin::{Mutex, Once};
 use x86_64::instructions::port::Port;
-use bit_field::BitField;
-use log::debug;
 
 pub const PIC_1_OFFSET: u8 = 32;
 pub const PIC_2_OFFSET: u8 = PIC_1_OFFSET + 8;
@@ -10,7 +10,7 @@ pub const PIC_2_OFFSET: u8 = PIC_1_OFFSET + 8;
 pub struct ProgrammableInterruptController {
     pics: ChainedPics,
     pic1_data: Port<u8>,
-    pic2_data: Port<u8>
+    pic2_data: Port<u8>,
 }
 
 impl ProgrammableInterruptController {
@@ -26,7 +26,9 @@ impl ProgrammableInterruptController {
     }
 
     fn notify_end_of_interrupt(&mut self, interrupt: u8) {
-        unsafe { self.pics.notify_end_of_interrupt(interrupt); }
+        unsafe {
+            self.pics.notify_end_of_interrupt(interrupt);
+        }
     }
 
     /// Disable the 8259 PIC.

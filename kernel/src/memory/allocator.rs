@@ -1,9 +1,9 @@
-use core::{cmp::max, mem, fmt};
+use core::{cmp::max, fmt, mem};
 
 use array_init::array_init;
 use bit_field::BitField;
-use intrusive_collections::{LinkedList, LinkedListLink, UnsafeRef, intrusive_adapter};
 use intrusive_collections::linked_list::CursorMut;
+use intrusive_collections::{intrusive_adapter, LinkedList, LinkedListLink, UnsafeRef};
 use log::{error, trace};
 use x86_64::structures::paging::{Page, PhysFrame};
 use x86_64::VirtAddr;
@@ -107,7 +107,10 @@ impl Block {
             size,
             Block::MIN_SIZE
         );
-        debug_assert!(size <= u32::max_value() as usize, "Size {} is greater than maximum block size");
+        debug_assert!(
+            size <= u32::max_value() as usize,
+            "Size {} is greater than maximum block size"
+        );
 
         let mut tag = size as u32;
         tag.set_bit(0, self.is_allocated());
@@ -191,17 +194,33 @@ struct FreeList {
     list: LinkedList<FreeBlockAdapter>,
     min_size: usize,
     max_size: usize,
-    fixed_size: bool
+    fixed_size: bool,
 }
 
 impl FreeList {
     #[inline]
     fn check_size(&self, block: &Block) {
         if self.fixed_size {
-            assert_eq!(block.size(), self.max_size, "Block of size {} does not belong in this free list (must be of size {})", block.size(), self.max_size);
+            assert_eq!(
+                block.size(),
+                self.max_size,
+                "Block of size {} does not belong in this free list (must be of size {})",
+                block.size(),
+                self.max_size
+            );
         } else {
-            assert!(block.size() >= self.min_size, "Block of size {} is too small to be in this free list (must be at least {})", block.size(), self.min_size);
-            assert!(block.size() < self.max_size, "Block of size {} is too large to be in this free list (must be less than {})", block.size(), self.max_size);
+            assert!(
+                block.size() >= self.min_size,
+                "Block of size {} is too small to be in this free list (must be at least {})",
+                block.size(),
+                self.min_size
+            );
+            assert!(
+                block.size() < self.max_size,
+                "Block of size {} is too large to be in this free list (must be less than {})",
+                block.size(),
+                self.max_size
+            );
         }
     }
 
@@ -250,8 +269,8 @@ impl fmt::Debug for FreeList {
 }
 
 pub struct MemoryAllocator {
-    free_lists: [FreeList;
-        MemoryAllocator::FIXED_FREE_LISTS + MemoryAllocator::APPROX_FREE_LISTS + 1],
+    free_lists:
+        [FreeList; MemoryAllocator::FIXED_FREE_LISTS + MemoryAllocator::APPROX_FREE_LISTS + 1],
 
     // The allocatable portion of memory is between heap_start and heap_end. This region is allowed
     // to extend up until heap_max. This entire portion of the address space is reserved for the
@@ -302,18 +321,22 @@ impl MemoryAllocator {
                         max_size: Block::MIN_SIZE + i * ALIGNMENT,
                         fixed_size: true,
                     }
-                } else if i < MemoryAllocator::FIXED_FREE_LISTS + MemoryAllocator::APPROX_FREE_LISTS {
+                } else if i < MemoryAllocator::FIXED_FREE_LISTS + MemoryAllocator::APPROX_FREE_LISTS
+                {
                     FreeList {
                         list,
-                        min_size: MemoryAllocator::MAX_FIXED_SIZE << (i - MemoryAllocator::FIXED_FREE_LISTS),
-                        max_size: MemoryAllocator::MAX_FIXED_SIZE << (i - MemoryAllocator::FIXED_FREE_LISTS + 1),
-                        fixed_size: false
+                        min_size: MemoryAllocator::MAX_FIXED_SIZE
+                            << (i - MemoryAllocator::FIXED_FREE_LISTS),
+                        max_size: MemoryAllocator::MAX_FIXED_SIZE
+                            << (i - MemoryAllocator::FIXED_FREE_LISTS + 1),
+                        fixed_size: false,
                     }
                 } else {
                     // max-size free list
                     FreeList {
                         list,
-                        min_size: MemoryAllocator::MAX_FIXED_SIZE << MemoryAllocator::APPROX_FREE_LISTS,
+                        min_size: MemoryAllocator::MAX_FIXED_SIZE
+                            << MemoryAllocator::APPROX_FREE_LISTS,
                         max_size: u32::max_value() as usize,
                         fixed_size: false,
                     }

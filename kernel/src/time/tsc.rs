@@ -80,9 +80,7 @@ pub struct TscTimer {
 impl TscTimer {
     pub fn new() -> TscTimer {
         debug_assert!(Tsc::is_supported());
-        TscTimer {
-            tsc: Tsc::new()
-        }
+        TscTimer { tsc: Tsc::new() }
     }
 }
 

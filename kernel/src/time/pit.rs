@@ -1,14 +1,14 @@
+use core::hint::spin_loop;
 use core::{
     sync::atomic::{AtomicUsize, Ordering},
     time::Duration,
 };
-use core::hint::spin_loop;
 
 use bit_field::BitField;
-use spin::{Once, Mutex};
 use log::debug;
-use x86_64::instructions::port::{Port, PortWriteOnly};
+use spin::{Mutex, Once};
 use x86_64::instructions::interrupts::without_interrupts;
+use x86_64::instructions::port::{Port, PortWriteOnly};
 
 // This is approximate, it's 1193181.6666 repeating
 const PIT_FREQUENCY_HZ: usize = 1193182;
@@ -70,7 +70,10 @@ impl ProgrammableIntervalTimer {
         config.set_bits(4..6, access_mode as u8);
         config.set_bits(6..8, channel);
 
-        debug!("Configuring PIT channel {} with access mode {:?} and operating mode {:?}", channel, access_mode, operating_mode);
+        debug!(
+            "Configuring PIT channel {} with access mode {:?} and operating mode {:?}",
+            channel, access_mode, operating_mode
+        );
         self.command.write(config);
     }
 
@@ -90,7 +93,9 @@ impl ProgrammableIntervalTimer {
 
     fn latch_channel(&mut self, channel: u8) {
         assert!(channel == 0 || channel == 2, "Invalid PIT channel");
-        unsafe { self.command.write(channel << 6); }
+        unsafe {
+            self.command.write(channel << 6);
+        }
     }
 
     fn current_count(&mut self, channel: u8, access_mode: AccessMode) -> u16 {
@@ -102,11 +107,11 @@ impl ProgrammableIntervalTimer {
             let port = match channel {
                 0 => &mut self.channel0,
                 2 => &mut self.channel2,
-                _ => panic!("Invalid PIT channel")
+                _ => panic!("Invalid PIT channel"),
             };
 
             match access_mode {
-                AccessMode::LowByteOnly => unsafe { port.read() as u16  },
+                AccessMode::LowByteOnly => unsafe { port.read() as u16 },
                 AccessMode::HighByteOnly => unsafe { (port.read() as u16) << 8 },
                 AccessMode::LowByteHighByte => {
                     let low = unsafe { port.read() as u16 };

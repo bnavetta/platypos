@@ -1,14 +1,14 @@
-use core::time::Duration;
 use core::hint::spin_loop;
+use core::time::Duration;
 
 use bit_field::BitField;
 use log::debug;
 use spin::Once;
+use x86_64::structures::paging::{Mapper, Page, PageTableFlags, PhysFrame};
 use x86_64::{PhysAddr, VirtAddr};
-use x86_64::structures::paging::{Page, PhysFrame, Mapper, PageTableFlags};
 
+use super::{DelayTimer, WallClockTimer};
 use crate::kernel_state;
-use super::{WallClockTimer, DelayTimer};
 
 const GENERAL_CAPABILITIES_REGISTER: usize = 0x00;
 const GENERAL_CONFIGURATION_REGISTER: usize = 0x010;
@@ -18,18 +18,17 @@ const MAIN_COUNTER_VALUE_REGISTER: usize = 0x0F0;
 pub struct Hpet {
     base: *mut u8, // Use a *mut u8 so we can do byte-level offsets
     tick_period: u64, // tick period of the main counter in femtoseconds
-    // TODO: will need a mutex for protecting against timer/comparator modifications
+                   // TODO: will need a mutex for protecting against timer/comparator modifications
 }
 
 impl Hpet {
     fn new(base: *mut u8) -> Hpet {
         // get tick period out of general capabilities register
-        let tick_period = unsafe { (base.add(GENERAL_CAPABILITIES_REGISTER) as *const u64).read_volatile() }.get_bits(32..64);
+        let tick_period =
+            unsafe { (base.add(GENERAL_CAPABILITIES_REGISTER) as *const u64).read_volatile() }
+                .get_bits(32..64);
 
-        let hpet = Hpet {
-            base,
-            tick_period
-        };
+        let hpet = Hpet { base, tick_period };
 
         hpet.capabilities().log_capabilities();
 
@@ -71,7 +70,9 @@ impl Hpet {
         // not unsafe because this'll stop interrupts, not start them
         let mut config = unsafe { self.read(GENERAL_CONFIGURATION_REGISTER) };
         config.set_bit(0, false); // bit 0 is the enable bit
-        unsafe { self.write(GENERAL_CONFIGURATION_REGISTER, config); }
+        unsafe {
+            self.write(GENERAL_CONFIGURATION_REGISTER, config);
+        }
     }
 
     pub fn is_enabled(&self) -> bool {
@@ -138,8 +139,15 @@ impl Capabilities {
     }
 
     pub fn log_capabilities(&self) {
-        debug!("HPET revision {}, vendor ID {:#x}", self.revision_id(), self.vendor_id());
-        debug!("    - Main counter tick period is {} femtoseconds", self.tick_period());
+        debug!(
+            "HPET revision {}, vendor ID {:#x}",
+            self.revision_id(),
+            self.vendor_id()
+        );
+        debug!(
+            "    - Main counter tick period is {} femtoseconds",
+            self.tick_period()
+        );
         if self.is_64_bit_counter() {
             debug!("    - Main counter supports 64-bit mode");
         } else {
@@ -151,7 +159,6 @@ impl Capabilities {
             debug!("    - Does not support legacy replacement mode");
         }
         debug!("    - Supports {} timers", self.num_timers());
-
     }
 }
 
@@ -159,23 +166,44 @@ const HPET_ADDRESS: u64 = 0xfffffa0000040000;
 static HPET: Once<Hpet> = Once::new();
 
 pub fn init(base_address: PhysAddr) {
-    debug!("Found HPET at physical address {:#x}", base_address.as_u64());
+    debug!(
+        "Found HPET at physical address {:#x}",
+        base_address.as_u64()
+    );
 
     HPET.call_once(|| {
         let virtual_start = VirtAddr::new(HPET_ADDRESS);
-        let page = Page::from_start_address(virtual_start).expect("HPET virtual start address is not page-aligned");
+        let page = Page::from_start_address(virtual_start)
+            .expect("HPET virtual start address is not page-aligned");
         let frame = PhysFrame::containing_address(base_address);
 
         kernel_state().with_page_table(|table| {
             let mut allocator = kernel_state().frame_allocator().page_table_allocator();
-            unsafe { table.active_4kib_mapper().map_to(page, frame, PageTableFlags::PRESENT | PageTableFlags::WRITABLE, &mut allocator).expect("Failed to map HPET").flush() };
+            unsafe {
+                table
+                    .active_4kib_mapper()
+                    .map_to(
+                        page,
+                        frame,
+                        PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
+                        &mut allocator,
+                    )
+                    .expect("Failed to map HPET")
+                    .flush()
+            };
         });
 
         // The HPET start address isn't necessarily page-aligned, so we might need to offset it within the mapping
-        let base = unsafe { virtual_start.as_mut_ptr::<u8>().add((base_address.as_u64() - frame.start_address().as_u64()) as usize) };
+        let base = unsafe {
+            virtual_start
+                .as_mut_ptr::<u8>()
+                .add((base_address.as_u64() - frame.start_address().as_u64()) as usize)
+        };
 
         let mut hpet = Hpet::new(base);
-        unsafe { hpet.enable(); }
+        unsafe {
+            hpet.enable();
+        }
         hpet.set_legacy_replacement(false);
 
         assert!(hpet.is_enabled(), "Could not enable HPET");
@@ -194,7 +222,9 @@ pub struct HpetTimer;
 
 impl WallClockTimer for HpetTimer {
     fn current_timestamp(&self) -> Duration {
-        HPET.wait().expect("HPET not configured").current_timestamp()
+        HPET.wait()
+            .expect("HPET not configured")
+            .current_timestamp()
     }
 }
 impl DelayTimer for HpetTimer {

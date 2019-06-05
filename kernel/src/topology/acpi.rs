@@ -3,7 +3,7 @@ use core::ptr::NonNull;
 use acpi::{search_for_rsdp_bios, Acpi, AcpiHandler, PhysicalMapping};
 use log::info;
 use x86_64::structures::paging::page::PageRange;
-use x86_64::structures::paging::{Page, PhysFrame, Mapper, PageTableFlags};
+use x86_64::structures::paging::{Mapper, Page, PageTableFlags, PhysFrame};
 use x86_64::{PhysAddr, VirtAddr};
 
 use crate::kernel_state;
@@ -22,7 +22,7 @@ struct FixedRangeAcpiHandler {
 impl FixedRangeAcpiHandler {
     fn new(start: Page, npages: u64) -> FixedRangeAcpiHandler {
         FixedRangeAcpiHandler {
-            address_range: Page::range(start, start + npages)
+            address_range: Page::range(start, start + npages),
         }
     }
 }
@@ -36,8 +36,7 @@ impl AcpiHandler for FixedRangeAcpiHandler {
         let phys_start = PhysFrame::containing_address(PhysAddr::new(physical_address as u64));
         let padding_start = physical_address - phys_start.start_address().as_u64() as usize;
         // Add any alignment to the region size
-        let pages =
-            page_count(size + padding_start);
+        let pages = page_count(size + padding_start);
 
         // Claim the next `pages` pages from our specified address range.
         let virtual_start = self
@@ -73,9 +72,7 @@ impl AcpiHandler for FixedRangeAcpiHandler {
 
         PhysicalMapping {
             physical_start: physical_address,
-            virtual_start: unsafe {
-                NonNull::new_unchecked(region_start as *mut T)
-            },
+            virtual_start: unsafe { NonNull::new_unchecked(region_start as *mut T) },
             region_length: pages * 4096 - padding_start,
             mapped_length: pages * 4096,
         }
@@ -86,7 +83,8 @@ impl AcpiHandler for FixedRangeAcpiHandler {
         let pages = region.region_length / 4096;
 
         // use containing_address instead of start_address because the region mapped in isn't necessarily page-aligned itself
-        let virtual_start = Page::containing_address(VirtAddr::new(region.virtual_start.as_ptr() as usize as u64));
+        let virtual_start =
+            Page::containing_address(VirtAddr::new(region.virtual_start.as_ptr() as usize as u64));
 
         kernel_state().with_page_table(|table| {
             let mut mapper = unsafe { table.active_4kib_mapper() };
@@ -107,16 +105,26 @@ pub fn discover() {
     // only used on startup and makes the rest of the OS a bit less coupled to ACPI. For example,
     // the HPET could be initialized from any way of getting its base address.
 
-    let mut handler = FixedRangeAcpiHandler::new(Page::from_start_address(VirtAddr::new(ACPI_MAP_START)).unwrap(), ACPI_MAP_NPAGES);
+    let mut handler = FixedRangeAcpiHandler::new(
+        Page::from_start_address(VirtAddr::new(ACPI_MAP_START)).unwrap(),
+        ACPI_MAP_NPAGES,
+    );
 
-    let instance = unsafe { search_for_rsdp_bios(&mut handler) }.expect("Could not read ACPI tables");
+    let instance =
+        unsafe { search_for_rsdp_bios(&mut handler) }.expect("Could not read ACPI tables");
 
     info!("Processors:");
     if let Some(processor) = instance.boot_processor() {
-        info!("ID = {}, APIC ID = {}, state = {:?}", processor.processor_uid, processor.local_apic_id, processor.state);
+        info!(
+            "ID = {}, APIC ID = {}, state = {:?}",
+            processor.processor_uid, processor.local_apic_id, processor.state
+        );
     }
     for processor in instance.application_processors() {
-        info!("ID = {}, APIC ID = {}, state = {:?}", processor.processor_uid, processor.local_apic_id, processor.state);
+        info!(
+            "ID = {}, APIC ID = {}, state = {:?}",
+            processor.processor_uid, processor.local_apic_id, processor.state
+        );
     }
 
     if let Some(interrupt_model) = instance.interrupt_model() {

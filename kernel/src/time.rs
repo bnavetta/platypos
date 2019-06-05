@@ -4,9 +4,9 @@ use core::time::Duration;
 use log::debug;
 use spin::Once;
 
+pub mod hpet;
 pub mod pit;
 mod tsc;
-pub mod hpet;
 
 // See https://forum.osdev.org/viewtopic.php?f=1&t=29461&start=0 for a discussion of different
 // timer sources.
@@ -40,10 +40,10 @@ pub fn init() {
     // TODO: have TscTimer keep track of current count. Then, can get time from RTC at init and
     // add the WallClockTimer duration to that to get an actual timestamp
 
-//    if tsc::Tsc::is_supported() {
-//        debug!("Using TSC for wall-clock timer");
-//        WALL_CLOCK.call_once(|| Box::new(tsc::TscTimer::new()));
-//    }
+    //    if tsc::Tsc::is_supported() {
+    //        debug!("Using TSC for wall-clock timer");
+    //        WALL_CLOCK.call_once(|| Box::new(tsc::TscTimer::new()));
+    //    }
 
     if hpet::is_supported() {
         WALL_CLOCK.call_once(|| Box::new(hpet::HpetTimer));
@@ -52,9 +52,15 @@ pub fn init() {
 }
 
 pub fn current_timestamp() -> Duration {
-    WALL_CLOCK.wait().expect("No wall-clock timer configured").current_timestamp()
+    WALL_CLOCK
+        .wait()
+        .expect("No wall-clock timer configured")
+        .current_timestamp()
 }
 
 pub fn delay(duration: Duration) {
-    DELAY.wait().expect("No delay timer configured").delay(duration);
+    DELAY
+        .wait()
+        .expect("No delay timer configured")
+        .delay(duration);
 }

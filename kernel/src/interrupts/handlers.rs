@@ -1,4 +1,4 @@
-use log::{warn, trace};
+use log::{trace, warn};
 use x86_64::{
     registers::control::Cr2,
     structures::idt::{InterruptStackFrame, PageFaultErrorCode},

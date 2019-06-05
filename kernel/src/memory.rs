@@ -31,7 +31,8 @@ impl BootstrapAllocator {
     fn new(allocation: frame::FrameAllocation) -> BootstrapAllocator {
         BootstrapAllocator {
             heap: allocation,
-            heap_end: (allocation.start_address() + (FRAME_SIZE * allocation.npages()) as u64).as_u64(),
+            heap_end: (allocation.start_address() + (FRAME_SIZE * allocation.npages()) as u64)
+                .as_u64(),
             current: allocation.start_address(),
         }
     }
@@ -73,7 +74,9 @@ pub fn bootstrap_allocator(allocator: &FrameAllocator) {
         bootstrap_heap.npages()
     );
     REAL_ALLOCATOR.call_once(|| {
-        Mutex::new(AllocatorMode::Bootstrap(BootstrapAllocator::new(bootstrap_heap)))
+        Mutex::new(AllocatorMode::Bootstrap(BootstrapAllocator::new(
+            bootstrap_heap,
+        )))
     });
 }
 

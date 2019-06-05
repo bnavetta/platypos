@@ -14,7 +14,7 @@ mod handlers;
 #[repr(u8)]
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum Interrupt {
-    PicTimer = PIC_1_OFFSET,     // IRQ 0
+    PicTimer = PIC_1_OFFSET,         // IRQ 0
     PicSpurious = PIC_1_OFFSET + 7,  // IRQ 7 for PIC 1 spurious interrupts
     PicSpurious2 = PIC_2_OFFSET + 7, // IRQ 15 for PIC 2 spurious interrupts
     ApicTimer = 48,

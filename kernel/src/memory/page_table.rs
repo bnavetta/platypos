@@ -54,6 +54,16 @@ impl PageTableState {
         }
     }
 
+    /// Returns the virtual address of the current Page-Map Level 4 table
+    pub fn current_pml4_address(&mut self) -> VirtAddr {
+        VirtAddr::from_ptr(self.active_table)
+    }
+
+    /// Returns the physical address of the current Page-Map Level 4 table
+    pub fn current_pml4_location(&self) -> PhysAddr {
+        Cr3::read().0.start_address()
+    }
+
     pub unsafe fn activate_table(
         &mut self,
         table: &'static mut PageTable,

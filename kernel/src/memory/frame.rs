@@ -26,9 +26,9 @@ use kutil::log2;
 use log::{info, trace};
 use spin::Mutex;
 use x86_64::instructions::interrupts;
-use x86_64::structures::paging::{self, PhysFrame, Page};
 use x86_64::structures::paging::frame::PhysFrameRange;
 use x86_64::structures::paging::page::PageRange;
+use x86_64::structures::paging::{self, Page, PhysFrame};
 use x86_64::{PhysAddr, VirtAddr};
 
 use super::FRAME_SIZE;
@@ -399,9 +399,7 @@ impl Region {
     fn alloc(&self, order: usize) -> Option<VirtAddr> {
         interrupts::without_interrupts(|| {
             let mut inner = self.inner.lock();
-            inner
-                .alloc(order.into())
-                .map(|id| inner.block_address(id))
+            inner.alloc(order.into()).map(|id| inner.block_address(id))
             // TODO: memory poisoning would be nice if there's a fast enough way to fill entire pages
         })
     }
@@ -528,13 +526,17 @@ impl FrameAllocator {
             if let Some(allocation) = region.alloc(order) {
                 // TODO: to avoid wasting pages, there should be some way of marking the leftovers as free
 
-                let phys_start = PhysFrame::from_start_address(PhysAddr::new(allocation.as_u64() - self.physical_memory_offset)).expect("Allocation was not page-aligned");
-                let virt_start = Page::from_start_address(allocation).expect("Allocation was not page-aligned");
+                let phys_start = PhysFrame::from_start_address(PhysAddr::new(
+                    allocation.as_u64() - self.physical_memory_offset,
+                ))
+                .expect("Allocation was not page-aligned");
+                let virt_start =
+                    Page::from_start_address(allocation).expect("Allocation was not page-aligned");
 
                 return Some(FrameAllocation {
                     start: phys_start,
                     mapped_start: virt_start,
-                    npages
+                    npages,
                 });
             }
         }
@@ -551,18 +553,19 @@ impl FrameAllocator {
         let allocation = FrameAllocation {
             start: PhysFrame::from_start_address(phys_addr).expect("Allocation not page-aligned"),
             mapped_start: Page::from_start_address(addr).expect("Allocation not page-aligned"),
-            npages
+            npages,
         };
         self.free_pages(allocation);
     }
 
     pub fn free_at_phys_address(&self, npages: usize, addr: PhysAddr) {
         let start_frame = PhysFrame::from_start_address(addr).expect("Allocation not page-aligned");
-        let start_page = Page::containing_address(VirtAddr::new(addr.as_u64() + self.physical_memory_offset));
+        let start_page =
+            Page::containing_address(VirtAddr::new(addr.as_u64() + self.physical_memory_offset));
         let allocation = FrameAllocation {
             start: start_frame,
             mapped_start: start_page,
-            npages
+            npages,
         };
         self.free_pages(allocation)
     }
@@ -652,7 +655,8 @@ unsafe impl<'a, S: paging::PageSize> paging::FrameAllocator<S> for PageTableAllo
 
 impl<'a, S: paging::PageSize> paging::FrameDeallocator<S> for PageTableAllocator<'a> {
     fn deallocate_frame(&mut self, frame: PhysFrame<S>) {
-        self.0.free_at_phys_address(S::SIZE as usize / FRAME_SIZE, frame.start_address());
+        self.0
+            .free_at_phys_address(S::SIZE as usize / FRAME_SIZE, frame.start_address());
     }
 }
 
