@@ -3,7 +3,8 @@
 use core::fmt::Write;
 
 use log::{Level, LevelFilter, Log, Metadata, Record, SetLoggerError};
-use spin::Mutex;
+use phf::Map;
+use spin::{Once, Mutex};
 use uart_16550::SerialPort;
 use x86_64::instructions::interrupts::without_interrupts;
 
@@ -18,11 +19,20 @@ const COLOR_RED: &'static str = "\x1b[31m";
 const COLOR_BRIGHT_CYAN: &'static str = "\x1b[96m";
 const COLOR_NORMAL: &'static str = "\x1b[0m";
 
-static LOGGER: SerialLogger = unsafe { SerialLogger::from_port(PORT) };
+static LOGGER: Once<SerialLogger> = Once::new();
 
-pub fn init() -> Result<(), SetLoggerError> {
-    LOGGER.init();
-    log::set_logger(&LOGGER)?;
+pub fn init(max_levels: &'static Map<&'static str, LevelFilter>) -> Result<(), SetLoggerError> {
+    let logger = LOGGER.call_once(|| {
+        let port= unsafe {
+            let mut port = SerialPort::new(PORT);
+            port.init();
+            port
+        };
+
+        SerialLogger::new(port, max_levels)
+    });
+
+    log::set_logger(logger)?;
 
     if cfg!(debug_assertions) {
         log::set_max_level(LevelFilter::Trace);
@@ -34,30 +44,26 @@ pub fn init() -> Result<(), SetLoggerError> {
 }
 
 pub struct SerialLogger {
+    max_levels: &'static phf::Map<&'static str, LevelFilter>,
     port: Mutex<SerialPort>,
 }
 
 impl SerialLogger {
-    const fn new(port: SerialPort) -> SerialLogger {
+    const fn new(port: SerialPort, max_levels: &'static phf::Map<&'static str, LevelFilter>) -> SerialLogger {
         SerialLogger {
+            max_levels,
             port: Mutex::new(port),
         }
-    }
-
-    const unsafe fn from_port(port: u16) -> SerialLogger {
-        let serial_port = SerialPort::new(port);
-        SerialLogger::new(serial_port)
-    }
-
-    fn init(&self) {
-        let mut port = self.port.lock();
-        port.init();
     }
 }
 
 impl Log for SerialLogger {
-    fn enabled(&self, _metadata: &Metadata) -> bool {
-        true
+    fn enabled(&self, metadata: &Metadata) -> bool {
+        if let Some(max_level) = self.max_levels.get(metadata.target()) {
+            metadata.level() <= *max_level
+        } else {
+            true
+        }
     }
 
     fn log(&self, record: &Record) {

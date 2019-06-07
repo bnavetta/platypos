@@ -42,6 +42,10 @@ mod util;
 #[cfg(test)]
 mod test;
 
+mod config {
+    include!(concat!(env!("OUT_DIR"), "/config.rs"));
+}
+
 #[global_allocator]
 static ALLOCATOR: KernelAllocator = KernelAllocator::new();
 
@@ -77,7 +81,7 @@ pub fn init_core(boot_info: &'static BootInfo) {
     // 4. Initialize the GDT (which allocates an interrupt stack)
     // 5. Initialize the interrupt handlers
 
-    serial_logger::init().expect("Could not initialize logging");
+    serial_logger::init(&config::MAX_LOG_LEVELS).expect("Could not initialize logging");
     terminal::init();
 
     let frame_allocator = unsafe { FrameAllocator::initialize(boot_info) };

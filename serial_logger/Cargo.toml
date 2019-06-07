@@ -7,5 +7,6 @@ edition = "2018"
 [dependencies]
 log = "~0.4.6"
 spin = "~0.5"
+phf = { version = "~0.7.24", features = ["core"] }
 uart_16550 = "~0.2.0"
 x86_64 = "~0.7.0"

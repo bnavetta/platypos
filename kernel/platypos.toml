@@ -1,0 +1,3 @@
+[max-levels]
+'kernel::memory::frame' = 'INFO'
+'kernel::memory::allocator' = 'INFO'

@@ -5,6 +5,7 @@ members = [
 	"kutil",
 	"serial_logger",
 ]
+exclude = ["kernel/build-script"]
 
 [profile.dev]
 panic = "abort"

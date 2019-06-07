@@ -12,6 +12,7 @@ serial_logger = { path = "../serial_logger" }
 array-init = "~0.0.4"
 bit_field = "~0.10.0"
 log = "~0.4.6"
+phf = { version = "~0.7.24", features = ["core"] }
 pic8259_simple = "~0.1.1"
 raw-cpuid = "~6.1"
 spin = "~0.5"
@@ -44,6 +45,10 @@ features = ["spin_no_std"]
 [dependencies.ux]
 version = "~0.1.3"
 default-features = false
+
+[build-dependencies]
+toml = "~0.5"
+phf_codegen = "~0.7.24"
 
 [package.metadata.bootimage]
 default-target = "x86_64-os.json"
