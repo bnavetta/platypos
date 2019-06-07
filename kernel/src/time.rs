@@ -46,6 +46,7 @@ pub fn init() {
     //    }
 
     if hpet::is_supported() {
+        debug!("Using HPET for wall-clock and delay timers");
         WALL_CLOCK.call_once(|| Box::new(hpet::HpetTimer));
         DELAY.call_once(|| Box::new(hpet::HpetTimer));
     }

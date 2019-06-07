@@ -1,4 +1,5 @@
 use bootloader::BootInfo;
+use log::info;
 use x86_64::structures::paging::frame::PhysFrameRange;
 use x86_64::structures::paging::page::PageRange;
 use x86_64::{
@@ -10,6 +11,7 @@ use x86_64::{
     PhysAddr, VirtAddr,
 };
 
+use crate::memory::frame::FrameAllocator;
 use crate::kernel_state;
 
 #[derive(Debug)]
@@ -39,18 +41,21 @@ pub struct PageTableState {
 }
 
 impl PageTableState {
-    pub fn initialize(boot_info: &BootInfo) -> PageTableState {
-        PageTableState::from_active_table(boot_info.physical_memory_offset)
-    }
+    /// Initialize the page table manager. This will make a copy of the bootloader page tables and
+    /// switch to it.
+    pub fn initialize(allocator: &FrameAllocator, boot_info: &BootInfo) -> PageTableState {
+        let (current_frame, flags) = Cr3::read();
+        let current_table_addr = VirtAddr::new(current_frame.start_address().as_u64() + boot_info.physical_memory_offset);
+        let current_pml4 = unsafe { current_table_addr.as_mut_ptr::<PageTable>().as_mut().unwrap() };
 
-    fn from_active_table(physical_memory_offset: u64) -> PageTableState {
-        let (table_frame, _) = Cr3::read();
-        let table_addr =
-            VirtAddr::new(table_frame.start_address().as_u64() + physical_memory_offset);
+        let (pml4, pml4_addr) = clone_pml4(allocator, boot_info.physical_memory_offset, current_pml4);
+
+        info!("Switching to new kernel page tables");
+        unsafe { Cr3::write(PhysFrame::from_start_address(pml4_addr).unwrap(), flags); }
 
         PageTableState {
-            physical_memory_offset,
-            active_table: unsafe { table_addr.as_mut_ptr::<PageTable>().as_mut() }.unwrap(),
+            physical_memory_offset: boot_info.physical_memory_offset,
+            active_table: pml4
         }
     }
 
@@ -134,6 +139,12 @@ impl PageTableState {
         }
     }
 
+    /// Get the virtual address referring to the given physical address in the kernel's physical
+    /// memory mapping.
+    pub fn physical_map_address(&self, addr: PhysAddr) -> VirtAddr {
+        VirtAddr::new(addr.as_u64() + self.physical_memory_offset)
+    }
+
     /// Map a contiguous range of physical memory into the current address space
     pub unsafe fn map_contiguous(
         &mut self,
@@ -157,4 +168,109 @@ impl PageTableState {
 
         Ok(())
     }
+}
+
+// TODO: set GLOBAL flag on kernel page table entries so they don't get flushed when switching address spaces?
+
+/// Makes a deep clone of a Page Map Level 4 (PML4), returning a pointer to the new table and
+/// its physical address.
+///
+/// # Panics
+/// If unable to allocate memory for any of the needed tables
+fn clone_pml4(allocator: &FrameAllocator, physical_memory_offset: u64, pml4: &PageTable) -> (&'static mut PageTable, PhysAddr) {
+    let allocation = allocator
+        .allocate_pages(1)
+        .expect("Could not allocate PML4");
+
+    let new_pml4 = unsafe { allocation.start_ptr::<PageTable>().as_mut().unwrap() };
+
+    // PML4s only contain PDPTs (page directory pointer tables), so we don't have to worry about
+    // huge pages _yet_
+    for (i, entry) in pml4.iter().enumerate() {
+        if entry.is_unused() {
+            new_pml4[i].set_unused();
+        } else {
+            let pdpt = unsafe { ((entry.addr().as_u64() + physical_memory_offset) as *const PageTable).as_ref().unwrap() };
+            let new_pdpt = clone_pdpt(allocator, physical_memory_offset, pdpt);
+            new_pml4[i].set_addr(new_pdpt, entry.flags());
+        }
+    }
+
+    (new_pml4, allocation.start_phys_address())
+}
+
+/// Makes a deep clone of the given page directory pointer table, returning the physical address of
+/// the new copy.
+///
+/// # Panics
+/// If unable to allocate memory for any of the needed tables
+fn clone_pdpt(allocator: &FrameAllocator, physical_memory_offset: u64, pdpt: &PageTable) -> PhysAddr {
+    let allocation = allocator
+        .allocate_pages(1)
+        .expect("Could not allocate PDPT");
+
+    let new_pdpt = unsafe { allocation.start_ptr::<PageTable>().as_mut().unwrap() };
+
+    // PDPTs can reference 1GiB pages, so we have to check for them
+    for (i, entry) in pdpt.iter().enumerate() {
+        if entry.is_unused() {
+            new_pdpt[i].set_unused();
+        } else if entry.flags().contains(PageTableFlags::HUGE_PAGE) {
+            // Copy the entry exactly, since it points directly at the 1GiB page frame range
+            new_pdpt[i] = entry.clone();
+        } else {
+            let pd = unsafe { ((entry.addr().as_u64() + physical_memory_offset) as *const PageTable).as_ref().unwrap() };
+            let new_pd = clone_pd(allocator, physical_memory_offset, pd);
+            new_pdpt[i].set_addr(new_pd, entry.flags());
+        }
+    }
+
+    allocation.start_phys_address()
+}
+
+/// Makes a deep clone of the given page directory, returning the physical address of the new copy
+///
+/// # Panics
+/// If unable to allocate memory for any of the needed tables
+fn clone_pd(allocator: &FrameAllocator, physical_memory_offset: u64, pd: &PageTable) -> PhysAddr {
+    let allocation = allocator
+        .allocate_pages(1)
+        .expect("Could not allocate page directory");
+
+    let new_pd = unsafe { allocation.start_ptr::<PageTable>().as_mut().unwrap() };
+
+    // Page directories can reference 2MiB pages
+    for (i, entry) in pd.iter().enumerate() {
+        if entry.is_unused() {
+            new_pd[i].set_unused();
+        } else if entry.flags().contains(PageTableFlags::HUGE_PAGE) {
+            // Copy exactly, since it points to the 2MiB region directly
+            new_pd[i] = entry.clone();
+        } else {
+            let pt = unsafe { ((entry.addr().as_u64() + physical_memory_offset) as *const PageTable).as_ref().unwrap() };
+            let new_pt = clone_pt(allocator, pt);
+            new_pd[i].set_addr(new_pt, entry.flags());
+        }
+    }
+
+    allocation.start_phys_address()
+}
+
+/// Clones the given page table, returning the physical address of the new copy
+///
+/// # Panics
+/// If unable to allocate memory for the page table
+fn clone_pt(allocator: &FrameAllocator, pt: &PageTable) -> PhysAddr {
+    let allocation = allocator
+        .allocate_pages(1)
+        .expect("Could not allocate page table");
+
+    let new_pt = unsafe { allocation.start_ptr::<PageTable>().as_mut().unwrap() };
+
+    // Page tables are nice and simple, they point directly at page frames
+    for (i, entry) in pt.iter().enumerate() {
+        new_pt[i] = entry.clone();
+    }
+
+    allocation.start_phys_address()
 }

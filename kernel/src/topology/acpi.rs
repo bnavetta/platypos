@@ -1,6 +1,6 @@
 use core::ptr::NonNull;
 
-use acpi::{search_for_rsdp_bios, Acpi, AcpiHandler, PhysicalMapping};
+use acpi::{search_for_rsdp_bios, AcpiHandler, PhysicalMapping};
 use log::info;
 use x86_64::structures::paging::page::PageRange;
 use x86_64::structures::paging::{Mapper, Page, PageTableFlags, PhysFrame};
@@ -113,19 +113,7 @@ pub fn discover() {
     let instance =
         unsafe { search_for_rsdp_bios(&mut handler) }.expect("Could not read ACPI tables");
 
-    info!("Processors:");
-    if let Some(processor) = instance.boot_processor() {
-        info!(
-            "ID = {}, APIC ID = {}, state = {:?}",
-            processor.processor_uid, processor.local_apic_id, processor.state
-        );
-    }
-    for processor in instance.application_processors() {
-        info!(
-            "ID = {}, APIC ID = {}, state = {:?}",
-            processor.processor_uid, processor.local_apic_id, processor.state
-        );
-    }
+    crate::topology::processor::init(instance.boot_processor(), instance.application_processors());
 
     if let Some(interrupt_model) = instance.interrupt_model() {
         info!("Interrupt Model: {:?}", interrupt_model);

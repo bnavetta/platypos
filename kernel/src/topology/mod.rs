@@ -9,3 +9,4 @@
 //! drivers.
 
 pub mod acpi;
+pub mod processor;

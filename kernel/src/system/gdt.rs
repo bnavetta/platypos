@@ -88,3 +88,15 @@ pub fn init() {
 
     info!("Loaded GDT and selectors");
 }
+
+/// Install the GDT and TSS on the current processor. This only needs to be called on application
+/// processors, as the bootstrap processor installs the GDT and TSS immediately after creating them.
+pub fn install() {
+    let gdt_and_selectors = GDT.wait().expect("GDT not created");
+
+    gdt_and_selectors.gdt.load();
+    unsafe {
+        set_cs(gdt_and_selectors.code_selector);
+        load_tss(gdt_and_selectors.tss_selector);
+    }
+}

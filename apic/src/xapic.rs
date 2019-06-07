@@ -1,9 +1,11 @@
+use core::hint::spin_loop;
 use core::mem;
 
 use bit_field::BitField;
 use x86_64::PhysAddr;
 
 use super::{LocalApic, IA32_APIC_BASE_MSR};
+use crate::ipi::InterprocessorInterrupt;
 use crate::spurious_interrupt::SpuriousInterruptVectorRegister;
 use crate::timer::{DivideConfiguration, TimerVectorTable};
 
@@ -21,6 +23,9 @@ enum LocalApicRegister {
     SpuriousInterruptVector = 0xF0,
 
     ErrorStatus = 0x280,
+
+    InterruptCommandLow = 0x0300,
+    InterruptCommandHigh = 0x310,
 
     // LVTs for interrupts
     TimerTable = 0x320,
@@ -161,6 +166,26 @@ impl LocalApic for XApic {
                 LocalApicRegister::TimerDivideConfiguration,
                 configuration as u8 as u32,
             );
+        }
+    }
+
+    unsafe fn send_ipi(&mut self, ipi: InterprocessorInterrupt, wait: bool) {
+        let encoded = ipi.encode();
+        let low = encoded as u32;
+        let high = (encoded >> 32) as u32;
+
+        // Must write high before low, since writing low sends the IPI
+        self.write(LocalApicRegister::InterruptCommandHigh, high);
+        self.write(LocalApicRegister::InterruptCommandLow, low);
+
+        if wait {
+            // Poll the delivery status bit
+            while self
+                .read(LocalApicRegister::InterruptCommandLow)
+                .get_bit(11)
+            {
+                spin_loop();
+            }
         }
     }
 }

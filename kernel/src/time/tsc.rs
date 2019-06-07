@@ -1,7 +1,6 @@
 use core::arch::x86_64::{__rdtscp, _rdtsc};
 use core::time::Duration;
 
-use log::warn;
 use raw_cpuid::CpuId;
 
 use super::WallClockTimer;

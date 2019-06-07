@@ -1,4 +1,5 @@
 #![no_std]
+#![feature(renamed_spin_loop)]
 
 #[macro_use]
 extern crate alloc;
@@ -14,11 +15,13 @@ use x86_64::instructions::interrupts::without_interrupts;
 use x86_64::registers::model_specific::Msr;
 use x86_64::PhysAddr;
 
+pub mod ipi;
 mod spurious_interrupt;
 mod timer;
 mod x2apic;
 mod xapic;
 
+use crate::ipi::InterprocessorInterrupt;
 pub use crate::spurious_interrupt::SpuriousInterruptVectorRegister;
 pub use crate::timer::{DivideConfiguration, TimerMode, TimerVectorTable};
 use crate::x2apic::X2Apic;
@@ -313,4 +316,12 @@ pub trait LocalApic {
 
     /// Set the divide configuration for the APIC timer.
     fn set_timer_divide_configuration(&mut self, configuration: DivideConfiguration);
+
+    /// Send an interprocessor interrupt. If `wait` is true, this will poll until the interrupt is
+    /// delivered.
+    ///
+    /// # Unsafety
+    /// IPIs can processors, including the current one, to reinitialize and run arbitrary startup
+    /// code.
+    unsafe fn send_ipi(&mut self, ipi: InterprocessorInterrupt, wait: bool);
 }

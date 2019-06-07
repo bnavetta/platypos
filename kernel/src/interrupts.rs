@@ -71,6 +71,15 @@ pub fn init() {
     int::enable();
 }
 
+/// Install the IDT on the current processor, and enable interrupts. This only needs to be called on
+/// application processors, as the bootstrap processor installs the IDT after creating it.
+pub fn install() {
+    // TODO: per-processor IDTs so we have more IRQs to work with?
+
+    IDT.wait().expect("IDT not created").load();
+    int::enable();
+}
+
 #[cfg(test)]
 mod tests {
     use crate::tests;

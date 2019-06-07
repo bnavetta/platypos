@@ -1,9 +1,12 @@
+use core::hint::spin_loop;
 use core::mem;
 
+use bit_field::BitField;
 use raw_cpuid::CpuId;
 use x86_64::registers::model_specific::Msr;
 
 use super::LocalApic;
+use crate::ipi::InterprocessorInterrupt;
 use crate::spurious_interrupt::SpuriousInterruptVectorRegister;
 use crate::timer::{DivideConfiguration, TimerVectorTable};
 
@@ -11,6 +14,8 @@ const LAPIC_ID_MSR: Msr = Msr::new(0x802);
 const LAPIC_VERSION_MSR: Msr = Msr::new(0x803);
 const EOI_MSR: Msr = Msr::new(0x80B);
 const SPURIOUS_INTERRUPT_VECTOR_REGISTER_MSR: Msr = Msr::new(0x80F);
+
+const INTERRUPT_COMMAND_MSR: Msr = Msr::new(0x830);
 
 const TIMER_LVT_MSR: Msr = Msr::new(0x832);
 const THERMAL_SENSOR_LVT_MSR: Msr = Msr::new(0x833);
@@ -113,11 +118,23 @@ impl LocalApic for X2Apic {
     }
 
     fn timer_divide_configuration(&mut self) -> DivideConfiguration {
-        // TODO: replace mem::transmure usage
+        // TODO: replace mem::transmute usage
         unsafe { mem::transmute(TIMER_DIVIDE_CONFIGURATION_MSR.read() as u8) }
     }
 
     fn set_timer_divide_configuration(&mut self, configuration: DivideConfiguration) {
         unsafe { TIMER_DIVIDE_CONFIGURATION_MSR.write(configuration as u8 as u64) }
+    }
+
+    unsafe fn send_ipi(&mut self, ipi: InterprocessorInterrupt, wait: bool) {
+        unsafe {
+            INTERRUPT_COMMAND_MSR.write(ipi.encode());
+            if wait {
+                // Poll the delivery status bit
+                while INTERRUPT_COMMAND_MSR.read().get_bit(12) {
+                    spin_loop();
+                }
+            }
+        }
     }
 }

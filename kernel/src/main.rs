@@ -19,7 +19,6 @@
 extern crate alloc;
 
 use alloc::vec::Vec;
-use core::time::Duration;
 
 use bootloader::{bootinfo::BootInfo, entry_point};
 use log::info;
@@ -29,7 +28,6 @@ use serial_logger;
 
 use crate::memory::{frame::FrameAllocator, page_table::PageTableState, KernelAllocator};
 use crate::scheduler::context::Context;
-use x86_64::VirtAddr;
 
 mod interrupts;
 mod memory;
@@ -86,9 +84,11 @@ pub fn init_core(boot_info: &'static BootInfo) {
 
     memory::bootstrap_allocator(&frame_allocator);
 
+    let page_table_state = PageTableState::initialize(&frame_allocator, boot_info);
+
     KERNEL_STATE.call_once(|| KernelState {
         frame_allocator,
-        page_table_state: Mutex::new(PageTableState::initialize(boot_info)),
+        page_table_state: Mutex::new(page_table_state),
     });
 
     system::gdt::init();
@@ -137,9 +137,9 @@ fn main(boot_info: &'static BootInfo) -> ! {
 
     let bootstrap_stack_allocation = kernel_state()
         .frame_allocator()
-        .allocate_pages(1)
+        .allocate_pages(4)
         .expect("Could not allocate bootstrap stack");
-    let bootstrap_stack = bootstrap_stack_allocation.start_address() + 4095u64; // since stack grows down
+    let bootstrap_stack = bootstrap_stack_allocation.start_address() + 4 * 4096u64; // since stack grows down
     let current_pagetable = kernel_state().with_page_table(|pt| pt.current_pml4_location());
     let mut bootstrap_context =
         Context::calling(current_pagetable, bootstrap_stack, bootstrap, 1, 2, 3, 4);
@@ -152,42 +152,9 @@ fn main(boot_info: &'static BootInfo) -> ! {
 fn bootstrap(a: usize, b: usize, c: usize, d: usize) -> ! {
     println!("a = {}, b = {}, c = {}, d = {}", a, b, c, d);
 
-    let alloc = kernel_state().frame_allocator();
-    let s1 = alloc.allocate_pages(1).unwrap().start_address() + 4095u64;
-    let s2 = alloc.allocate_pages(1).unwrap().start_address() + 4095u64;
-    let pt = kernel_state().with_page_table(|pt| pt.current_pml4_location());
-
-    let mut c1 = Context::calling(pt, s1, coro, 1, 0, 0, 0);
-    let mut c2 = Context::calling(pt, s2, coro, 2, 0, 0, 0);
-    unsafe {
-        c1.replace_initial_args(
-            1,
-            &c1 as *const Context as usize,
-            &c2 as *const Context as usize,
-            0,
-        );
-        c2.replace_initial_args(
-            2,
-            &c2 as *const Context as usize,
-            &c1 as *const Context as usize,
-            0,
-        );
-        c1.make_active();
-    }
+    crate::scheduler::init();
 
     util::hlt_loop();
-}
-
-fn coro(id: usize, this: usize, other: usize, _: usize) -> ! {
-    loop {
-        println!("In coroutine {}", id);
-        unsafe {
-            let this = (this as *mut Context).as_mut().unwrap();
-            let other = (other as *mut Context).as_mut().unwrap();
-
-            this.switch(other);
-        }
-    }
 }
 
 #[alloc_error_handler]

@@ -2,7 +2,6 @@ use core::{cmp::max, fmt, mem};
 
 use array_init::array_init;
 use bit_field::BitField;
-use intrusive_collections::linked_list::CursorMut;
 use intrusive_collections::{intrusive_adapter, LinkedList, LinkedListLink, UnsafeRef};
 use log::{error, trace};
 use x86_64::structures::paging::{Page, PhysFrame};
@@ -536,7 +535,8 @@ impl MemoryAllocator {
         }
     }
 
-    pub fn reallocate(&mut self, payload: *mut u8, to_size: usize) {
+    #[allow(dead_code)]
+    pub fn reallocate(&mut self, _payload: *mut u8, _to_size: usize) {
         // TODO
     }
 
