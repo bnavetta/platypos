@@ -6,7 +6,7 @@ use core::ptr;
 use core::time::Duration;
 
 use apic::ipi::{DeliveryMode, Destination, InterprocessorInterrupt};
-use log::{debug, error, trace};
+use log::{debug, error, trace, info};
 use volatile::Volatile;
 use x86_64::structures::paging::{Page, PhysFrame, PageTableFlags, Mapper};
 use x86_64::{PhysAddr, VirtAddr};
@@ -30,19 +30,19 @@ const TRAMPOLINE_DATA_START: usize = 0x1000;
 const TRAMPOLINE_CODE_START: usize = 0x2000;
 
 /// Representation of the trampoline data region
-#[repr(packed)] // Rust isn't a huge fan of repr(packed), but the assembly needs to know where to look
+#[repr(C)]
 struct TrampolineData {
     /// Set by the application processor once it starts up
-    startup_flag: Volatile<u16>,
+    startup_flag: Volatile<u32>,
 
     /// Location of the page table for the application processor to use
     pml4: Volatile<u32>,
 
     /// Location of the stack for the application processor to use
-    stack: Volatile<u32>,
+    stack: Volatile<usize>,
 
     /// Location of the entry point for the application processor to jump to
-    entry: Volatile<u32>,
+    entry: Volatile<usize>,
 }
 
 impl TrampolineData {
@@ -55,29 +55,36 @@ impl TrampolineData {
         addr.as_mut_ptr::<TrampolineData>().as_mut().unwrap()
     }
 
-    pub fn clear_startup_flag(&mut self) {
+    fn clear_startup_flag(&mut self) {
         self.startup_flag.write(0);
     }
 
-    pub fn startup_flag(&self) -> u16 {
+    fn startup_flag(&self) -> u32 {
         self.startup_flag.read()
     }
 
     /// Set the page tables for booted APs to use
-    pub fn set_pml4(&mut self, addr: PhysAddr) {
+    fn set_pml4(&mut self, addr: PhysAddr) {
         self.pml4.write(addr.as_u64().try_into().expect("PML4 must be in first 4GiB of RAM to be accessible in trampoline"));
+    }
+
+    fn set_stack(&mut self, addr: VirtAddr) {
+        self.stack.write(addr.as_u64() as usize)
+    }
+
+    fn set_entry_function(&mut self, addr: VirtAddr) {
+        self.entry.write(addr.as_u64() as usize);
     }
 }
 
 global_asm!(
     r"#
     .global mp_processor_init
-    .code16
 
-.align 4
+.code16
+.align 4096
 mp_processor_init:
     cli
-    movw $1, 0x1000
 
     # Enable PAE and the global page feature (PGE bit)
     # The Intel manual says that paging must be enabled before setting the PGE bit, but the OSDev
@@ -86,7 +93,7 @@ mp_processor_init:
     movl %eax, %cr4
 
     # Set the PML4
-    movl 0x1002, %edx
+    movl 0x1004, %edx
     movl %edx, %cr3
 
     # Read the EFER MSR
@@ -104,36 +111,41 @@ mp_processor_init:
     movl %ebx, %cr0
 
     # Create a temporary GDT so we can jump into Rust
-    # This assumes the trampoline code is at most 4 KiB
+    # This assumes the long-mode trampoline code is at most 8 KiB
 
     # Null descriptor
-    movl $0, 0x3000
-    movl $0, 0x3004
-
+    movl $0, 0x4000
+    movl $0, 0x4004
 
     # Code descriptor (exec/read)
-    movl $0, 0x3008
-    movl $0x209a00, 0x300c
+    movl $0, 0x4008
+    movl $0x209a00, 0x400c
 
     # Data descriptor (read/write)
-    movl $0, 0x3010
-    movl $0x9200, 0x3014
+    movl $0, 0x4010
+    movl $0x9200, 0x4014
 
     # Create GDT pointer structure
-    movw $24, 0x3020 # Size (limit) in GDT
-    movl $0x3000, 0x3022 # Pointer
-    lgdt 0x3020
+    movw $24, 0x4020 # Size (limit) in GDT
+    movl $0x4000, 0x4022 # Pointer
+    lgdt 0x4020
 
-    # Set the stack pointer
-    movl 0x1006, %esp
-
-    # Far jump into Rust!
-    pushl $0x0008
-    leal (ap_entry), %eax
-    pushl %eax
-    retl
+    # Far jump into the second part of the trampoline, so we can start using 64-bit instructions
+    jmpl $0x0008,$0x3000
 
     hlt
+
+.align 4096
+.code64
+mp_processor_long_init:
+    movl $1, 0x1000
+
+    movq 0x1008, %rsp
+
+    movq 0x1010, %rax
+    pushq %rax
+    retq
+
 MP_PROCESSOR_INIT_END: .byte 0
 #"
 );
@@ -153,6 +165,9 @@ fn start_processor(
     debug!("Attempting to start processor {}", processor.id());
     processor.mark_state_transition(ProcessorState::Starting);
     trampoline_data.clear_startup_flag();
+
+    let stack = kernel_state().frame_allocator().allocate_pages(4).expect("Could not allocate processor stack");
+    trampoline_data.set_stack(stack.start_address() + 4 * 4096u64);
 
     with_local_apic(|apic| {
         // Send the INIT IPI and de-assert
@@ -226,10 +241,10 @@ pub fn boot_application_processors() {
             let mut mapper = pt.active_4kib_mapper();
             let mut allocator = kernel_state().frame_allocator().page_table_allocator();
 
-            // Map 3 pages: data at 0x1000, code at 0x2000, and GDT (created by trampoline) at 0x3000
+            // Map 4 pages: data at 0x1000, code at 0x2000 and 0x3000, and GDT (created by trampoline) at 0x4000
             let page_start = Page::from_start_address(VirtAddr::new(TRAMPOLINE_DATA_START as u64)).unwrap();
             let frame_start = PhysFrame::from_start_address(data_start).unwrap();
-            for i in 0..3 {
+            for i in 0..4 {
                 mapper.map_to(page_start + i, frame_start + i, PageTableFlags::PRESENT | PageTableFlags::WRITABLE, &mut allocator).unwrap().flush();
             }
         }
@@ -245,11 +260,11 @@ pub fn boot_application_processors() {
         );
     }
     debug!("Installed trampoline at {:#x}", TRAMPOLINE_CODE_START);
-    debug!("AP entry point is at {:#x}", ap_entry as usize);
 
     // Safe because only boot_application_processors uses the trampoline data
     let trampoline_data = unsafe { TrampolineData::new(data_addr) };
     trampoline_data.set_pml4(pml4);
+    trampoline_data.set_entry_function(VirtAddr::new(ap_entry as usize as u64));
 
     for processor in processor_topology().processors() {
         if processor.state() == ProcessorState::Uninitialized {
@@ -258,7 +273,13 @@ pub fn boot_application_processors() {
     }
 }
 
-#[no_mangle]
+static FOO: usize = 1;
+
 pub unsafe extern "C" fn ap_entry() -> ! {
+    assert_eq!(FOO, 1);
+    crate::system::gdt::install();
+//    crate::interrupts::install();
+//
+//    info!("Hello, World!");
     crate::util::hlt_loop();
 }

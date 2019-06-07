@@ -53,7 +53,7 @@ phf_codegen = "~0.7.24"
 [package.metadata.bootimage]
 default-target = "x86_64-os.json"
 #run-args = ["-cpu", "max", "-d", "unimp,guest_errors,int,cpu_reset,trace:pic_interrupt,trace:pic_update_irq,trace:pic_set_irq,trace:apic_deliver_irq,trace:apic_local_deliver", "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04", "-serial", "mon:stdio"]
-run-args = ["-machine", "q35", "-cpu", "max", "-smp", "cores=4", "-d", "unimp,guest_errors,int,cpu_reset", "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04", "-serial", "mon:stdio"]
+run-args = ["-machine", "q35", "-cpu", "max", "-smp", "cores=2", "-d", "unimp,guest_errors,int,cpu_reset", "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04", "-serial", "mon:stdio"]
 #run-args = ["-machine", "q35", "-cpu", "max", "-d", "unimp,guest_errors,int,cpu_reset,trace:pic_interrupt", "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04", "-serial", "mon:stdio"]
 #run-args = ["-cpu", "max", "-smp", "cores=4", "-d", "int,cpu_reset", "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04", "-serial", "mon:stdio"]
 #run-args = ["-accel", "hvf", "-cpu", "host,migratable=no", "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04", "-serial", "mon:stdio"]
