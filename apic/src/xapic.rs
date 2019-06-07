@@ -2,9 +2,9 @@ use core::hint::spin_loop;
 use core::mem;
 
 use bit_field::BitField;
-use x86_64::PhysAddr;
+use log::trace;
 
-use super::{LocalApic, IA32_APIC_BASE_MSR};
+use super::LocalApic;
 use crate::ipi::InterprocessorInterrupt;
 use crate::spurious_interrupt::SpuriousInterruptVectorRegister;
 use crate::timer::{DivideConfiguration, TimerVectorTable};
@@ -12,7 +12,7 @@ use crate::timer::{DivideConfiguration, TimerVectorTable};
 /// Zeroed-out local vector table, except for the mask bit
 const MASKED_LVT_VALUE: u32 = 0x00010000;
 /// Local vector table to deliver as a NMI, used for the performance monitoring interrupt
-const NMI_LVD_VALUE: u64 = 0x400;
+const NMI_LVT_VALUE: u32 = 0x400;
 
 #[repr(usize)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -60,17 +60,6 @@ pub struct XApic {
 }
 
 impl XApic {
-    pub fn local_apic_base() -> PhysAddr {
-        // LAPIC base is page-aligned, and the MSR doesn't just contain the address
-        PhysAddr::new(unsafe { IA32_APIC_BASE_MSR.read() }).align_down(4096u64)
-    }
-
-    pub unsafe fn set_local_apic_base(base: PhysAddr) {
-        let mut msr_value = base.as_u64();
-        msr_value.set_bit(11, true);
-        IA32_APIC_BASE_MSR.write(msr_value);
-    }
-
     pub unsafe fn new(base: *mut u32) -> XApic {
         // unsafe because that might not actually be the base register
         XApic { base_pointer: base }
@@ -108,7 +97,7 @@ impl LocalApic for XApic {
         unsafe {
             self.write(LocalApicRegister::TimerTable, MASKED_LVT_VALUE);
             self.write(LocalApicRegister::ThermalMonitorTable, MASKED_LVT_VALUE);
-            self.write(LocalApicRegister::PerformanceCounterTable, MASKED_LVT_VALUE);
+            self.write(LocalApicRegister::PerformanceCounterTable, NMI_LVT_VALUE);
             self.write(LocalApicRegister::LINT0Table, MASKED_LVT_VALUE);
             self.write(LocalApicRegister::LINT1Table, MASKED_LVT_VALUE);
             self.write(LocalApicRegister::ErrorTable, MASKED_LVT_VALUE);
@@ -170,9 +159,10 @@ impl LocalApic for XApic {
     }
 
     unsafe fn send_ipi(&mut self, ipi: InterprocessorInterrupt, wait: bool) {
-        let encoded = ipi.encode();
-        let low = encoded as u32;
-        let high = (encoded >> 32) as u32;
+        trace!("Sending {:?}", ipi);
+        let low = ipi.encode_low();
+        assert!(ipi.destination_field() <= u8::max_value() as u32, "xAPIC only supports 8-bit APIC IDs");
+        let high = ipi.destination_field() << 24;
 
         // Must write high before low, since writing low sends the IPI
         self.write(LocalApicRegister::InterruptCommandHigh, high);

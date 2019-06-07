@@ -2,6 +2,7 @@ use core::hint::spin_loop;
 use core::mem;
 
 use bit_field::BitField;
+use log::trace;
 use raw_cpuid::CpuId;
 use x86_64::registers::model_specific::Msr;
 
@@ -31,7 +32,7 @@ const TIMER_DIVIDE_CONFIGURATION_MSR: Msr = Msr::new(0x83E);
 /// Zeroed-out local vector table, except for the mask bit
 const MASKED_LVT_VALUE: u64 = 0x00010000;
 /// Local vector table to deliver as a NMI, used for the performance monitoring interrupt
-const NMI_LVD_VALUE: u64 = 0x400;
+const NMI_LVT_VALUE: u64 = 0x400;
 
 /// Local APIC driver based on the x2 APIC specification
 pub struct X2Apic {}
@@ -73,7 +74,7 @@ impl LocalApic for X2Apic {
         unsafe {
             self.set_timer_vector_table(timer_table);
             THERMAL_SENSOR_LVT_MSR.write(MASKED_LVT_VALUE);
-            PERFORMANCE_MONITORING_LVT_MSR.write(MASKED_LVT_VALUE);
+            PERFORMANCE_MONITORING_LVT_MSR.write(NMI_LVT_VALUE);
             LINT0_LVT_MSR.write(MASKED_LVT_VALUE);
             LINT1_LVT_MSR.write(MASKED_LVT_VALUE);
             ERROR_LVT_MSR.write(MASKED_LVT_VALUE);
@@ -127,13 +128,15 @@ impl LocalApic for X2Apic {
     }
 
     unsafe fn send_ipi(&mut self, ipi: InterprocessorInterrupt, wait: bool) {
-        unsafe {
-            INTERRUPT_COMMAND_MSR.write(ipi.encode());
-            if wait {
-                // Poll the delivery status bit
-                while INTERRUPT_COMMAND_MSR.read().get_bit(12) {
-                    spin_loop();
-                }
+        trace!("Sending {:?}", ipi);
+        let mut icr = ipi.encode_low() as u64; // promote to u64, then write in destination
+        icr |= (ipi.destination_field() as u64) << 32;
+
+        INTERRUPT_COMMAND_MSR.write(icr);
+        if wait {
+            // Poll the delivery status bit
+            while INTERRUPT_COMMAND_MSR.read().get_bit(12) {
+                spin_loop();
             }
         }
     }

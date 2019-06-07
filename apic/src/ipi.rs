@@ -51,26 +51,28 @@ impl InterprocessorInterrupt {
         InterprocessorInterrupt { mode, destination }
     }
 
-    pub fn encode(&self) -> u64 {
-        let mut value = 0u64;
+    /// Encodes this IPI into the value which should be written to the low 32 bits of the ICR.
+    /// The low 32 bits describe what IPI to send and the destination shorthand to use.
+    pub fn encode_low(&self) -> u32 {
+        let mut value = 0u32;
 
         match self.mode {
             DeliveryMode::Fixed(vector) => {
-                value.set_bits(0..8, vector as u64);
+                value.set_bits(0..8, vector as u32);
                 // mode is already 0b000
-            }
+            },
             DeliveryMode::SMI => {
                 // vector is already 0
                 value.set_bits(8..11, 0b010);
-            }
+            },
             DeliveryMode::NMI => {
                 // vector is already 0
                 value.set_bits(8..11, 0b100);
-            }
+            },
             DeliveryMode::INIT => {
                 // vector is already 0
                 value.set_bits(8..11, 0b101);
-            }
+            },
             DeliveryMode::INITLevelDeAssert => {
                 // vector is already 0
                 assert_eq!(
@@ -79,7 +81,7 @@ impl InterprocessorInterrupt {
                     "Destination should be \"all including self\" for an INIT Level De-Assert"
                 );
                 value.set_bits(8..11, 0b101);
-            }
+            },
             DeliveryMode::Startup(code) => {
                 let page = code.start_address().as_u64() / 4096u64;
                 assert!(
@@ -87,7 +89,8 @@ impl InterprocessorInterrupt {
                     "SIPI page {:#x} is out of bounds",
                     page
                 );
-                value.set_bits(0..11, page);
+                value.set_bits(0..8, page as u32);
+                value.set_bits(8..11, 0b110);
             }
         };
 
@@ -95,29 +98,38 @@ impl InterprocessorInterrupt {
         // The Intel manual says that for an INIT level de-assert, the trigger mode bit can be either
         // edge (0) or level (1), but the OSDev wiki says to always use level.
         if self.mode == DeliveryMode::INITLevelDeAssert {
-            value.set_bits(14..16, 0b01);
+            value.set_bit(15, true);
         } else {
-            value.set_bits(14..16, 0b10);
+            value.set_bit(14, true);
         }
 
         // bit 11 is the destination mode. We only support 0 (logical)
 
         match self.destination {
-            Destination::Exact(id) => {
+            Destination::Exact(_) => {
                 // destination shorthand is already 0b00
-                value.set_bits(56..64, id as u64);
-            }
+            },
             Destination::Current => {
                 value.set_bits(18..20, 0b01);
-            }
+            },
             Destination::All => {
                 value.set_bits(18..20, 0b10);
-            }
+            },
             Destination::AllButCurrent => {
                 value.set_bits(18..20, 0b11);
-            }
+            },
         }
 
         value
+    }
+
+    /// Encodes the destination field for this IPI. The usable size of the destination field depends
+    /// on the processor model and whether x2APIC mode is being used. With xAPIC mode, only 8-bit
+    /// APIC IDs are supported
+    pub fn destination_field(&self) -> u32 {
+        match self.destination {
+            Destination::Exact(id) => id,
+            _ => 0
+        }
     }
 }
