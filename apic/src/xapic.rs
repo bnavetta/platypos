@@ -161,7 +161,10 @@ impl LocalApic for XApic {
     unsafe fn send_ipi(&mut self, ipi: InterprocessorInterrupt, wait: bool) {
         trace!("Sending {:?}", ipi);
         let low = ipi.encode_low();
-        assert!(ipi.destination_field() <= u8::max_value() as u32, "xAPIC only supports 8-bit APIC IDs");
+        assert!(
+            ipi.destination_field() <= u8::max_value() as u32,
+            "xAPIC only supports 8-bit APIC IDs"
+        );
         let high = ipi.destination_field() << 24;
 
         // Must write high before low, since writing low sends the IPI

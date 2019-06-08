@@ -171,5 +171,7 @@ pub fn processor_topology() -> &'static ProcessorTopology {
 
 /// Helper to get the current processor's logical ID via the local APIC
 pub fn local_id() -> usize {
-    processor_topology().logical_id(local_apic_id()).expect("Could not identify processor") as usize
+    processor_topology()
+        .logical_id(local_apic_id())
+        .expect("Could not identify processor") as usize
 }

@@ -36,7 +36,12 @@ pub fn local_apic_id() -> u32 {
 pub fn init() {
     let kernel_state = crate::kernel_state();
 
-    let max_apic_id = processor_topology().processors().iter().map(|p| p.apic_id()).max().unwrap();
+    let max_apic_id = processor_topology()
+        .processors()
+        .iter()
+        .map(|p| p.apic_id())
+        .max()
+        .unwrap();
 
     let apic = APIC.call_once(|| {
         Apic::new(max_apic_id as usize, |base_phys_addr| {

@@ -7,8 +7,8 @@ use x86_64::structures::gdt::{Descriptor, GlobalDescriptorTable, SegmentSelector
 use x86_64::structures::tss::TaskStateSegment;
 use x86_64::VirtAddr;
 
-use crate::kernel_state;
 use crate::config::MAX_PROCESSORS;
+use crate::kernel_state;
 use crate::topology::processor::local_id;
 
 /// IST index for the stack processor exceptions should be handled on.
@@ -19,7 +19,8 @@ const INTERRUPT_STACK_FRAMES: usize = 2;
 
 /// Allocate an `INTERRUPT_STACK_FRAMES`-sized stack. Returns a pointer to the top of the stack
 fn allocate_interrupt_stack() -> VirtAddr {
-    let fault_stack = kernel_state().frame_allocator()
+    let fault_stack = kernel_state()
+        .frame_allocator()
         .allocate_pages(INTERRUPT_STACK_FRAMES)
         .expect("Could not allocate interrupt stack");
 
@@ -56,7 +57,10 @@ static GDT_SELECTORS_PERPROCESSOR: [Once<GdtAndSelectors>; 8] = arr![Once::new()
 /// Create and install a TSS and GDT for the current processor. This must be called once on every
 /// processor, since processors do not share a TSS or GDT.
 pub fn install() {
-    assert!(MAX_PROCESSORS <= 8, "GDT and TSS initialization code only supports up to 8 processors");
+    assert!(
+        MAX_PROCESSORS <= 8,
+        "GDT and TSS initialization code only supports up to 8 processors"
+    );
 
     let id = local_id();
 
@@ -70,7 +74,7 @@ pub fn install() {
         GdtAndSelectors {
             gdt,
             code_selector,
-            tss_selector
+            tss_selector,
         }
     });
 

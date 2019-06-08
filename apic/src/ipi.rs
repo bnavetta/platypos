@@ -60,19 +60,19 @@ impl InterprocessorInterrupt {
             DeliveryMode::Fixed(vector) => {
                 value.set_bits(0..8, vector as u32);
                 // mode is already 0b000
-            },
+            }
             DeliveryMode::SMI => {
                 // vector is already 0
                 value.set_bits(8..11, 0b010);
-            },
+            }
             DeliveryMode::NMI => {
                 // vector is already 0
                 value.set_bits(8..11, 0b100);
-            },
+            }
             DeliveryMode::INIT => {
                 // vector is already 0
                 value.set_bits(8..11, 0b101);
-            },
+            }
             DeliveryMode::INITLevelDeAssert => {
                 // vector is already 0
                 assert_eq!(
@@ -81,7 +81,7 @@ impl InterprocessorInterrupt {
                     "Destination should be \"all including self\" for an INIT Level De-Assert"
                 );
                 value.set_bits(8..11, 0b101);
-            },
+            }
             DeliveryMode::Startup(code) => {
                 let page = code.start_address().as_u64() / 4096u64;
                 assert!(
@@ -108,16 +108,16 @@ impl InterprocessorInterrupt {
         match self.destination {
             Destination::Exact(_) => {
                 // destination shorthand is already 0b00
-            },
+            }
             Destination::Current => {
                 value.set_bits(18..20, 0b01);
-            },
+            }
             Destination::All => {
                 value.set_bits(18..20, 0b10);
-            },
+            }
             Destination::AllButCurrent => {
                 value.set_bits(18..20, 0b11);
-            },
+            }
         }
 
         value
@@ -129,7 +129,7 @@ impl InterprocessorInterrupt {
     pub fn destination_field(&self) -> u32 {
         match self.destination {
             Destination::Exact(id) => id,
-            _ => 0
+            _ => 0,
         }
     }
 }

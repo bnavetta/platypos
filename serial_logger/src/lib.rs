@@ -4,7 +4,7 @@ use core::fmt::Write;
 
 use log::{Level, LevelFilter, Log, Metadata, Record, SetLoggerError};
 use phf::Map;
-use spin::{Once, Mutex};
+use spin::{Mutex, Once};
 use uart_16550::SerialPort;
 use x86_64::instructions::interrupts::without_interrupts;
 
@@ -23,7 +23,7 @@ static LOGGER: Once<SerialLogger> = Once::new();
 
 pub fn init(max_levels: &'static Map<&'static str, LevelFilter>) -> Result<(), SetLoggerError> {
     let logger = LOGGER.call_once(|| {
-        let port= unsafe {
+        let port = unsafe {
             let mut port = SerialPort::new(PORT);
             port.init();
             port
@@ -49,7 +49,10 @@ pub struct SerialLogger {
 }
 
 impl SerialLogger {
-    const fn new(port: SerialPort, max_levels: &'static phf::Map<&'static str, LevelFilter>) -> SerialLogger {
+    const fn new(
+        port: SerialPort,
+        max_levels: &'static phf::Map<&'static str, LevelFilter>,
+    ) -> SerialLogger {
         SerialLogger {
             max_levels,
             port: Mutex::new(port),

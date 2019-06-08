@@ -11,8 +11,8 @@ use x86_64::{
     PhysAddr, VirtAddr,
 };
 
-use crate::memory::frame::FrameAllocator;
 use crate::kernel_state;
+use crate::memory::frame::FrameAllocator;
 
 #[derive(Debug)]
 pub enum PageTableError {
@@ -45,17 +45,27 @@ impl PageTableState {
     /// switch to it.
     pub fn initialize(allocator: &FrameAllocator, boot_info: &BootInfo) -> PageTableState {
         let (current_frame, flags) = Cr3::read();
-        let current_table_addr = VirtAddr::new(current_frame.start_address().as_u64() + boot_info.physical_memory_offset);
-        let current_pml4 = unsafe { current_table_addr.as_mut_ptr::<PageTable>().as_mut().unwrap() };
+        let current_table_addr = VirtAddr::new(
+            current_frame.start_address().as_u64() + boot_info.physical_memory_offset,
+        );
+        let current_pml4 = unsafe {
+            current_table_addr
+                .as_mut_ptr::<PageTable>()
+                .as_mut()
+                .unwrap()
+        };
 
-        let (pml4, pml4_addr) = clone_pml4(allocator, boot_info.physical_memory_offset, current_pml4);
+        let (pml4, pml4_addr) =
+            clone_pml4(allocator, boot_info.physical_memory_offset, current_pml4);
 
         info!("Switching to new kernel page tables");
-        unsafe { Cr3::write(PhysFrame::from_start_address(pml4_addr).unwrap(), flags); }
+        unsafe {
+            Cr3::write(PhysFrame::from_start_address(pml4_addr).unwrap(), flags);
+        }
 
         PageTableState {
             physical_memory_offset: boot_info.physical_memory_offset,
-            active_table: pml4
+            active_table: pml4,
         }
     }
 
@@ -177,7 +187,11 @@ impl PageTableState {
 ///
 /// # Panics
 /// If unable to allocate memory for any of the needed tables
-fn clone_pml4(allocator: &FrameAllocator, physical_memory_offset: u64, pml4: &PageTable) -> (&'static mut PageTable, PhysAddr) {
+fn clone_pml4(
+    allocator: &FrameAllocator,
+    physical_memory_offset: u64,
+    pml4: &PageTable,
+) -> (&'static mut PageTable, PhysAddr) {
     let allocation = allocator
         .allocate_pages(1)
         .expect("Could not allocate PML4");
@@ -190,7 +204,11 @@ fn clone_pml4(allocator: &FrameAllocator, physical_memory_offset: u64, pml4: &Pa
         if entry.is_unused() {
             new_pml4[i].set_unused();
         } else {
-            let pdpt = unsafe { ((entry.addr().as_u64() + physical_memory_offset) as *const PageTable).as_ref().unwrap() };
+            let pdpt = unsafe {
+                ((entry.addr().as_u64() + physical_memory_offset) as *const PageTable)
+                    .as_ref()
+                    .unwrap()
+            };
             let new_pdpt = clone_pdpt(allocator, physical_memory_offset, pdpt);
             new_pml4[i].set_addr(new_pdpt, entry.flags());
         }
@@ -204,7 +222,11 @@ fn clone_pml4(allocator: &FrameAllocator, physical_memory_offset: u64, pml4: &Pa
 ///
 /// # Panics
 /// If unable to allocate memory for any of the needed tables
-fn clone_pdpt(allocator: &FrameAllocator, physical_memory_offset: u64, pdpt: &PageTable) -> PhysAddr {
+fn clone_pdpt(
+    allocator: &FrameAllocator,
+    physical_memory_offset: u64,
+    pdpt: &PageTable,
+) -> PhysAddr {
     let allocation = allocator
         .allocate_pages(1)
         .expect("Could not allocate PDPT");
@@ -219,7 +241,11 @@ fn clone_pdpt(allocator: &FrameAllocator, physical_memory_offset: u64, pdpt: &Pa
             // Copy the entry exactly, since it points directly at the 1GiB page frame range
             new_pdpt[i] = entry.clone();
         } else {
-            let pd = unsafe { ((entry.addr().as_u64() + physical_memory_offset) as *const PageTable).as_ref().unwrap() };
+            let pd = unsafe {
+                ((entry.addr().as_u64() + physical_memory_offset) as *const PageTable)
+                    .as_ref()
+                    .unwrap()
+            };
             let new_pd = clone_pd(allocator, physical_memory_offset, pd);
             new_pdpt[i].set_addr(new_pd, entry.flags());
         }
@@ -247,7 +273,11 @@ fn clone_pd(allocator: &FrameAllocator, physical_memory_offset: u64, pd: &PageTa
             // Copy exactly, since it points to the 2MiB region directly
             new_pd[i] = entry.clone();
         } else {
-            let pt = unsafe { ((entry.addr().as_u64() + physical_memory_offset) as *const PageTable).as_ref().unwrap() };
+            let pt = unsafe {
+                ((entry.addr().as_u64() + physical_memory_offset) as *const PageTable)
+                    .as_ref()
+                    .unwrap()
+            };
             let new_pt = clone_pt(allocator, pt);
             new_pd[i].set_addr(new_pt, entry.flags());
         }

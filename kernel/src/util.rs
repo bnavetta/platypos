@@ -21,7 +21,10 @@ pub fn page_count(size: usize) -> usize {
 }
 
 /// Spin until the given condition is true or the timeout has elapsed
-pub fn spin_on<F>(mut condition: F, timeout: Duration) -> bool where F: FnMut() -> bool {
+pub fn spin_on<F>(mut condition: F, timeout: Duration) -> bool
+where
+    F: FnMut() -> bool,
+{
     let deadline = current_timestamp() + timeout;
 
     while current_timestamp() < deadline {

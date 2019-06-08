@@ -2,21 +2,21 @@
 //! of the OS that cares the most about it. Basically, application processors are started up and
 //! told to run the scheduler loop, and the rest of the OS hopefully doesn't notice that it's running
 //! on multiple cores now :)
+use core::convert::TryInto;
 use core::ptr;
 use core::time::Duration;
-use core::convert::TryInto;
 
 use apic::ipi::{DeliveryMode, Destination, InterprocessorInterrupt};
 use log::{debug, error, trace};
 use volatile::Volatile;
-use x86_64::structures::paging::{Page, PhysFrame, PageTableFlags, Mapper};
+use x86_64::structures::paging::{Mapper, Page, PageTableFlags, PhysFrame};
 use x86_64::{PhysAddr, VirtAddr};
 
-use crate::println;
 use crate::kernel_state;
+use crate::println;
 use crate::system::apic::with_local_apic;
 use crate::time::delay;
-use crate::topology::processor::{processor_topology, Processor, ProcessorState, local_id};
+use crate::topology::processor::{local_id, processor_topology, Processor, ProcessorState};
 use crate::util::spin_on;
 
 // See https://wiki.osdev.org/Memory_Map_(x86). 0x00000500-0x00007BFF is guaranteed to not be used
@@ -66,7 +66,11 @@ impl TrampolineData {
 
     /// Set the page tables for booted APs to use
     fn set_pml4(&mut self, addr: PhysAddr) {
-        self.pml4.write(addr.as_u64().try_into().expect("PML4 must be in first 4GiB of RAM to be accessible in trampoline"));
+        self.pml4.write(
+            addr.as_u64()
+                .try_into()
+                .expect("PML4 must be in first 4GiB of RAM to be accessible in trampoline"),
+        );
     }
 
     fn set_stack(&mut self, addr: VirtAddr) {
@@ -158,15 +162,15 @@ extern "C" {
 /// Start an application processor.
 ///
 /// Follows [Brendan's method from the OSDev wiki](https://wiki.osdev.org/Symmetric_Multiprocessing#AP_startup).
-fn start_processor(
-    trampoline_data: &mut TrampolineData,
-    processor: &Processor,
-) {
+fn start_processor(trampoline_data: &mut TrampolineData, processor: &Processor) {
     debug!("Attempting to start processor {}", processor.id());
     processor.mark_state_transition(ProcessorState::Starting);
     trampoline_data.clear_startup_flag();
 
-    let stack = kernel_state().frame_allocator().allocate_pages(4).expect("Could not allocate processor stack");
+    let stack = kernel_state()
+        .frame_allocator()
+        .allocate_pages(4)
+        .expect("Could not allocate processor stack");
     trampoline_data.set_stack(stack.start_address() + 4 * 4096u64);
 
     with_local_apic(|apic| {
@@ -184,7 +188,9 @@ fn start_processor(
         delay(Duration::from_millis(10));
 
         let sipi = InterprocessorInterrupt::new(
-            DeliveryMode::Startup(PhysFrame::from_start_address(PhysAddr::new(TRAMPOLINE_CODE_START as u64)).unwrap()),
+            DeliveryMode::Startup(
+                PhysFrame::from_start_address(PhysAddr::new(TRAMPOLINE_CODE_START as u64)).unwrap(),
+            ),
             Destination::Exact(processor.apic_id()),
         );
 
@@ -193,7 +199,10 @@ fn start_processor(
             apic.send_ipi(sipi, true);
         }
 
-        if spin_on(|| trampoline_data.startup_flag() != 0, Duration::from_millis(1)) {
+        if spin_on(
+            || trampoline_data.startup_flag() != 0,
+            Duration::from_millis(1),
+        ) {
             debug!("Started processor {}", processor.id());
             return;
         }
@@ -203,7 +212,10 @@ fn start_processor(
             apic.send_ipi(sipi, true);
         }
 
-        if spin_on(|| trampoline_data.startup_flag() != 0, Duration::from_secs(1)) {
+        if spin_on(
+            || trampoline_data.startup_flag() != 0,
+            Duration::from_secs(1),
+        ) {
             debug!("Started processor {}", processor.id());
         } else {
             error!(
@@ -216,7 +228,6 @@ fn start_processor(
 
         // The processor will mark itself as running once it's in long mode
     });
-
 }
 
 /// Attempts to boot all processors in the uninitialized state
@@ -242,14 +253,27 @@ pub fn boot_application_processors() {
             let mut allocator = kernel_state().frame_allocator().page_table_allocator();
 
             // Map 4 pages: data at 0x1000, code at 0x2000 and 0x3000, and GDT (created by trampoline) at 0x4000
-            let page_start = Page::from_start_address(VirtAddr::new(TRAMPOLINE_DATA_START as u64)).unwrap();
+            let page_start =
+                Page::from_start_address(VirtAddr::new(TRAMPOLINE_DATA_START as u64)).unwrap();
             let frame_start = PhysFrame::from_start_address(data_start).unwrap();
             for i in 0..4 {
-                mapper.map_to(page_start + i, frame_start + i, PageTableFlags::PRESENT | PageTableFlags::WRITABLE, &mut allocator).unwrap().flush();
+                mapper
+                    .map_to(
+                        page_start + i,
+                        frame_start + i,
+                        PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
+                        &mut allocator,
+                    )
+                    .unwrap()
+                    .flush();
             }
         }
 
-        (pt.physical_map_address(code_start), pt.physical_map_address(data_start), pt.current_pml4_location())
+        (
+            pt.physical_map_address(code_start),
+            pt.physical_map_address(data_start),
+            pt.current_pml4_location(),
+        )
     });
 
     unsafe {
@@ -277,7 +301,7 @@ pub unsafe extern "C" fn ap_entry() -> ! {
     crate::system::gdt::install();
     crate::interrupts::install();
 
-    let id= local_id();
+    let id = local_id();
     println!("Hello from processor {}", id);
 
     processor_topology().processors()[id].mark_state_transition(ProcessorState::Running);

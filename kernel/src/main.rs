@@ -110,7 +110,7 @@ pub fn init_core(boot_info: &'static BootInfo) {
     interrupts::init();
     time::init();
 
-//    crate::system::apic::configure_apic_timer(1);
+    //    crate::system::apic::configure_apic_timer(1);
 
     system::pic::disable();
 
