@@ -2,7 +2,8 @@
 //! providing interrupt handlers.
 use log::info;
 use spin::Once;
-use x86_64::{instructions::interrupts as int, structures::idt::InterruptDescriptorTable, VirtAddr};
+use x86_64::instructions::interrupts as int;
+use x86_64::structures::idt::InterruptDescriptorTable;
 
 use crate::system::gdt::FAULT_IST_INDEX;
 use crate::system::pic::{PIC_1_OFFSET, PIC_2_OFFSET};

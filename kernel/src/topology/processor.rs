@@ -15,6 +15,8 @@ use hashbrown::HashMap;
 use log::info;
 use spin::Once;
 
+use crate::system::apic::local_apic_id;
+
 /// Description of a logical CPU.
 ///
 /// In general, a system consists of one or more NUMA domains. Each NUMA domain contains one or more
@@ -165,4 +167,9 @@ pub fn init(bsp: &Option<acpi::Processor>, aps: &Vec<acpi::Processor>) {
 
 pub fn processor_topology() -> &'static ProcessorTopology {
     TOPOLOGY.wait().expect("Processor topology not initialized")
+}
+
+/// Helper to get the current processor's logical ID via the local APIC
+pub fn local_id() -> usize {
+    processor_topology().logical_id(local_apic_id()).expect("Could not identify processor") as usize
 }

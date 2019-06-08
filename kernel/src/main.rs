@@ -154,7 +154,7 @@ fn main(boot_info: &'static BootInfo) -> ! {
     let mut bootstrap_context =
         Context::calling(current_pagetable, bootstrap_stack, bootstrap, 1, 2, 3, 4);
 
-//    unsafe { bootstrap_context.make_active() };
+    unsafe { bootstrap_context.make_active() };
 
     panic!("Bootstrap returned");
 }

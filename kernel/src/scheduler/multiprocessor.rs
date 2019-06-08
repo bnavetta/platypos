@@ -5,18 +5,18 @@
 use core::ptr;
 use core::time::Duration;
 use core::convert::TryInto;
-use core::hint::black_box;
 
 use apic::ipi::{DeliveryMode, Destination, InterprocessorInterrupt};
-use log::{debug, error, trace, info};
+use log::{debug, error, trace};
 use volatile::Volatile;
 use x86_64::structures::paging::{Page, PhysFrame, PageTableFlags, Mapper};
 use x86_64::{PhysAddr, VirtAddr};
 
+use crate::println;
 use crate::kernel_state;
 use crate::system::apic::with_local_apic;
 use crate::time::delay;
-use crate::topology::processor::{processor_topology, Processor, ProcessorState};
+use crate::topology::processor::{processor_topology, Processor, ProcessorState, local_id};
 use crate::util::spin_on;
 
 // See https://wiki.osdev.org/Memory_Map_(x86). 0x00000500-0x00007BFF is guaranteed to not be used
@@ -78,6 +78,7 @@ impl TrampolineData {
     }
 }
 
+// TODO: could make this _much_ more compact - should be able to fit both initialization routines and a static GDT in 1 page with well-known addresses using .align
 global_asm!(
     r"#
     .global mp_processor_init
@@ -248,9 +249,6 @@ pub fn boot_application_processors() {
             }
         }
 
-        debug!("FOO is at {:?}", pt.translate(VirtAddr::new(0x204778)));
-        debug!("PML4 is at {:?}", pt.current_pml4_location());
-
         (pt.physical_map_address(code_start), pt.physical_map_address(data_start), pt.current_pml4_location())
     });
 
@@ -262,7 +260,6 @@ pub fn boot_application_processors() {
         );
     }
     debug!("Installed trampoline at {:#x}", TRAMPOLINE_CODE_START);
-    debug!("FOO = {}", FOO);
 
     // Safe because only boot_application_processors uses the trampoline data
     let trampoline_data = unsafe { TrampolineData::new(data_addr) };
@@ -276,17 +273,14 @@ pub fn boot_application_processors() {
     }
 }
 
-static FOO: usize = 1;
-
 pub unsafe extern "C" fn ap_entry() -> ! {
-    if FOO == 1 {
-        black_box(1);
-    } else {
-        black_box(2);
-    }
     crate::system::gdt::install();
-//    crate::interrupts::install();
-//
-//    info!("Hello, World!");
+    crate::interrupts::install();
+
+    let id= local_id();
+    println!("Hello from processor {}", id);
+
+    processor_topology().processors()[id].mark_state_transition(ProcessorState::Running);
+
     crate::util::hlt_loop();
 }

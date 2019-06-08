@@ -9,8 +9,7 @@ use x86_64::VirtAddr;
 
 use crate::kernel_state;
 use crate::config::MAX_PROCESSORS;
-use crate::system::apic::local_apic_id;
-use crate::topology::processor::processor_topology;
+use crate::topology::processor::local_id;
 
 /// IST index for the stack processor exceptions should be handled on.
 pub const FAULT_IST_INDEX: u16 = 0;
@@ -59,7 +58,7 @@ static GDT_SELECTORS_PERPROCESSOR: [Once<GdtAndSelectors>; 8] = arr![Once::new()
 pub fn install() {
     assert!(MAX_PROCESSORS <= 8, "GDT and TSS initialization code only supports up to 8 processors");
 
-    let id = processor_topology().logical_id(local_apic_id()).expect("Could not identify processor") as usize;
+    let id = local_id();
 
     let tss = TSS_PERPROCESSOR[id].call_once(|| create_tss());
 
@@ -82,5 +81,5 @@ pub fn install() {
         load_tss(gdt_and_selectors.tss_selector);
     }
 
-    info!("Loaded GDT and selectors");
+    info!("Loaded GDT and selectors on processor {}", id);
 }
