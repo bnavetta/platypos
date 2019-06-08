@@ -9,6 +9,7 @@ acpi = { git = "https://github.com/bnavetta/acpi.git" }
 apic = { path = "../apic" }
 kutil = { path = "../kutil" }
 serial_logger = { path = "../serial_logger" }
+arr_macro = "0.1.2"
 array-init = "~0.0.4"
 bit_field = "~0.10.0"
 log = "~0.4.6"

@@ -8,21 +8,25 @@ use phf_codegen;
 use toml;
 
 struct PlatyposConfig {
+    max_processors: usize,
     max_levels: HashMap<String, &'static str>,
 }
 
 impl PlatyposConfig {
     fn new(raw: toml::Value) -> PlatyposConfig {
         let mut max_levels = HashMap::new();
-        if let Some(raw_max_levels) = raw.get("max-levels") {
-            let levels = raw_max_levels.as_table().expect("max-levels must be a table");
+        if let Some(raw_max_levels) = raw.get("max_levels") {
+            let levels = raw_max_levels.as_table().expect("max_levels must be a table");
             for (key, value) in levels.into_iter() {
                 max_levels.insert(key.clone(), to_level_string(value));
             }
         }
 
+        let max_processors = raw.get("max_processors").map(|r| r.as_integer().expect("max_processors must be an integer")).unwrap_or(1);
+
         PlatyposConfig {
-            max_levels
+            max_levels,
+            max_processors: max_processors as usize
         }
     }
 }
@@ -66,4 +70,6 @@ fn main() {
     }
     builder.build(&mut file).unwrap();
     writeln!(&mut file, ";").unwrap();
+
+    writeln!(&mut file, "pub const MAX_PROCESSORS: usize = {};", config.max_processors).unwrap();
 }

@@ -43,7 +43,8 @@ mod util;
 #[cfg(test)]
 mod test;
 
-mod config {
+/// Build-time static configuration from platypos.toml
+pub mod config {
     include!(concat!(env!("OUT_DIR"), "/config.rs"));
 }
 
@@ -96,12 +97,16 @@ pub fn init_core(boot_info: &'static BootInfo) {
         page_table_state: Mutex::new(page_table_state),
     });
 
-    system::gdt::init();
-    system::pic::init();
-    system::apic::init();
-
     memory::initialize_allocator();
     topology::acpi::discover();
+
+    // Configure these, but don't enable interrupts for them yet. The APIC ID is needed for per-processor
+    // data, so we need to initialize the APIC accessor early on.
+    system::apic::init();
+    system::pic::init();
+
+    system::gdt::install();
+
     interrupts::init();
     time::init();
 
@@ -149,7 +154,7 @@ fn main(boot_info: &'static BootInfo) -> ! {
     let mut bootstrap_context =
         Context::calling(current_pagetable, bootstrap_stack, bootstrap, 1, 2, 3, 4);
 
-    unsafe { bootstrap_context.make_active() };
+//    unsafe { bootstrap_context.make_active() };
 
     panic!("Bootstrap returned");
 }

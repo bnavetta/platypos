@@ -171,6 +171,17 @@ impl Apic {
         });
     }
 
+    /// Get the local APIC ID for the processor the caller is running on
+    pub fn local_apic_id(&self) -> u32 {
+        // This function is necessary to avoid the local APIC lock for processor-local variables
+        if self.use_x2apic {
+            X2Apic::local_apic_id()
+        } else {
+            // This relies on knowing that it's safe to look up the local APIC ID without a lock
+            unsafe { XApic::new(self.mmio_base).id() }
+        }
+    }
+
     /// Execute a closure with the current processor's local APIC.
     ///
     /// # Panics

@@ -9,6 +9,7 @@ use x86_64::{
 use core::{cmp::max, time::Duration};
 
 use crate::interrupts::Interrupt;
+use crate::topology::processor::processor_topology;
 
 static APIC: Once<Apic> = Once::new();
 
@@ -26,13 +27,19 @@ where
         .with_local_apic(f)
 }
 
+/// Get the local APIC's ID
+pub fn local_apic_id() -> u32 {
+    APIC.wait().expect("APIC not initialized").local_apic_id()
+}
+
 /// Initialize the APIC. This should only be called once, on the bootstrap processor.
 pub fn init() {
     let kernel_state = crate::kernel_state();
 
+    let max_apic_id = processor_topology().processors().iter().map(|p| p.apic_id()).max().unwrap();
+
     let apic = APIC.call_once(|| {
-        // TODO: parse ACPI tables to get max APIC ID
-        Apic::new(1, |base_phys_addr| {
+        Apic::new(max_apic_id as usize, |base_phys_addr| {
             let base_addr = VirtAddr::new(base_phys_addr.as_u64()); // identity-map for now, probably not the best idea
 
             kernel_state.with_page_table(|pt| {

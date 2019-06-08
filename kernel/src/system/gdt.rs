@@ -1,11 +1,46 @@
+use arr_macro::arr;
 use log::info;
 use spin::Once;
 use x86_64::instructions::segmentation::set_cs;
 use x86_64::instructions::tables::load_tss;
 use x86_64::structures::gdt::{Descriptor, GlobalDescriptorTable, SegmentSelector};
-use x86_64::structures::paging::{Mapper, Page, PageTableFlags};
 use x86_64::structures::tss::TaskStateSegment;
 use x86_64::VirtAddr;
+
+use crate::kernel_state;
+use crate::config::MAX_PROCESSORS;
+use crate::system::apic::local_apic_id;
+use crate::topology::processor::processor_topology;
+
+/// IST index for the stack processor exceptions should be handled on.
+pub const FAULT_IST_INDEX: u16 = 0;
+
+/// Size in page frames of the stack to allocate for an interrupt or fault using the IST feature
+const INTERRUPT_STACK_FRAMES: usize = 2;
+
+/// Allocate an `INTERRUPT_STACK_FRAMES`-sized stack. Returns a pointer to the top of the stack
+fn allocate_interrupt_stack() -> VirtAddr {
+    let fault_stack = kernel_state().frame_allocator()
+        .allocate_pages(INTERRUPT_STACK_FRAMES)
+        .expect("Could not allocate interrupt stack");
+
+    fault_stack.start_address() + INTERRUPT_STACK_FRAMES as u64 * 4096
+}
+
+/// Create a TSS for a newly-started processor
+fn create_tss() -> TaskStateSegment {
+    let fault_stack = allocate_interrupt_stack();
+
+    let mut tss = TaskStateSegment::new();
+    tss.interrupt_stack_table[FAULT_IST_INDEX as usize] = fault_stack;
+    tss
+}
+
+// Unfortunately, arr! doesn't support `const` variables for array initialization. That means we
+// have to pick a constant and hope it's big enough. There's an assertion in `install` which will
+// at least fail fast if not.
+// See https://github.com/JoshMcguigan/arr_macro/issues/2 for more context.
+static TSS_PERPROCESSOR: [Once<TaskStateSegment>; 8] = arr![Once::new(); 8];
 
 struct GdtAndSelectors {
     gdt: GlobalDescriptorTable,
@@ -13,69 +48,30 @@ struct GdtAndSelectors {
     tss_selector: SegmentSelector,
 }
 
-static TSS: Once<TaskStateSegment> = Once::new();
-static GDT: Once<GdtAndSelectors> = Once::new();
+// We could theoretically have one global GDT containing a TSS for each processor. However,
+// the GDT only supports up to 8 entries, and since one is used for the code segment, that would
+// limit support to 7 CPUs. It's more scalable to have a per-processor GDT, and it doesn't take
+// up that much extra memory.
+static GDT_SELECTORS_PERPROCESSOR: [Once<GdtAndSelectors>; 8] = arr![Once::new(); 8];
 
-// 8 KiB should be plenty
-// We use a separate virtual address mapping instead of the one returned from the frame allocator
-// so that we can make sure there's an unmapped guard page after the stack.
-const FAULT_STACK_FRAMES: u64 = 2;
-const FAULT_STACK_START: u64 = 0xfffffbffffffc000; // should be 4 pages below physical memory map
-const FAULT_STACK_END: u64 = FAULT_STACK_START + FAULT_STACK_FRAMES * 4096;
-pub const FAULT_IST_INDEX: u16 = 0;
+/// Create and install a TSS and GDT for the current processor. This must be called once on every
+/// processor, since processors do not share a TSS or GDT.
+pub fn install() {
+    assert!(MAX_PROCESSORS <= 8, "GDT and TSS initialization code only supports up to 8 processors");
 
-pub fn init() {
-    let tss = TSS.call_once(|| {
-        let kernel_state = crate::kernel_state();
+    let id = processor_topology().logical_id(local_apic_id()).expect("Could not identify processor") as usize;
 
-        let mut tss = TaskStateSegment::new();
-        tss.interrupt_stack_table[FAULT_IST_INDEX as usize] = VirtAddr::new(FAULT_STACK_END); // Use the end because the stack grows down
+    let tss = TSS_PERPROCESSOR[id].call_once(|| create_tss());
 
-        let fault_stack = kernel_state
-            .frame_allocator()
-            .allocate_pages(FAULT_STACK_FRAMES as usize)
-            .expect("Failed to allocate fault stack");
-
-        info!(
-            "Fault-handler stack starting at physical address {:#x}, mapped to {:#x}",
-            fault_stack.start_phys_address().as_u64(),
-            FAULT_STACK_START
-        );
-
-        kernel_state.with_page_table(|pt| {
-            let first_frame = fault_stack.start_frame();
-            let first_page = Page::from_start_address(VirtAddr::new(FAULT_STACK_START))
-                .expect("Fault stack not page aligned");
-
-            unsafe {
-                let mut mapper = pt.active_4kib_mapper();
-                let mut allocator = kernel_state.frame_allocator().page_table_allocator();
-
-                for i in 0..FAULT_STACK_FRAMES {
-                    mapper
-                        .map_to(
-                            first_page + i,
-                            first_frame + i,
-                            PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
-                            &mut allocator,
-                        )
-                        .expect("Unable to map fault stack")
-                        .flush();
-                }
-            }
-        });
-
-        tss
-    });
-
-    let gdt_and_selectors = GDT.call_once(|| {
+    let gdt_and_selectors = GDT_SELECTORS_PERPROCESSOR[id].call_once(|| {
         let mut gdt = GlobalDescriptorTable::new();
         let code_selector = gdt.add_entry(Descriptor::kernel_code_segment());
         let tss_selector = gdt.add_entry(Descriptor::tss_segment(tss));
+
         GdtAndSelectors {
             gdt,
             code_selector,
-            tss_selector,
+            tss_selector
         }
     });
 
@@ -87,16 +83,4 @@ pub fn init() {
     }
 
     info!("Loaded GDT and selectors");
-}
-
-/// Install the GDT and TSS on the current processor. This only needs to be called on application
-/// processors, as the bootstrap processor installs the GDT and TSS immediately after creating them.
-pub fn install() {
-    let gdt_and_selectors = GDT.wait().expect("GDT not created");
-
-    gdt_and_selectors.gdt.load();
-    unsafe {
-        set_cs(gdt_and_selectors.code_selector);
-        load_tss(gdt_and_selectors.tss_selector);
-    }
 }

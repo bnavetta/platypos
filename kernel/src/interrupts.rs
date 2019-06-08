@@ -71,11 +71,6 @@ pub fn init() {
     int::enable();
 }
 
-pub fn idt_address() -> VirtAddr {
-    let idt = IDT.wait().expect("IDT not created");
-    VirtAddr::from_ptr(idt)
-}
-
 /// Install the IDT on the current processor, and enable interrupts. This only needs to be called on
 /// application processors, as the bootstrap processor installs the IDT after creating it.
 pub fn install() {

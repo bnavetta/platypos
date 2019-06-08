@@ -56,6 +56,11 @@ impl X2Apic {
             false
         }
     }
+
+    /// Gets the APIC ID of the current processor
+    pub fn local_apic_id() -> u32 {
+        unsafe { LAPIC_ID_MSR.read() as u32 }
+    }
 }
 
 impl LocalApic for X2Apic {
