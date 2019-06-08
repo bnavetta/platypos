@@ -9,7 +9,8 @@
     renamed_spin_loop,
     duration_constants,
     naked_functions,
-    global_asm
+    global_asm,
+    test
 )]
 #![no_std]
 #![no_main]

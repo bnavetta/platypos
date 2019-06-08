@@ -4,6 +4,8 @@
 //! on multiple cores now :)
 use core::ptr;
 use core::time::Duration;
+use core::convert::TryInto;
+use core::hint::black_box;
 
 use apic::ipi::{DeliveryMode, Destination, InterprocessorInterrupt};
 use log::{debug, error, trace, info};
@@ -16,7 +18,6 @@ use crate::system::apic::with_local_apic;
 use crate::time::delay;
 use crate::topology::processor::{processor_topology, Processor, ProcessorState};
 use crate::util::spin_on;
-use core::convert::TryInto;
 
 // See https://wiki.osdev.org/Memory_Map_(x86). 0x00000500-0x00007BFF is guaranteed to not be used
 // by the BIOS and System Management. However, the bootloader, like us, takes advantage of this and
@@ -86,10 +87,8 @@ global_asm!(
 mp_processor_init:
     cli
 
-    # Enable PAE and the global page feature (PGE bit)
-    # The Intel manual says that paging must be enabled before setting the PGE bit, but the OSDev
-    # wiki seems to think otherwise
-    movl $0xa0, %eax
+    # Enable PAE
+    movl $0x20, %eax
     movl %eax, %cr4
 
     # Set the PML4
@@ -100,8 +99,8 @@ mp_processor_init:
     movl $0xC0000080, %ecx
     rdmsr
 
-    # Set the long mode enable bit
-    orl $0x00000100, %eax
+    # Set the long mode enable bit and the no-execute enable bit
+    orl $0x00000900, %eax
     wrmsr
 
     # Activate long mode
@@ -249,6 +248,9 @@ pub fn boot_application_processors() {
             }
         }
 
+        debug!("FOO is at {:?}", pt.translate(VirtAddr::new(0x204778)));
+        debug!("PML4 is at {:?}", pt.current_pml4_location());
+
         (pt.physical_map_address(code_start), pt.physical_map_address(data_start), pt.current_pml4_location())
     });
 
@@ -260,6 +262,7 @@ pub fn boot_application_processors() {
         );
     }
     debug!("Installed trampoline at {:#x}", TRAMPOLINE_CODE_START);
+    debug!("FOO = {}", FOO);
 
     // Safe because only boot_application_processors uses the trampoline data
     let trampoline_data = unsafe { TrampolineData::new(data_addr) };
@@ -276,7 +279,11 @@ pub fn boot_application_processors() {
 static FOO: usize = 1;
 
 pub unsafe extern "C" fn ap_entry() -> ! {
-    assert_eq!(FOO, 1);
+    if FOO == 1 {
+        black_box(1);
+    } else {
+        black_box(2);
+    }
     crate::system::gdt::install();
 //    crate::interrupts::install();
 //

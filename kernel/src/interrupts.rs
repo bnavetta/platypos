@@ -2,7 +2,7 @@
 //! providing interrupt handlers.
 use log::info;
 use spin::Once;
-use x86_64::{instructions::interrupts as int, structures::idt::InterruptDescriptorTable};
+use x86_64::{instructions::interrupts as int, structures::idt::InterruptDescriptorTable, VirtAddr};
 
 use crate::system::gdt::FAULT_IST_INDEX;
 use crate::system::pic::{PIC_1_OFFSET, PIC_2_OFFSET};
@@ -69,6 +69,11 @@ pub fn init() {
 
     info!("Enabling interrupts");
     int::enable();
+}
+
+pub fn idt_address() -> VirtAddr {
+    let idt = IDT.wait().expect("IDT not created");
+    VirtAddr::from_ptr(idt)
 }
 
 /// Install the IDT on the current processor, and enable interrupts. This only needs to be called on
