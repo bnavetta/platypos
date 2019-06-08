@@ -5,7 +5,7 @@ use x86_64::instructions::hlt;
 use crate::time::current_timestamp;
 use core::hint::spin_loop;
 
-pub mod core_local;
+pub mod processor_local;
 pub mod qemu;
 
 /// Infinite loop executing the hlt instruction.

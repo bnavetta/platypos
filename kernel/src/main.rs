@@ -10,7 +10,8 @@
     duration_constants,
     naked_functions,
     global_asm,
-    test
+    test,
+    const_fn
 )]
 #![no_std]
 #![no_main]
