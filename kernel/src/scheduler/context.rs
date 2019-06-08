@@ -26,6 +26,22 @@ pub struct Context {
 }
 
 impl Context {
+    /// Create an empty context. Switching to this context is undefined behavior, but it can be
+    /// switched from to save the caller's CPU context for later restoration.
+    pub const fn empty() -> Context {
+        Context {
+            page_directory: 0,
+            flags: 0,
+            rsp: 0,
+            rbp: 0,
+            rbx: 0,
+            r12: 0,
+            r13: 0,
+            r14: 0,
+            r15: 0
+        }
+    }
+
     pub fn new(page_directory: PhysAddr, stack_pointer: VirtAddr) -> Context {
         Context {
             page_directory: page_directory.as_u64() as usize,
