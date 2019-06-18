@@ -1,19 +1,37 @@
-use core::{
-    alloc::{GlobalAlloc, Layout},
-    ptr,
-};
+use core::alloc::{GlobalAlloc, Layout};
+use core::ptr;
+use core::sync::atomic::{AtomicU64, Ordering};
+
+use bootloader::BootInfo;
+use log::{info, trace};
+use spin::{Mutex, Once};
+use x86_64::{VirtAddr, PhysAddr};
 
 use crate::memory::allocator::MemoryAllocator;
 use crate::memory::frame::FrameAllocator;
-use log::{info, trace};
-use spin::{Mutex, Once};
-use x86_64::VirtAddr;
 
 pub mod allocator;
 pub mod frame;
 pub mod page_table;
+pub mod address_space;
 
 pub const FRAME_SIZE: usize = 4096;
+
+static PHYSICAL_MEMORY_OFFSET: AtomicU64 = AtomicU64::new(0);
+
+/// Get a virtual address at which the given physical address is accessible. This uses the
+/// bootloader-provided physical memory mapping, and therefore relies on the kernel mappings being
+/// in the current address space.
+pub fn physical_to_virtual(phys: PhysAddr) -> VirtAddr {
+    let offset = PHYSICAL_MEMORY_OFFSET.load(Ordering::SeqCst);
+    assert_ne!(offset, 0, "Physical memory offset not set");
+    VirtAddr::new(phys.as_u64() + offset)
+}
+
+pub fn init(boot_info: &BootInfo) {
+    info!("Physical memory mapping at {:#x}", boot_info.physical_memory_offset);
+    PHYSICAL_MEMORY_OFFSET.store(boot_info.physical_memory_offset, Ordering::SeqCst);
+}
 
 pub const HEAP_START: u64 = 0xfffffb0000000000;
 pub const HEAP_END: u64 = 0xfffffb0100000000; // 4GiB

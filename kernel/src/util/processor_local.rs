@@ -3,6 +3,7 @@ use core::hint::unreachable_unchecked;
 use core::mem;
 
 use arr_macro::arr;
+use x86_64::instructions::interrupts::without_interrupts;
 
 use crate::config::MAX_PROCESSORS;
 use crate::topology::processor::local_id;
@@ -46,17 +47,19 @@ impl <T: 'static> ProcessorLocalKey<T> {
     pub fn with<F, R>(&'static self, f: F) -> R where F: FnOnce(&T) -> R {
         debug_assert!(MAX_PROCESSORS <= 8, "ProcessorLocalKey only supports up to 8 processors");
 
-        let key = local_id();
+        without_interrupts(|| {
+            let key = local_id();
 
-        let slot = &self.slots[key];
-        let val = unsafe {
-            match *slot.get() {
-                Some(ref val) => val,
-                None => self.init(slot)
-            }
-        };
+            let slot = &self.slots[key];
+            let val = unsafe {
+                match *slot.get() {
+                    Some(ref val) => val,
+                    None => self.init(slot)
+                }
+            };
 
-        f(val)
+            f(val)
+        })
     }
 }
 
@@ -89,7 +92,7 @@ macro_rules! __processor_local_impl {
             #[inline]
             fn __init() -> $t { $init }
 
-            ProcessorLocalKey::new(__init)
+            $crate::util::processor_local::ProcessorLocalKey::new(__init)
         };
     };
 }

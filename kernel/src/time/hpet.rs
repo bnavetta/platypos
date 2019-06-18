@@ -4,11 +4,10 @@ use core::time::Duration;
 use bit_field::BitField;
 use log::debug;
 use spin::Once;
-use x86_64::structures::paging::{Mapper, Page, PageTableFlags, PhysFrame};
-use x86_64::{PhysAddr, VirtAddr};
+use x86_64::PhysAddr;
 
 use super::{DelayTimer, WallClockTimer};
-use crate::kernel_state;
+use crate::memory::physical_to_virtual;
 
 const GENERAL_CAPABILITIES_REGISTER: usize = 0x00;
 const GENERAL_CONFIGURATION_REGISTER: usize = 0x010;
@@ -162,7 +161,6 @@ impl Capabilities {
     }
 }
 
-const HPET_ADDRESS: u64 = 0xfffffa0000040000;
 static HPET: Once<Hpet> = Once::new();
 
 pub fn init(base_address: PhysAddr) {
@@ -172,33 +170,7 @@ pub fn init(base_address: PhysAddr) {
     );
 
     HPET.call_once(|| {
-        let virtual_start = VirtAddr::new(HPET_ADDRESS);
-        let page = Page::from_start_address(virtual_start)
-            .expect("HPET virtual start address is not page-aligned");
-        let frame = PhysFrame::containing_address(base_address);
-
-        kernel_state().with_page_table(|table| {
-            let mut allocator = kernel_state().frame_allocator().page_table_allocator();
-            unsafe {
-                table
-                    .active_4kib_mapper()
-                    .map_to(
-                        page,
-                        frame,
-                        PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
-                        &mut allocator,
-                    )
-                    .expect("Failed to map HPET")
-                    .flush()
-            };
-        });
-
-        // The HPET start address isn't necessarily page-aligned, so we might need to offset it within the mapping
-        let base = unsafe {
-            virtual_start
-                .as_mut_ptr::<u8>()
-                .add((base_address.as_u64() - frame.start_address().as_u64()) as usize)
-        };
+        let base = physical_to_virtual(base_address).as_mut_ptr();
 
         let mut hpet = Hpet::new(base);
         unsafe {

@@ -30,7 +30,7 @@ default-features = false
 features = ["nightly"]
 
 [dependencies.hashbrown]
-version = "0.4.0"
+version = "~0.5"
 features = ["nightly"]
 
 [dependencies.intrusive-collections]

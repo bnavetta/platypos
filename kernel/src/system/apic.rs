@@ -1,15 +1,12 @@
 use apic::{Apic, DivideConfiguration, LocalApic, TimerMode};
 use log::info;
 use spin::Once;
-use x86_64::{
-    structures::paging::{mapper::Mapper, Page, PageTableFlags, PhysFrame},
-    VirtAddr,
-};
 
 use core::{cmp::max, time::Duration};
 
 use crate::interrupts::Interrupt;
 use crate::topology::processor::processor_topology;
+use crate::memory::physical_to_virtual;
 
 static APIC: Once<Apic> = Once::new();
 
@@ -34,8 +31,6 @@ pub fn local_apic_id() -> u32 {
 
 /// Initialize the APIC. This should only be called once, on the bootstrap processor.
 pub fn init() {
-    let kernel_state = crate::kernel_state();
-
     let max_apic_id = processor_topology()
         .processors()
         .iter()
@@ -44,26 +39,7 @@ pub fn init() {
         .unwrap();
 
     let apic = APIC.call_once(|| {
-        Apic::new(max_apic_id as usize, |base_phys_addr| {
-            let base_addr = VirtAddr::new(base_phys_addr.as_u64()); // identity-map for now, probably not the best idea
-
-            kernel_state.with_page_table(|pt| {
-                let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE;
-                unsafe {
-                    pt.active_4kib_mapper()
-                        .map_to(
-                            Page::containing_address(base_addr),
-                            PhysFrame::containing_address(base_phys_addr),
-                            flags,
-                            &mut kernel_state.frame_allocator().page_table_allocator(),
-                        )
-                        .expect("Unable to map LAPIC registers")
-                        .flush();
-                }
-            });
-
-            base_addr.as_mut_ptr()
-        })
+        Apic::new(max_apic_id as usize, |base_phys_addr| physical_to_virtual(base_phys_addr).as_mut_ptr())
     });
 
     unsafe {

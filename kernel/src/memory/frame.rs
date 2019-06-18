@@ -28,7 +28,7 @@ use spin::Mutex;
 use x86_64::instructions::interrupts;
 use x86_64::structures::paging::frame::PhysFrameRange;
 use x86_64::structures::paging::page::PageRange;
-use x86_64::structures::paging::{self, Page, PhysFrame};
+use x86_64::structures::paging::{Page, PhysFrame};
 use x86_64::{PhysAddr, VirtAddr};
 
 use super::FRAME_SIZE;
@@ -588,10 +588,6 @@ impl FrameAllocator {
 
         panic!("No region contained {:#?}", allocation);
     }
-
-    pub fn page_table_allocator(&self) -> PageTableAllocator {
-        PageTableAllocator::new(self)
-    }
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -635,30 +631,8 @@ impl FrameAllocation {
     }
 }
 
-/// Wrapper for allocating frames for page tables
-pub struct PageTableAllocator<'a>(&'a FrameAllocator);
+// TODO: Box-like pointer type for page frame allocations that frees on drop
 
-impl<'a> PageTableAllocator<'a> {
-    pub fn new(allocator: &'a FrameAllocator) -> PageTableAllocator<'a> {
-        PageTableAllocator(allocator)
-    }
-}
-
-unsafe impl<'a, S: paging::PageSize> paging::FrameAllocator<S> for PageTableAllocator<'a> {
-    fn allocate_frame(&mut self) -> Option<paging::PhysFrame<S>> {
-        self.0
-            .allocate_pages(S::SIZE as usize / FRAME_SIZE)
-            // use start address to convert between page sizes
-            .map(|alloc| PhysFrame::from_start_address(alloc.start_phys_address()).unwrap())
-    }
-}
-
-impl<'a, S: paging::PageSize> paging::FrameDeallocator<S> for PageTableAllocator<'a> {
-    fn deallocate_frame(&mut self, frame: PhysFrame<S>) {
-        self.0
-            .free_at_phys_address(S::SIZE as usize / FRAME_SIZE, frame.start_address());
-    }
-}
 
 #[cfg(test)]
 tests! {

@@ -9,7 +9,7 @@ use core::time::Duration;
 use apic::ipi::{DeliveryMode, Destination, InterprocessorInterrupt};
 use log::{debug, error, trace};
 use volatile::Volatile;
-use x86_64::structures::paging::{Mapper, Page, PageTableFlags, PhysFrame};
+use x86_64::structures::paging::{PhysFrame, Page, PageTableFlags};
 use x86_64::{PhysAddr, VirtAddr};
 
 use crate::kernel_state;
@@ -17,7 +17,9 @@ use crate::println;
 use crate::system::apic::with_local_apic;
 use crate::time::delay;
 use crate::topology::processor::{local_id, processor_topology, Processor, ProcessorState};
+use crate::memory::address_space::AddressSpace;
 use crate::util::spin_on;
+use crate::memory::physical_to_virtual;
 
 // See https://wiki.osdev.org/Memory_Map_(x86). 0x00000500-0x00007BFF is guaranteed to not be used
 // by the BIOS and System Management. However, the bootloader, like us, takes advantage of this and
@@ -243,38 +245,19 @@ pub fn boot_application_processors() {
         trampoline_addr, trampoline_size
     );
 
-    let (code_addr, data_addr, pml4) = kernel_state().with_page_table(|pt| {
-        let code_start = PhysAddr::new(TRAMPOLINE_CODE_START as u64);
-        let data_start = PhysAddr::new(TRAMPOLINE_DATA_START as u64);
+    let address_space = AddressSpace::current();
+    unsafe {
+        let frame_start = PhysFrame::containing_address(PhysAddr::new(TRAMPOLINE_DATA_START as u64));
+        let page_start = Page::containing_address(VirtAddr::new(TRAMPOLINE_DATA_START as u64));
 
-        // Identity-map the trampoline so it still is accessible once paging is enabled
-        unsafe {
-            let mut mapper = pt.active_4kib_mapper();
-            let mut allocator = kernel_state().frame_allocator().page_table_allocator();
-
-            // Map 4 pages: data at 0x1000, code at 0x2000 and 0x3000, and GDT (created by trampoline) at 0x4000
-            let page_start =
-                Page::from_start_address(VirtAddr::new(TRAMPOLINE_DATA_START as u64)).unwrap();
-            let frame_start = PhysFrame::from_start_address(data_start).unwrap();
-            for i in 0..4 {
-                mapper
-                    .map_to(
-                        page_start + i,
-                        frame_start + i,
-                        PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
-                        &mut allocator,
-                    )
-                    .unwrap()
-                    .flush();
-            }
+        // Map 4 pages: data at 0x1000, code at 0x2000 and 0x3000, and GDT (created by trampoline) at 0x4000
+        for i in 0..4 {
+            address_space.map_page(page_start + i, frame_start + i, PageTableFlags::PRESENT | PageTableFlags::WRITABLE).expect("Could not identity-map trampoline");
         }
+    }
 
-        (
-            pt.physical_map_address(code_start),
-            pt.physical_map_address(data_start),
-            pt.current_pml4_location(),
-        )
-    });
+    let code_addr = physical_to_virtual(PhysAddr::new(TRAMPOLINE_CODE_START as u64));
+    let data_addr = physical_to_virtual(PhysAddr::new(TRAMPOLINE_DATA_START as u64));
 
     unsafe {
         ptr::copy_nonoverlapping(
@@ -287,7 +270,7 @@ pub fn boot_application_processors() {
 
     // Safe because only boot_application_processors uses the trampoline data
     let trampoline_data = unsafe { TrampolineData::new(data_addr) };
-    trampoline_data.set_pml4(pml4);
+    trampoline_data.set_pml4(address_space.pml4_location());
     trampoline_data.set_entry_function(VirtAddr::new(ap_entry as usize as u64));
 
     for processor in processor_topology().processors() {

@@ -24,11 +24,13 @@ use alloc::vec::Vec;
 
 use bootloader::{bootinfo::BootInfo, entry_point};
 use log::info;
-use spin::{Mutex, Once};
+use spin::Once;
 
 use serial_logger;
 
-use crate::memory::{frame::FrameAllocator, page_table::PageTableState, KernelAllocator};
+use crate::memory::KernelAllocator;
+use crate::memory::frame::FrameAllocator;
+use crate::memory::address_space::AddressSpace;
 use crate::scheduler::context::Context;
 
 mod interrupts;
@@ -56,20 +58,11 @@ static ALLOCATOR: KernelAllocator = KernelAllocator::new();
 /// around and lets init_core enforce subsystem initialization order.
 pub struct KernelState {
     frame_allocator: FrameAllocator,
-    page_table_state: Mutex<PageTableState>,
 }
 
 impl KernelState {
     pub fn frame_allocator(&self) -> &FrameAllocator {
         &self.frame_allocator
-    }
-
-    pub fn with_page_table<F, T>(&self, f: F) -> T
-    where
-        F: FnOnce(&mut PageTableState) -> T,
-    {
-        let mut state = self.page_table_state.lock();
-        f(&mut *state)
     }
 }
 
@@ -87,24 +80,23 @@ pub fn init_core(boot_info: &'static BootInfo) {
     serial_logger::init(&config::MAX_LOG_LEVELS).expect("Could not initialize logging");
     terminal::init();
 
+    memory::init(boot_info);
     let frame_allocator = unsafe { FrameAllocator::initialize(boot_info) };
-
     memory::bootstrap_allocator(&frame_allocator);
-
-    let page_table_state = PageTableState::initialize(&frame_allocator, boot_info);
 
     KERNEL_STATE.call_once(|| KernelState {
         frame_allocator,
-        page_table_state: Mutex::new(page_table_state),
     });
 
-    memory::initialize_allocator();
-    topology::acpi::discover();
+//    memory::initialize_allocator();
+    topology::acpi::discover(); // needs memory allocation
 
     // Configure these, but don't enable interrupts for them yet. The APIC ID is needed for per-processor
     // data, so we need to initialize the APIC accessor early on.
     system::apic::init();
     system::pic::init();
+
+    memory::address_space::init(); // needs processor-local variables
 
     system::gdt::install();
 
@@ -151,7 +143,7 @@ fn main(boot_info: &'static BootInfo) -> ! {
         .allocate_pages(4)
         .expect("Could not allocate bootstrap stack");
     let bootstrap_stack = bootstrap_stack_allocation.start_address() + 4 * 4096u64; // since stack grows down
-    let current_pagetable = kernel_state().with_page_table(|pt| pt.current_pml4_location());
+    let current_pagetable = AddressSpace::current().pml4_location();
     let mut bootstrap_context =
         Context::calling(current_pagetable, bootstrap_stack, bootstrap, 1, 2, 3, 4);
 
