@@ -1,4 +1,3 @@
-use crate::util::hlt_loop;
 use x86_64::instructions::port::Port;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -14,6 +13,5 @@ pub fn exit(code: ExitCode) -> ! {
         port.write(code as u32);
     }
 
-    // Not necessary, but makes the compiler happy
-    hlt_loop();
+    unreachable!("QEMU did not exit");
 }

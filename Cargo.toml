@@ -4,8 +4,12 @@ members = [
 	"apic",
 	"kutil",
 	"serial_logger",
+
+	"hal",
+	"config",
+	"kernel_core",
+	"kernel_x86_64"
 ]
-exclude = ["kernel/build-script"]
 
 [profile.dev]
 panic = "abort"
