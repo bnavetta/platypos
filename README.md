@@ -1,6 +1,26 @@
 # PlatypOS
 
-PlatypOS is a microkernel for the x86-64 architecture. It's very much a work in progress.
+PlatypOS a very-WIP microkernel.
+
+## Organization
+
+PlatypOS uses a platform abstraction layer to keep as much as possible architecture-independent. This is implemented
+across a number of sub-crates, inspired by [gfx-rs](https://github.com/gfx-rs/gfx).
+
+* `platypos_pal` - types making up the platform abstraction API
+* `platypos_platform_{x86_64, ...}` - implementation of the PAL for a particular platform
+* `platypos_kernel` - platform-independent kernel code
+* `platypos_{x86_64, ...}` - platform-specific entry point
+
+The entry point crates are separated from `platypos_kernel` and their corresponding PAL implementations to prevent
+circular dependencies. This allows `platypos_kernel` to have a target-specific hard dependency on the appropriate
+PAL implementation instead of being explicitly generic over `platypos_pal::Platform` (which is hard to read and annoying
+to pipe through). The entry points can then depend on the core kernel and work with the platform-specific bootloader,
+instead of pushing that into `kernel_core` or trying to set up circular dependencies. It also allows multiple entry
+points per platform, such as BIOS and UEFI versions on x86-64.
+
+This is a lot of crates, but I didn't have a better alternative than the PAL implementation - kernel core - entry point
+sandwich.
 
 # Notes
 

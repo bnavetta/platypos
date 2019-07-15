@@ -1,5 +1,5 @@
 [package]
-name = "heap_allocator"
+name = "platypos_pal"
 version = "0.1.0"
 authors = ["Ben Navetta <ben.navetta@gmail.com>"]
 edition = "2018"

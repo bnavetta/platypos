@@ -14,7 +14,7 @@ serial_logger = { path = "../serial_logger" }
 
 bit_field = "0.10"
 bootloader = { version = "0.6", features = ["map_physical_memory"] }
-intrusive-collections = { version = "0.7", default-features = false, features = ["nightly"] }
+intrusive-collections = { version = "0.8", features = ["nightly"] }
 log = "0.4"
 spin = "0.5"
 x86_64 = "0.7"

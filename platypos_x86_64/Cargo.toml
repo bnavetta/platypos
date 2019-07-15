@@ -1,0 +1,18 @@
+[package]
+name = "platypos_x86_64"
+version = "0.1.0"
+authors = ["Ben Navetta <ben.navetta@gmail.com>"]
+description = "x86-64 entry point for PlatypOS using the rust-osdev bootloader"
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+bootloader = { version = "0.6.3", features = ["map_physical_memory"] }
+platypos_config = { path = "../platypos_config" }
+platypos_kernel = { path = "../platypos_kernel" }
+serial_logger = { path = "../serial_logger" }
+
+[package.metadata.bootimage]
+default-target = "x86_64-os.json"
+run-args = ["-smp", "cores=2", "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04", "-serial", "mon:stdio"]

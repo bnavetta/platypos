@@ -8,7 +8,13 @@ members = [
 	"hal",
 	"config",
 	"kernel_core",
-	"kernel_x86_64"
+	"kernel_x86_64",
+
+    "platypos_config",
+	"platypos_pal",
+	"platypos_kernel",
+	"platypos_platform_x86_64",
+	"platypos_x86_64"
 ]
 
 [profile.dev]

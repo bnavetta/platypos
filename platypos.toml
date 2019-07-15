@@ -1,5 +1,5 @@
 max_processors = 4
 
-[max_levels]
+[log_levels]
 'kernel::memory::frame' = 'INFO'
 'kernel::memory::allocator' = 'INFO'

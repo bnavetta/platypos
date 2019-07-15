@@ -23,9 +23,9 @@ def kernel_binary():
     return os.path.join(target_dir, 'x86_64-os/debug/kernel')
 
 
-def exec_command(args):
+def exec_command(args, cwd=None):
     try:
-        return subprocess.call(args)
+        return subprocess.call(args, cwd=cwd)
     except Exception as ex:
         click.echo(u"❌ Running " + click.style(" ".join(args), fg="red") + " failed", err=True)
         click.secho(str(ex), fg="red", err=True)
@@ -65,12 +65,13 @@ def build(remote):
 @click.option('--debug/--no-debug', default=False)
 def run(debug):
     click.secho(u"🏃‍ Running in QEMU", fg="blue")
-    args = ['bootimage', 'run', '--manifest-path', 'kernel/Cargo.toml']
+    args = ['cargo', 'xrun']
 
     if debug:
         args.extend(['--', '-s', '-S'])
 
-    exec_command(args)
+    # xrun doesn't seem to work with -p
+    exec_command(args, cwd="platypos_x86_64")
 
 
 @pos.command()
