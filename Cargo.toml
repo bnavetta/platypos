@@ -14,7 +14,9 @@ members = [
 	"platypos_pal",
 	"platypos_kernel",
 	"platypos_platform_x86_64",
-	"platypos_x86_64"
+	"platypos_x86_64",
+	"platypos_test",
+	"platypos_test/macro"
 ]
 
 [profile.dev]

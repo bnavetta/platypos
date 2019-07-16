@@ -1,5 +1,5 @@
 [build]
-target = "kernel/x86_64-os.json"
+target = "platypos_x86_64/x86_64-os.json"
 
 [target.'cfg(target_os = "none")']
 runner = "bootimage runner"

@@ -1,4 +1,6 @@
 #![no_std]
+#![feature(custom_test_frameworks)]
+#![test_runner(platypos_test::test_runner)]
 
 pub mod addr;
 
@@ -12,4 +14,14 @@ pub trait Platform {
 
     /// Halt the processor such that it will not resume.
     fn halt() -> !;
+}
+
+#[cfg(test)]
+pub mod tests {
+    use platypos_test::kernel_test;
+
+    #[kernel_test]
+    fn test_foo() {
+
+    }
 }

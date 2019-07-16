@@ -1,5 +1,5 @@
 [package]
-name = "platypos_pal"
+name = "platypos_test"
 version = "0.1.0"
 authors = ["Ben Navetta <ben.navetta@gmail.com>"]
 edition = "2018"
@@ -7,7 +7,6 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-platypos_test = { path = "../platypos_test", optional = true }
-
-[features]
-test = ["platypos_test"]
+log = "0.4"
+x86_64 = "0.7"
+platypos_test_macro = { path = "./macro" }
