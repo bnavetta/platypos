@@ -12,13 +12,8 @@ bootloader = { version = "0.6.3", features = ["map_physical_memory"] }
 log = "0.4"
 platypos_config = { path = "../platypos_config" }
 platypos_kernel = { path = "../platypos_kernel" }
-platypos_test = { path = "../platypos_test" }
 serial_logger = { path = "../serial_logger" }
-
-[features]
-testing = ["platypos_kernel/testing"]
 
 [package.metadata.bootimage]
 default-target = "x86_64-os.json"
 run-args = ["-smp", "cores=2", "-d", "unimp,guest_errors,int,cpu_reset", "-serial", "mon:stdio"]
-test-args = ["-smp", "cores=2", "-serial", "mon:stdio", "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04"]

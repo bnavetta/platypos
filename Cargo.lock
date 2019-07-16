@@ -318,6 +318,7 @@ name = "platypos_kernel"
 version = "0.1.0"
 dependencies = [
  "bit_field 0.10.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bootloader 0.6.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "intrusive-collections 0.8.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "log 0.4.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "platypos_pal 0.1.0",
@@ -329,9 +330,6 @@ dependencies = [
 [[package]]
 name = "platypos_pal"
 version = "0.1.0"
-dependencies = [
- "platypos_test 0.1.0",
-]
 
 [[package]]
 name = "platypos_platform_x86_64"
@@ -345,8 +343,11 @@ dependencies = [
 name = "platypos_test"
 version = "0.1.0"
 dependencies = [
+ "bootloader 0.6.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "log 0.4.6 (registry+https://github.com/rust-lang/crates.io-index)",
+ "platypos_config 0.1.0",
  "platypos_test_macro 0.1.0",
+ "serial_logger 0.1.0",
  "x86_64 0.7.2 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
@@ -368,7 +369,6 @@ dependencies = [
  "log 0.4.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "platypos_config 0.1.0",
  "platypos_kernel 0.1.0",
- "platypos_test 0.1.0",
  "serial_logger 0.1.0",
 ]
 

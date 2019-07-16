@@ -1,13 +1,15 @@
 #![no_std]
+#![no_main]
+#![feature(custom_test_frameworks)]
+#![test_runner(platypos_test::test_runner)]
+#![reexport_test_harness_main = "test_main"]
 
+#[cfg(not(test))]
 use core::panic::PanicInfo;
 
-use log::{error, info};
+use log::info;
 
 use platypos_pal::Platform;
-
-#[cfg(any(test, testing))]
-use platypos_test::test_panic_handler;
 
 // Pull in the appropriate platform implementation
 #[cfg(target_arch = "x86_64")]
@@ -20,11 +22,30 @@ pub fn run() -> ! {
     platform::Platform::halt();
 }
 
+#[cfg(not(test))]
 #[panic_handler]
 pub fn handle_panic(info: &PanicInfo) -> ! {
-    #[cfg(any(test, testing))]
-    platypos_test::test_panic_handler(info);
-
+    use log::error;
     error!("{}", info);
-    platform::Platform::halt();
+    platform::Platform::halt()
+}
+
+
+#[cfg(test)]
+mod tests {
+    #[platypos_test::kernel_test]
+    fn test_in_kernel() {
+        assert_eq!(1, 1);
+    }
+}
+
+#[cfg(test)]
+mod test_entry {
+    use bootloader::{BootInfo, entry_point};
+
+    pub fn test_kernel_main(_boot_info: &'static BootInfo) -> ! {
+        platypos_test::launch(crate::test_main)
+    }
+
+    entry_point!(test_kernel_main);
 }

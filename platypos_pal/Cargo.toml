@@ -5,9 +5,3 @@ authors = ["Ben Navetta <ben.navetta@gmail.com>"]
 edition = "2018"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
-[dependencies]
-platypos_test = { path = "../platypos_test", optional = true }
-
-[features]
-test = ["platypos_test"]

@@ -4,23 +4,8 @@
 import os
 import getpass
 import subprocess
-import shutil
 
 import click
-
-
-# There's some weird interaction between vboxsf and rust-lld, this seems
-# like a decent enough workaround
-if getpass.getuser() == 'vagrant':
-    os.environ['CARGO_TARGET_DIR'] = '/home/vagrant/cargo-target'
-
-
-def kernel_binary():
-    """
-    Get the path to the kernel ELF binary
-    """
-    target_dir = os.environ.get('CARGO_TARGET_DIR', 'target')
-    return os.path.join(target_dir, 'x86_64-os/debug/kernel')
 
 
 def exec_command(args, cwd=None):
@@ -30,10 +15,6 @@ def exec_command(args, cwd=None):
         click.echo(u"❌ Running " + click.style(" ".join(args), fg="red") + " failed", err=True)
         click.secho(str(ex), fg="red", err=True)
         return 1
-
-
-def build_image():
-    return exec_command(['bootimage', 'build', '--manifest-path', 'kernel/Cargo.toml']) == 0
 
 
 @click.group()
@@ -52,13 +33,8 @@ def prereqs():
 
 
 @pos.command()
-@click.option('--remote/--no-remote', default=False)
-def build(remote):
-    click.secho(u"🛠  Building PlatypOS", fg="blue")
-    if not build_image():
-        click.secho(u"❌ Build failed")
-    if remote:
-        shutil.copyfile(kernel_binary(), 'target/debug-kernel')
+def build():
+    exec_command(["bootimage", "build", "--manifest-path", "platypos_x86_64/Cargo.toml"])
 
 
 @pos.command()
@@ -75,9 +51,9 @@ def run(debug):
 
 
 @pos.command()
-def debug():
-    click.secho(u"Connecting to GDB", fg="blue")
-    exec_command(['rust-gdb', kernel_binary(), '-x', 'init.gdb'])
+def test():
+    click.secho("Testing kernel", fg="blue")
+    exec_command(["cargo", "xtest"], cwd="platypos_kernel")
 
 
 if __name__ == '__main__':

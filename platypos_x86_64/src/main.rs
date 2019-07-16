@@ -1,8 +1,5 @@
 #![no_std]
 #![no_main]
-#![reexport_test_harness_main = "test_main"]
-#![feature(custom_test_frameworks)]
-#![test_runner(platypos_test::test_runner)]
 
 use bootloader::{BootInfo, entry_point};
 
@@ -23,13 +20,3 @@ fn main(boot_info: &'static BootInfo) -> ! {
 }
 
 entry_point!(main);
-
-//#[cfg(test)]
-mod tests {
-    use platypos_test::kernel_test;
-
-    #[kernel_test]
-    fn test_foo() {
-        assert_eq!(1, 1);
-    }
-}

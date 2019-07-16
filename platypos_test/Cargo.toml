@@ -7,6 +7,9 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+bootloader = "0.6"
 log = "0.4"
 x86_64 = "0.7"
+platypos_config = { path = "../platypos_config" }
 platypos_test_macro = { path = "./macro" }
+serial_logger = { path = "../serial_logger" }
