@@ -1,6 +1,9 @@
 use core::fmt;
 use core::ops::{Add, AddAssign, Sub, SubAssign, Mul, MulAssign, Div, DivAssign};
 
+// Generic parts of the VirtualAddress/PhysicalAddress types, so they don't need to be copied for
+// every platform
+
 /// A virtual memory address. This is a wrapper around an `usize`, so it is always sized to the
 /// current system's pointer size. It does not enforce platform-specific address requirements.
 #[repr(transparent)]
@@ -180,8 +183,47 @@ macro_rules! operator_impls {
                 &self.align_down(to) == self
             }
         }
+
+        impl fmt::LowerHex for $t {
+            fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                write!(f, "{:#x}", self.0)
+            }
+        }
+
+        impl fmt::UpperHex for $t {
+            fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                write!(f, "{:#X}", self.0)
+            }
+        }
+
+        impl fmt::Binary for $t {
+            fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                write!(f, "{:#b}", self.0)
+            }
+        }
+
+        impl fmt::Octal for $t {
+            fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                write!(f, "{:#o}", self.0)
+            }
+        }
     };
 }
 
 operator_impls!(VirtualAddress);
 operator_impls!(PhysicalAddress);
+
+#[cfg(test)]
+mod tests_shared {
+    use platypos_test::kernel_test;
+
+    use super::VirtualAddress;
+
+    #[kernel_test]
+    fn test_format() {
+        let addr = VirtualAddress::new(0);
+
+        assert_eq!(format!("{}", addr), "0x0");
+        assert_eq!(format!("{:?}", addr), "Virtual(0x0)");
+    }
+}

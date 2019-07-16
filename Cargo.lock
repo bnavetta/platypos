@@ -321,21 +321,10 @@ dependencies = [
  "bootloader 0.6.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "intrusive-collections 0.8.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "log 0.4.6 (registry+https://github.com/rust-lang/crates.io-index)",
- "platypos_pal 0.1.0",
- "platypos_platform_x86_64 0.1.0",
+ "platypos_config 0.1.0",
  "platypos_test 0.1.0",
+ "serial_logger 0.1.0",
  "spin 0.5.0 (registry+https://github.com/rust-lang/crates.io-index)",
-]
-
-[[package]]
-name = "platypos_pal"
-version = "0.1.0"
-
-[[package]]
-name = "platypos_platform_x86_64"
-version = "0.1.0"
-dependencies = [
- "platypos_pal 0.1.0",
  "x86_64 0.7.2 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
@@ -359,17 +348,6 @@ dependencies = [
  "proc-macro2 0.4.30 (registry+https://github.com/rust-lang/crates.io-index)",
  "quote 0.6.12 (registry+https://github.com/rust-lang/crates.io-index)",
  "syn 0.15.36 (registry+https://github.com/rust-lang/crates.io-index)",
-]
-
-[[package]]
-name = "platypos_x86_64"
-version = "0.1.0"
-dependencies = [
- "bootloader 0.6.3 (registry+https://github.com/rust-lang/crates.io-index)",
- "log 0.4.6 (registry+https://github.com/rust-lang/crates.io-index)",
- "platypos_config 0.1.0",
- "platypos_kernel 0.1.0",
- "serial_logger 0.1.0",
 ]
 
 [[package]]

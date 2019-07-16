@@ -7,7 +7,7 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-platypos_pal = { path = "../platypos_pal" }
+platypos_config = { path = "../platypos_config" }
 
 bit_field = "0.10.0"
 intrusive-collections = { version = "0.8", features = ["nightly"] }
@@ -15,12 +15,15 @@ log = "0.4"
 spin = "0.5"
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]
-platypos_platform_x86_64 = { path = "../platypos_platform_x86_64" }
+bootloader = { version = "0.6", features = ["map_physical_memory"] }
+x86_64 = "0.7"
+serial_logger = { path = "../serial_logger" }
 
 [dev-dependencies]
-bootloader = "0.6" # Needed for bootimage when running tests
 platypos_test = { path = "../platypos_test" }
 
 [package.metadata.bootimage]
+default-target = "x86_64-os.json"
+run-args = ["-smp", "cores=2", "-d", "unimp,guest_errors,int,cpu_reset", "-serial", "mon:stdio"]
 test-args = ["-smp", "cores=2", "-serial", "mon:stdio", "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04"]
 test-success-exit-code = 33

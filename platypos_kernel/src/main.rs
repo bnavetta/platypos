@@ -9,17 +9,20 @@ use core::panic::PanicInfo;
 
 use log::info;
 
-use platypos_pal::Platform;
+use platypos_config;
 
 // Pull in the appropriate platform implementation
-#[cfg(target_arch = "x86_64")]
-extern crate platypos_platform_x86_64 as platform;
+#[cfg_attr(target_arch = "x86_64", path = "platform/x86_64/mod.rs")]
+#[allow(unused_attributes)]
+#[path = "platform/x86_64/mod.rs"] // Default for IDE completion
+mod platform;
 
-/// Run the PlatypOS kernel. This must be called by an entry point after it has performed any
-/// necessary PAL setup.
+/// Run the PlatypOS kernel. This must be called by the platform-specific entry point after
+/// performing any necessary setup
 pub fn run() -> ! {
-    info!("Welcome to PlatypOS {}!", env!("CARGO_PKG_VERSION"));
-    platform::Platform::halt();
+    info!("Welcome to PlatypOS {} ({})!", env!("CARGO_PKG_VERSION"), platypos_config::build_revision());
+
+    platform::halt();
 }
 
 #[cfg(not(test))]
@@ -27,14 +30,13 @@ pub fn run() -> ! {
 pub fn handle_panic(info: &PanicInfo) -> ! {
     use log::error;
     error!("{}", info);
-    platform::Platform::halt()
+    platform::halt()
 }
-
 
 #[cfg(test)]
 mod tests {
     #[platypos_test::kernel_test]
-    fn test_in_kernel() {
+    fn test_pass() {
         assert_eq!(1, 1);
     }
 }

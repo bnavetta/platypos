@@ -3,6 +3,7 @@ use std::env;
 use std::fs::{read_to_string, File};
 use std::io::{BufWriter, Write};
 use std::path::Path;
+use std::process::Command;
 
 use phf_codegen;
 use serde::Deserialize;
@@ -24,6 +25,23 @@ fn to_level_string(value: &str) -> &'static str {
         "TRACE" => "LevelFilter::Trace",
         _ => panic!("Unknown log level: {}", value),
     }
+}
+
+fn git_revision() -> String {
+    let output = Command::new("git")
+        .arg("describe")
+        .arg("--all")
+        .arg("--always")
+        .arg("--dirty")
+        .arg("--long")
+        .output().expect("Could not run git describe");
+
+    assert!(output.status.success(), "git describe failed");
+
+    String::from_utf8(output.stdout)
+        .expect("Invalid output from git describe")
+        .trim()
+        .to_string()
 }
 
 fn main() {
@@ -59,4 +77,6 @@ fn main() {
         config.max_processors
     )
         .unwrap();
+
+    writeln!(&mut file, "const GIT_REVISION: &'static str = \"{}\";", git_revision()).unwrap();
 }

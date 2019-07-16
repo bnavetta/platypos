@@ -47,7 +47,7 @@ def run(debug):
         args.extend(['--', '-s', '-S'])
 
     # xrun doesn't seem to work with -p
-    exec_command(args, cwd="platypos_x86_64")
+    exec_command(args, cwd="platypos_kernel")
 
 
 @pos.command()
