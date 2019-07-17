@@ -22,12 +22,6 @@ impl Order {
     /// The number of orders
     const COUNT: usize = Order::MAX.0 as usize + 1;
 
-    fn new(value: u8) -> Order {
-        assert!(value <= Order::MAX.0, "{} is too large", value);
-        assert!(value >= Order::MIN.0, "{} is too small", value);
-        Order(value)
-    }
-
     /// Get the smallest order containing at least `frames` frames. If no order is large enough,
     /// returns `None`
     fn for_frames(frames: usize) -> Option<Order> {
@@ -141,10 +135,6 @@ impl PhysicalAllocator {
         }
     }
 
-    fn free_block_cursor(&self, key: BlockKey) -> Cursor<FreeBlockAdapter> {
-        self.free_lists[key.order.as_usize()].find(&key.start)
-    }
-
     fn free_block_cursor_mut(&mut self, key: BlockKey) -> CursorMut<FreeBlockAdapter> {
         self.free_lists[key.order.as_usize()].find_mut(&key.start)
     }
@@ -163,11 +153,14 @@ impl PhysicalAllocator {
     fn return_block(&mut self, key: BlockKey) {
         if let Some(parent) = key.parent() {
             let mut buddy = self.free_block_cursor_mut(key.buddy());
+
             if buddy.is_null() {
                 trace!("Returning {:?}", key);
                 self.insert_free_block(key);
             } else {
-                trace!("Reuniting {:?} with {:?}", key, buddy.get());
+                let buddy_block = buddy.get().unwrap();
+                assert_eq!(buddy_block.order, key.order);
+                trace!("Reuniting {:?} with {:?}", key, buddy_block);
                 buddy.remove();
                 self.return_block(parent); // Recurse up in case there's more to combine
             }
@@ -184,12 +177,14 @@ impl PhysicalAllocator {
 
         match head.remove() {
             Some(block) => {
+                assert_eq!(block.order, order);
                 let key = BlockKey::new(block.order, block.start);
                 trace!("Taking {:?}", key);
                 Some(key)
             },
             None => {
                 if let Some(parent) = order.parent().and_then(|o| self.take_block(o)) {
+                    assert_eq!(Some(parent.order), order.parent());
                     trace!("Splitting {:?}", parent);
 
                     self.insert_free_block(parent.right_child().unwrap());
@@ -256,3 +251,17 @@ unsafe impl Sync for PhysicalAllocator {}
 unsafe impl Send for PhysicalAllocator {}
 
 pub static PHYSICAL_ALLOCATOR: Mutex<PhysicalAllocator> = Mutex::new(PhysicalAllocator::new());
+
+// Convenience functions for callers, so they don't have to deal with the lock
+
+/// Allocate `frames` frames of physical memory
+///
+/// Returns `None` if insufficient memory is available
+pub fn allocate_frames(frames: usize) -> Option<PhysicalAddress> {
+    PHYSICAL_ALLOCATOR.lock().allocate(frames)
+}
+
+/// Free `frames` frames of physical memory starting at `start`
+pub fn free_frames(frames: usize, start: PhysicalAddress) {
+    PHYSICAL_ALLOCATOR.lock().free(frames, start)
+}

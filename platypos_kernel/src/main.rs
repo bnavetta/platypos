@@ -12,7 +12,7 @@ use log::info;
 use platypos_config;
 
 use crate::allocators::heap::HeapAllocator;
-use crate::allocators::physical::PHYSICAL_ALLOCATOR;
+use crate::allocators::physical::{allocate_frames, free_frames};
 
 // Pull in the appropriate platform implementation
 #[cfg_attr(target_arch = "x86_64", path = "platform/x86_64/mod.rs")]
@@ -31,12 +31,10 @@ static HEAP_ALLOCATOR: HeapAllocator = HeapAllocator::new();
 pub fn run() -> ! {
     info!("Welcome to PlatypOS {} ({})!", env!("CARGO_PKG_VERSION"), platypos_config::build_revision());
 
-    let mut alloc = PHYSICAL_ALLOCATOR.lock();
-
-    for i in 1..10 {
-        let start = alloc.allocate(i).unwrap();
+    for i in 1..200 {
+        let start = allocate_frames(i).unwrap();
         info!("Allocated {} frames at {}", i, start);
-        alloc.free(i, start);
+        free_frames(i, start);
     }
 
     platform::halt();
