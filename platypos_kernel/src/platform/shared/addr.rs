@@ -222,25 +222,25 @@ macro_rules! operator_impls {
 
         impl fmt::LowerHex for $t {
             fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                write!(f, "{:#x}", self.0)
+                self.0.fmt(f)
             }
         }
 
         impl fmt::UpperHex for $t {
             fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                write!(f, "{:#X}", self.0)
+                self.0.fmt(f)
             }
         }
 
         impl fmt::Binary for $t {
             fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                write!(f, "{:#b}", self.0)
+                self.0.fmt(f)
             }
         }
 
         impl fmt::Octal for $t {
             fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                write!(f, "{:#o}", self.0)
+                self.0.fmt(f)
             }
         }
     };

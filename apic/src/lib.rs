@@ -29,6 +29,11 @@ use crate::xapic::XApic;
 
 // https://wiki.osdev.org/APIC
 
+// TODO: singleton API is kinda annoying
+// TODO: don't assume local APIC is at the same address on every core?
+// would be nice to have type system (or runtime?) enforce not accessing uninitialized APIC
+// TBD if "locking" is useful
+
 const IA32_APIC_BASE_MSR: Msr = Msr::new(0x1B);
 
 /// Enumeration of APIC operating modes.
