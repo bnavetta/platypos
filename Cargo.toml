@@ -5,11 +5,6 @@ members = [
 	"kutil",
 	"serial_logger",
 
-	"hal",
-	"config",
-	"kernel_core",
-	"kernel_x86_64",
-
     "platypos_config",
 	"platypos_kernel",
 	"platypos_test",
