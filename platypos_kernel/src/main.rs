@@ -49,14 +49,6 @@ pub fn handle_panic(info: &PanicInfo) -> ! {
 }
 
 #[cfg(test)]
-mod tests {
-    #[platypos_test::kernel_test]
-    fn test_pass() {
-        assert_eq!(1, 1);
-    }
-}
-
-#[cfg(test)]
 mod test_entry {
     use bootloader::{BootInfo, entry_point};
 

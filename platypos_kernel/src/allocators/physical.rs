@@ -4,7 +4,7 @@
 
 use arr_macro::arr;
 use intrusive_collections::{intrusive_adapter, RBTree, RBTreeLink, KeyAdapter};
-use intrusive_collections::rbtree::{Cursor, CursorMut};
+use intrusive_collections::rbtree::CursorMut;
 use log::trace;
 use spin::Mutex;
 
@@ -110,7 +110,10 @@ impl BlockKey {
 
     #[inline]
     fn parent(&self) -> Option<BlockKey> {
-        self.order.parent().map(|p| BlockKey::new(p, self.start))
+        self.order.parent().map(|p| {
+            let start = if self.index() % 2 == 0 { self.start } else {self.start - self.order.bytes() };
+            BlockKey::new(p, start)
+        })
     }
 
     #[inline]
@@ -264,4 +267,37 @@ pub fn allocate_frames(frames: usize) -> Option<PhysicalAddress> {
 /// Free `frames` frames of physical memory starting at `start`
 pub fn free_frames(frames: usize, start: PhysicalAddress) {
     PHYSICAL_ALLOCATOR.lock().free(frames, start)
+}
+
+#[cfg(test)]
+mod tests {
+    use platypos_test::kernel_test;
+
+    use crate::platform::PhysicalAddress;
+    use super::{Order, BlockKey};
+
+    #[kernel_test]
+    fn test_order() {
+        assert_eq!(Order::for_frames(1), Some(Order(0)));
+        assert_eq!(Order::for_frames(2), Some(Order(1)));
+        assert_eq!(Order::for_frames(16), Some(Order(4)));
+        assert_eq!(Order::for_frames(17), Some(Order(5)));
+        assert_eq!(Order::for_frames(5000), None);
+    }
+
+    #[kernel_test]
+    fn test_block_key_hierarchy() {
+        let parent = BlockKey::new(Order(5), PhysicalAddress::new(0x20000));
+        let left_child = BlockKey::new(Order(4), PhysicalAddress::new(0x20000));
+        let right_child = BlockKey::new(Order(4), PhysicalAddress::new(0x30000));
+
+        assert_eq!(left_child.parent(), Some(parent));
+        assert_eq!(right_child.parent(), Some(parent));
+
+        assert_eq!(left_child.buddy(), right_child);
+        assert_eq!(right_child.buddy(), left_child);
+
+        assert_eq!(parent.left_child(), Some(left_child));
+        assert_eq!(parent.right_child(), Some(right_child));
+    }
 }

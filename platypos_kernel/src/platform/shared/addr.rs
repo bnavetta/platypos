@@ -249,17 +249,17 @@ macro_rules! operator_impls {
 operator_impls!(VirtualAddress);
 operator_impls!(PhysicalAddress);
 
-#[cfg(test)]
-mod tests_shared {
-    use platypos_test::kernel_test;
-
-    use super::VirtualAddress;
-
-    #[kernel_test]
-    fn test_format() {
-        let addr = VirtualAddress::new(0);
-
-        assert_eq!(format!("{}", addr), "0x0");
-        assert_eq!(format!("{:?}", addr), "Virtual(0x0)");
-    }
-}
+//#[cfg(test)]
+//mod tests_shared {
+//    use platypos_test::kernel_test;
+//
+//    use super::VirtualAddress;
+//
+//    #[kernel_test]
+//    fn test_format() {
+//        let addr = VirtualAddress::new(0);
+//
+//        assert_eq!(format!("{}", addr), "0x0");
+//        assert_eq!(format!("{:?}", addr), "Virtual(0x0)");
+//    }
+//}
