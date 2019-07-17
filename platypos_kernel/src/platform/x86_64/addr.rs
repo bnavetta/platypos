@@ -25,3 +25,15 @@ impl Into<PhysAddr> for PhysicalAddress {
         PhysAddr::new(self.0 as u64)
     }
 }
+
+impl From<u64> for VirtualAddress {
+    fn from(addr: u64) -> Self {
+        VirtualAddress::new(addr as usize)
+    }
+}
+
+impl From<u64> for PhysicalAddress {
+    fn from(addr: u64) -> Self {
+        PhysicalAddress::new(addr as usize)
+    }
+}

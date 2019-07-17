@@ -317,6 +317,7 @@ dependencies = [
 name = "platypos_kernel"
 version = "0.1.0"
 dependencies = [
+ "arr_macro 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "bit_field 0.10.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "bootloader 0.6.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "intrusive-collections 0.8.1 (registry+https://github.com/rust-lang/crates.io-index)",

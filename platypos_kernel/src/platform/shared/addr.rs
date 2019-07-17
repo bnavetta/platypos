@@ -1,5 +1,5 @@
 use core::fmt;
-use core::ops::{Add, AddAssign, Sub, SubAssign, Mul, MulAssign, Div, DivAssign};
+use core::ops::{Add, AddAssign, Sub, SubAssign, Mul, MulAssign, Div, DivAssign, Shr, ShrAssign, Shl, ShlAssign};
 
 // Generic parts of the VirtualAddress/PhysicalAddress types, so they don't need to be copied for
 // every platform
@@ -35,6 +35,10 @@ impl VirtualAddress {
     pub unsafe fn as_mut_ref<'a, T>(&self) -> &'a mut T {
         &mut *self.as_mut_pointer()
     }
+
+    pub fn as_usize(&self) -> usize {
+        self.0
+    }
 }
 
 impl fmt::Display for VirtualAddress {
@@ -64,6 +68,10 @@ pub struct PhysicalAddress(usize);
 impl PhysicalAddress {
     pub const fn new(addr: usize) -> PhysicalAddress {
         PhysicalAddress(addr)
+    }
+
+    pub fn as_usize(&self) -> usize {
+        self.0
     }
 }
 
@@ -168,6 +176,34 @@ macro_rules! operator_impls {
         impl DivAssign<usize> for $t {
             fn div_assign(&mut self, rhs: usize) {
                 self.0 = self.0 / rhs;
+            }
+        }
+
+        impl Shr<usize> for $t {
+            type Output = Self;
+
+            fn shr(self, rhs: usize) -> Self {
+                <$t>::new(self.0 >> rhs)
+            }
+        }
+
+        impl ShrAssign<usize> for $t {
+            fn shr_assign(&mut self, rhs: usize) {
+                self.0 >>= rhs;
+            }
+        }
+
+        impl Shl<usize> for $t {
+            type Output = Self;
+
+            fn shl(self, rhs: usize) -> Self {
+                <$t>::new(self.0 << rhs)
+            }
+        }
+
+        impl ShlAssign<usize> for $t {
+            fn shl_assign(&mut self, rhs: usize) {
+                self.0 <<= rhs;
             }
         }
 

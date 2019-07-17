@@ -9,6 +9,7 @@ edition = "2018"
 [dependencies]
 platypos_config = { path = "../platypos_config" }
 
+arr_macro = "0.1"
 bit_field = "0.10.0"
 intrusive-collections = { version = "0.8", features = ["nightly"] }
 log = "0.4"
