@@ -573,28 +573,28 @@ impl MemoryAllocator {
         trace!("Extending heap by {} pages", npages);
 
         if let Some(memory) = kernel_state().frame_allocator().allocate_pages(npages) {
-//            if !kernel_state().with_page_table(|pt| {
-//                let phys_start = memory.start_frame();
-//                match unsafe {
-//                    pt.map_contiguous(
-//                        Page::range(
-//                            Page::containing_address(self.heap_end),
-//                            Page::containing_address(new_end),
-//                        ),
-//                        PhysFrame::range(phys_start, phys_start + npages as u64),
-//                        true,
-//                    )
-//                } {
-//                    Ok(()) => true,
-//                    Err(e) => {
-//                        error!("Error mapping new page frames into heap: {:?}", e);
-//                        kernel_state().frame_allocator().free_pages(memory);
-//                        false
-//                    }
-//                }
-//            }) {
-//                return None;
-//            }
+            //            if !kernel_state().with_page_table(|pt| {
+            //                let phys_start = memory.start_frame();
+            //                match unsafe {
+            //                    pt.map_contiguous(
+            //                        Page::range(
+            //                            Page::containing_address(self.heap_end),
+            //                            Page::containing_address(new_end),
+            //                        ),
+            //                        PhysFrame::range(phys_start, phys_start + npages as u64),
+            //                        true,
+            //                    )
+            //                } {
+            //                    Ok(()) => true,
+            //                    Err(e) => {
+            //                        error!("Error mapping new page frames into heap: {:?}", e);
+            //                        kernel_state().frame_allocator().free_pages(memory);
+            //                        false
+            //                    }
+            //                }
+            //            }) {
+            //                return None;
+            //            }
 
             let old_end = self.heap_end;
             self.heap_end = new_end;

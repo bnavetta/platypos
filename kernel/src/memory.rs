@@ -5,15 +5,15 @@ use core::sync::atomic::{AtomicU64, Ordering};
 use bootloader::BootInfo;
 use log::{info, trace};
 use spin::{Mutex, Once};
-use x86_64::{VirtAddr, PhysAddr};
+use x86_64::{PhysAddr, VirtAddr};
 
 use crate::memory::allocator::MemoryAllocator;
 use crate::memory::frame::FrameAllocator;
 
+pub mod address_space;
 pub mod allocator;
 pub mod frame;
 pub mod page_table;
-pub mod address_space;
 
 pub const FRAME_SIZE: usize = 4096;
 
@@ -29,7 +29,10 @@ pub fn physical_to_virtual(phys: PhysAddr) -> VirtAddr {
 }
 
 pub fn init(boot_info: &BootInfo) {
-    info!("Physical memory mapping at {:#x}", boot_info.physical_memory_offset);
+    info!(
+        "Physical memory mapping at {:#x}",
+        boot_info.physical_memory_offset
+    );
     PHYSICAL_MEMORY_OFFSET.store(boot_info.physical_memory_offset, Ordering::SeqCst);
 }
 

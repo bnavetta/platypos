@@ -1,7 +1,7 @@
 use core::sync::atomic::{AtomicUsize, Ordering};
 
-use bootloader::BootInfo;
 use bootloader::bootinfo::MemoryRegionType;
+use bootloader::BootInfo;
 
 use crate::allocators::physical::PHYSICAL_ALLOCATOR;
 use crate::platform::{PhysicalAddress, VirtualAddress};
@@ -17,9 +17,11 @@ pub fn init(boot_info: &BootInfo) {
 
     let mut frame_allocator = PHYSICAL_ALLOCATOR.lock();
     for region in boot_info.memory_map.iter() {
-        match region.region_type {
-            MemoryRegionType::Usable => frame_allocator.add_range(region.range.start_addr().into(), region.range.end_addr().into()),
-            _ => ()
+        if region.region_type == MemoryRegionType::Usable {
+            frame_allocator.add_range(
+                region.range.start_addr().into(),
+                region.range.end_addr().into(),
+            );
         }
     }
 }

@@ -1,4 +1,5 @@
 #![no_std]
+#![allow(clippy::all)]
 
 use log::LevelFilter;
 use phf;

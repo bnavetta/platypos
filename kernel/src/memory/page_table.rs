@@ -1,9 +1,9 @@
 use core::cell::{RefCell, UnsafeCell};
 
-use x86_64::{PhysAddr, VirtAddr};
-use x86_64::structures::paging::{Page, PhysFrame, Size4KiB};
-use x86_64::registers::control::{Cr3, Cr3Flags};
 use x86_64::instructions::tlb;
+use x86_64::registers::control::{Cr3, Cr3Flags};
+use x86_64::structures::paging::{Page, PhysFrame, Size4KiB};
+use x86_64::{PhysAddr, VirtAddr};
 
 use crate::processor_local;
 
@@ -34,7 +34,8 @@ impl ActivePageTable {
     /// Changing the level 4 page table is unsafe, since altering the page mapping can violate
     /// memory safety.
     pub unsafe fn switch(&mut self, pml4_location: PhysAddr) {
-        let frame = PhysFrame::from_start_address(pml4_location).expect("Page tables must be page-aligned");
+        let frame =
+            PhysFrame::from_start_address(pml4_location).expect("Page tables must be page-aligned");
 
         Cr3::write(frame, CR3_FLAGS);
         self.phys_addr = UnsafeCell::new(pml4_location);
@@ -79,6 +80,9 @@ processor_local! {
 }
 
 /// Access the active page table for the current processor.
-pub fn with_active_page_table<F, R>(f: F) -> R where F: FnOnce(&RefCell<ActivePageTable>) -> R {
+pub fn with_active_page_table<F, R>(f: F) -> R
+where
+    F: FnOnce(&RefCell<ActivePageTable>) -> R,
+{
     ACTIVE_PAGE_TABLE.with(f)
 }

@@ -5,8 +5,8 @@ use spin::Once;
 use core::{cmp::max, time::Duration};
 
 use crate::interrupts::Interrupt;
-use crate::topology::processor::processor_topology;
 use crate::memory::physical_to_virtual;
+use crate::topology::processor::processor_topology;
 
 static APIC: Once<Apic> = Once::new();
 
@@ -39,7 +39,9 @@ pub fn init() {
         .unwrap();
 
     let apic = APIC.call_once(|| {
-        Apic::new(max_apic_id as usize, |base_phys_addr| physical_to_virtual(base_phys_addr).as_mut_ptr())
+        Apic::new(max_apic_id as usize, |base_phys_addr| {
+            physical_to_virtual(base_phys_addr).as_mut_ptr()
+        })
     });
 
     unsafe {

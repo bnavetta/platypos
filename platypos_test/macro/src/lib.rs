@@ -5,32 +5,54 @@ use self::proc_macro::TokenStream;
 use heck::{CamelCase, ShoutySnekCase};
 use proc_macro2::Span;
 use quote::quote;
-use syn::{parse_macro_input, Ident, ItemFn, ReturnType};
 use syn::spanned::Spanned;
+use syn::{parse_macro_input, Ident, ItemFn, ReturnType};
 
 #[proc_macro_attribute]
 pub fn kernel_test(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let input: ItemFn = parse_macro_input!(item as ItemFn);
 
     if input.asyncness.is_some() {
-        input.span().unwrap().error("Test cases cannot be async").emit();
+        input
+            .span()
+            .unwrap()
+            .error("Test cases cannot be async")
+            .emit();
         return TokenStream::new();
     }
 
     if !input.decl.generics.params.is_empty() {
-        input.decl.generics.span().unwrap().error("Test cases cannot be generic").emit();
+        input
+            .decl
+            .generics
+            .span()
+            .unwrap()
+            .error("Test cases cannot be generic")
+            .emit();
         return TokenStream::new();
     }
 
     if !input.decl.inputs.is_empty() {
-        input.decl.inputs.span().unwrap().error("Test cases cannot take arguments").emit();
+        input
+            .decl
+            .inputs
+            .span()
+            .unwrap()
+            .error("Test cases cannot take arguments")
+            .emit();
         return TokenStream::new();
     }
 
     match input.decl.output {
         ReturnType::Default => (),
         _ => {
-            input.decl.output.span().unwrap().error("Test cases cannot return values").emit();
+            input
+                .decl
+                .output
+                .span()
+                .unwrap()
+                .error("Test cases cannot return values")
+                .emit();
             return TokenStream::new();
         }
     }

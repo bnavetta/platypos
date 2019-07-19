@@ -34,7 +34,8 @@ fn git_revision() -> String {
         .arg("--always")
         .arg("--dirty")
         .arg("--long")
-        .output().expect("Could not run git describe");
+        .output()
+        .expect("Could not run git describe");
 
     assert!(output.status.success(), "git describe failed");
 
@@ -45,8 +46,10 @@ fn git_revision() -> String {
 }
 
 fn main() {
-    let config_file = env::current_dir().unwrap()
-        .parent().unwrap()
+    let config_file = env::current_dir()
+        .unwrap()
+        .parent()
+        .unwrap()
         .join("platypos.toml");
 
     println!("cargo:rerun-if-changed={}", config_file.display());
@@ -62,7 +65,7 @@ fn main() {
         &mut file,
         "static LOG_LEVEL_FILTERS: phf::Map<&'static str, LevelFilter> = "
     )
-        .unwrap();
+    .unwrap();
 
     let mut builder = phf_codegen::Map::new();
     for (target, max_level) in config.log_levels.iter() {
@@ -76,7 +79,12 @@ fn main() {
         "const MAX_PROCESSORS: usize = {};",
         config.max_processors
     )
-        .unwrap();
+    .unwrap();
 
-    writeln!(&mut file, "const GIT_REVISION: &'static str = \"{}\";", git_revision()).unwrap();
+    writeln!(
+        &mut file,
+        "const GIT_REVISION: &str = \"{}\";",
+        git_revision()
+    )
+    .unwrap();
 }

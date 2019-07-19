@@ -2,7 +2,7 @@
 
 use core::panic::PanicInfo;
 
-use log::{info, error};
+use log::{error, info};
 
 use platypos_config;
 use serial_logger;

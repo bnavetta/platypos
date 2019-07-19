@@ -9,17 +9,17 @@ use core::time::Duration;
 use apic::ipi::{DeliveryMode, Destination, InterprocessorInterrupt};
 use log::{debug, error, trace};
 use volatile::Volatile;
-use x86_64::structures::paging::{PhysFrame, Page, PageTableFlags};
+use x86_64::structures::paging::{Page, PageTableFlags, PhysFrame};
 use x86_64::{PhysAddr, VirtAddr};
 
 use crate::kernel_state;
+use crate::memory::address_space::AddressSpace;
+use crate::memory::physical_to_virtual;
 use crate::println;
 use crate::system::apic::with_local_apic;
 use crate::time::delay;
 use crate::topology::processor::{local_id, processor_topology, Processor, ProcessorState};
-use crate::memory::address_space::AddressSpace;
 use crate::util::spin_on;
-use crate::memory::physical_to_virtual;
 
 // See https://wiki.osdev.org/Memory_Map_(x86). 0x00000500-0x00007BFF is guaranteed to not be used
 // by the BIOS and System Management. However, the bootloader, like us, takes advantage of this and
@@ -247,12 +247,19 @@ pub fn boot_application_processors() {
 
     let address_space = AddressSpace::current();
     unsafe {
-        let frame_start = PhysFrame::containing_address(PhysAddr::new(TRAMPOLINE_DATA_START as u64));
+        let frame_start =
+            PhysFrame::containing_address(PhysAddr::new(TRAMPOLINE_DATA_START as u64));
         let page_start = Page::containing_address(VirtAddr::new(TRAMPOLINE_DATA_START as u64));
 
         // Map 4 pages: data at 0x1000, code at 0x2000 and 0x3000, and GDT (created by trampoline) at 0x4000
         for i in 0..4 {
-            address_space.map_page(page_start + i, frame_start + i, PageTableFlags::PRESENT | PageTableFlags::WRITABLE).expect("Could not identity-map trampoline");
+            address_space
+                .map_page(
+                    page_start + i,
+                    frame_start + i,
+                    PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
+                )
+                .expect("Could not identity-map trampoline");
         }
     }
 

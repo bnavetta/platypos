@@ -3,13 +3,13 @@
 //! The allocator is a buddy allocator backed by free lists instead of bitmaps.
 
 use arr_macro::arr;
-use intrusive_collections::{intrusive_adapter, RBTree, RBTreeLink, KeyAdapter};
 use intrusive_collections::rbtree::CursorMut;
+use intrusive_collections::{intrusive_adapter, KeyAdapter, RBTree, RBTreeLink};
 use log::trace;
 use spin::Mutex;
 
-use crate::platform::PhysicalAddress;
 use crate::platform::memory::{physical_to_virtual, FRAME_SIZE};
+use crate::platform::PhysicalAddress;
 use crate::util::log2;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Ord, PartialOrd)]
@@ -33,18 +33,18 @@ impl Order {
     }
 
     #[inline]
-    const fn frames(&self) -> usize {
+    const fn frames(self) -> usize {
         1 << (self.0 as usize)
     }
 
     #[inline]
-    const fn bytes(&self) -> usize {
+    const fn bytes(self) -> usize {
         self.frames() * FRAME_SIZE
     }
 
     #[inline]
-    fn parent(&self) -> Option<Order> {
-        if self < &Order::MAX {
+    fn parent(self) -> Option<Order> {
+        if self < Order::MAX {
             Some(Order(self.0 + 1))
         } else {
             None
@@ -52,8 +52,8 @@ impl Order {
     }
 
     #[inline]
-    fn child(&self) -> Option<Order> {
-        if self > &Order::MIN {
+    fn child(self) -> Option<Order> {
+        if self > Order::MIN {
             Some(Order(self.0 - 1))
         } else {
             None
@@ -61,7 +61,7 @@ impl Order {
     }
 
     #[inline]
-    fn as_usize(&self) -> usize {
+    fn as_usize(self) -> usize {
         self.0 as usize
     }
 }
@@ -70,12 +70,12 @@ impl Order {
 struct FreeBlock {
     start: PhysicalAddress,
     order: Order,
-    link: RBTreeLink
+    link: RBTreeLink,
 }
 
 intrusive_adapter!(FreeBlockAdapter = &'static FreeBlock : FreeBlock { link: RBTreeLink });
 
-impl <'a> KeyAdapter<'a> for FreeBlockAdapter {
+impl<'a> KeyAdapter<'a> for FreeBlockAdapter {
     type Key = PhysicalAddress;
 
     fn get_key(&self, value: &'a FreeBlock) -> PhysicalAddress {
@@ -86,7 +86,7 @@ impl <'a> KeyAdapter<'a> for FreeBlockAdapter {
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 struct BlockKey {
     order: Order,
-    start: PhysicalAddress
+    start: PhysicalAddress,
 }
 
 impl BlockKey {
@@ -111,7 +111,11 @@ impl BlockKey {
     #[inline]
     fn parent(&self) -> Option<BlockKey> {
         self.order.parent().map(|p| {
-            let start = if self.index() % 2 == 0 { self.start } else {self.start - self.order.bytes() };
+            let start = if self.index() % 2 == 0 {
+                self.start
+            } else {
+                self.start - self.order.bytes()
+            };
             BlockKey::new(p, start)
         })
     }
@@ -123,7 +127,9 @@ impl BlockKey {
 
     #[inline]
     fn right_child(&self) -> Option<BlockKey> {
-        self.order.child().map(|c| BlockKey::new(c, self.start + c.bytes()))
+        self.order
+            .child()
+            .map(|c| BlockKey::new(c, self.start + c.bytes()))
     }
 }
 
@@ -134,7 +140,7 @@ pub struct PhysicalAllocator {
 impl PhysicalAllocator {
     const fn new() -> PhysicalAllocator {
         PhysicalAllocator {
-            free_lists: arr![RBTree::new(FreeBlockAdapter::NEW); 12]
+            free_lists: arr![RBTree::new(FreeBlockAdapter::NEW); 12],
         }
     }
 
@@ -184,7 +190,7 @@ impl PhysicalAllocator {
                 let key = BlockKey::new(block.order, block.start);
                 trace!("Taking {:?}", key);
                 Some(key)
-            },
+            }
             None => {
                 if let Some(parent) = order.parent().and_then(|o| self.take_block(o)) {
                     assert_eq!(Some(parent.order), order.parent());
@@ -215,7 +221,8 @@ impl PhysicalAllocator {
 
     pub fn free(&mut self, frames: usize, start: PhysicalAddress) {
         trace!("Freeing {} frames starting at {}", frames, start);
-        let order = Order::for_frames(frames).expect("Attempted to free allocation of invalid size");
+        let order =
+            Order::for_frames(frames).expect("Attempted to free allocation of invalid size");
 
         self.return_block(BlockKey::new(order, start));
     }
@@ -226,8 +233,14 @@ impl PhysicalAllocator {
     /// - `start`: the start of the range (inclusive)
     /// - `end`: the end of the range (exclusive)
     pub fn add_range(&mut self, start: PhysicalAddress, end: PhysicalAddress) {
-        assert!(start.is_aligned(FRAME_SIZE), "Start address is not page-aligned");
-        assert!(end.is_aligned(FRAME_SIZE), "End address is not page-aligned");
+        assert!(
+            start.is_aligned(FRAME_SIZE),
+            "Start address is not page-aligned"
+        );
+        assert!(
+            end.is_aligned(FRAME_SIZE),
+            "End address is not page-aligned"
+        );
 
         let mut start = start;
         let mut order = Order::MAX;
@@ -242,7 +255,7 @@ impl PhysicalAllocator {
             if let Some(next) = order.child() {
                 order = next;
             } else {
-                break
+                break;
             }
         }
     }
@@ -273,8 +286,8 @@ pub fn free_frames(frames: usize, start: PhysicalAddress) {
 mod tests {
     use platypos_test::kernel_test;
 
+    use super::{BlockKey, Order};
     use crate::platform::PhysicalAddress;
-    use super::{Order, BlockKey};
 
     #[kernel_test]
     fn test_order() {

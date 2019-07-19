@@ -6,17 +6,18 @@ use core::cell::RefCell;
 use hashbrown::HashSet;
 use log::debug;
 use spin::{Mutex, Once};
-use x86_64::structures::paging::{
-    FrameAllocator, FrameDeallocator, MappedPageTable, Mapper, MapperAllSizes, Page, PageSize, PageTable, PhysFrame, PageTableFlags
-};
 use x86_64::structures::paging::mapper::{MapToError, UnmapError};
+use x86_64::structures::paging::{
+    FrameAllocator, FrameDeallocator, MappedPageTable, Mapper, MapperAllSizes, Page, PageSize,
+    PageTable, PageTableFlags, PhysFrame,
+};
 use x86_64::{PhysAddr, VirtAddr};
 
-use super::{FRAME_SIZE, physical_to_virtual};
+use super::{physical_to_virtual, FRAME_SIZE};
 use crate::kernel_state;
 use crate::memory::page_table::with_active_page_table;
-use crate::topology::processor::local_id;
 use crate::processor_local;
+use crate::topology::processor::local_id;
 
 /// Translator for MappedPageTable
 fn page_table_accessor(frame: PhysFrame) -> *mut PageTable {
@@ -41,16 +42,22 @@ pub fn init() {
     TEMPLATE.call_once(|| {
         let (template_table, _) = with_active_page_table(|pt| {
             let page_table_address = pt.borrow().physical_address();
-            let page_table = unsafe { &*physical_to_virtual(page_table_address).as_ptr::<PageTable>() };
+            let page_table =
+                unsafe { &*physical_to_virtual(page_table_address).as_ptr::<PageTable>() };
 
-            debug!("Creating template address space from page table at {:?}", page_table_address);
+            debug!(
+                "Creating template address space from page table at {:?}",
+                page_table_address
+            );
             clone_pml4(page_table)
         });
 
         template_table
     });
 
-    unsafe { AddressSpace::switch(Arc::new(AddressSpace::new())); }
+    unsafe {
+        AddressSpace::switch(Arc::new(AddressSpace::new()));
+    }
 }
 
 /// Logical representation of an address space. This is a higher-level wrapper over a raw page table
@@ -76,12 +83,13 @@ impl AddressSpace {
     /// Create a new address space. This address space will include kernel mappings from the template
     /// page tables.
     pub fn new() -> AddressSpace {
-        let (table, location) = clone_pml4(TEMPLATE.wait().expect("Template page table not created"));
+        let (table, location) =
+            clone_pml4(TEMPLATE.wait().expect("Template page table not created"));
 
         AddressSpace {
             processors: Mutex::new(HashSet::new()),
             pml4_location: location,
-            pml4: Mutex::new(table)
+            pml4: Mutex::new(table),
         }
     }
 
@@ -98,17 +106,25 @@ impl AddressSpace {
     /// to modify the page table is also undefined behavior.
     ///
     /// If the page table is aliased, memory safety can be violated.
-    pub unsafe fn from_existing(pml4: &'static mut PageTable, pml4_location: PhysAddr) -> AddressSpace {
+    pub unsafe fn from_existing(
+        pml4: &'static mut PageTable,
+        pml4_location: PhysAddr,
+    ) -> AddressSpace {
         AddressSpace {
             processors: Mutex::new(HashSet::new()),
             pml4_location,
-            pml4: Mutex::new(pml4)
+            pml4: Mutex::new(pml4),
         }
     }
 
     /// Get a reference to the active address space on the current processor
     pub fn current() -> Arc<AddressSpace> {
-        ACTIVE_ADDRESS_SPACE.with(|a| a.borrow().as_ref().expect("No active address space").clone())
+        ACTIVE_ADDRESS_SPACE.with(|a| {
+            a.borrow()
+                .as_ref()
+                .expect("No active address space")
+                .clone()
+        })
     }
 
     /// Switch to a different address space.
@@ -153,16 +169,21 @@ impl AddressSpace {
     /// Changing the page tables can cause memory safety violations. In addition, the caller must ensure
     /// that the given frame is not unintentionally mapped into another address space, leading to
     /// invisible aliasing.
-    pub unsafe fn map_page(&self, page: Page, frame: PhysFrame, flags: PageTableFlags) -> Result<(), MapToError> {
+    pub unsafe fn map_page(
+        &self,
+        page: Page,
+        frame: PhysFrame,
+        flags: PageTableFlags,
+    ) -> Result<(), MapToError> {
         // TODO: bulk mapping for more efficient TLB sync
         let mut allocator = KernelFrameAllocator;
 
         let mut pml4 = self.pml4.lock();
         let mut mapper = MappedPageTable::new(&mut pml4, page_table_accessor);
         mapper.map_to(page, frame, flags, &mut allocator)?.flush();
-//        self.with_mapper(|mapper| mapper.map_to(page, frame, flags, &mut allocator))?.flush();
+        //        self.with_mapper(|mapper| mapper.map_to(page, frame, flags, &mut allocator))?.flush();
 
-//        unimplemented!("TLB synchronization protocol");
+        //        unimplemented!("TLB synchronization protocol");
         Ok(())
     }
 
@@ -176,7 +197,7 @@ impl AddressSpace {
         let (_, flush) = mapper.unmap(page)?;
         flush.flush();
 
-//        unimplemented!("TLB synchronization protocol");
+        //        unimplemented!("TLB synchronization protocol");
         Ok(())
     }
 
@@ -219,16 +240,24 @@ impl Drop for AddressSpace {
 
                     // Level 1 - Page Table
                     let pt_addr = entry.addr();
-                    kernel_state().frame_allocator().free_at_phys_address(1, pt_addr);
+                    kernel_state()
+                        .frame_allocator()
+                        .free_at_phys_address(1, pt_addr);
                 }
 
-                kernel_state().frame_allocator().free_at_phys_address(1, pd_addr);
+                kernel_state()
+                    .frame_allocator()
+                    .free_at_phys_address(1, pd_addr);
             }
 
-            kernel_state().frame_allocator().free_at_phys_address(1, pdpt_addr);
+            kernel_state()
+                .frame_allocator()
+                .free_at_phys_address(1, pdpt_addr);
         }
 
-        kernel_state().frame_allocator().free_at_phys_address(1, self.pml4_location);
+        kernel_state()
+            .frame_allocator()
+            .free_at_phys_address(1, self.pml4_location);
     }
 }
 
@@ -262,7 +291,8 @@ impl<S: PageSize> FrameDeallocator<S> for KernelFrameAllocator {
 /// # Panics
 /// If unable to allocate memory for any of the needed tables
 pub fn clone_pml4(pml4: &PageTable) -> (&'static mut PageTable, PhysAddr) {
-    let allocation = kernel_state().frame_allocator()
+    let allocation = kernel_state()
+        .frame_allocator()
         .allocate_pages(1)
         .expect("Could not allocate PML4");
 
@@ -289,7 +319,8 @@ pub fn clone_pml4(pml4: &PageTable) -> (&'static mut PageTable, PhysAddr) {
 /// # Panics
 /// If unable to allocate memory for any of the needed tables
 fn clone_pdpt(pdpt: &PageTable) -> PhysAddr {
-    let allocation = kernel_state().frame_allocator()
+    let allocation = kernel_state()
+        .frame_allocator()
         .allocate_pages(1)
         .expect("Could not allocate PDPT");
 
@@ -317,7 +348,8 @@ fn clone_pdpt(pdpt: &PageTable) -> PhysAddr {
 /// # Panics
 /// If unable to allocate memory for any of the needed tables
 fn clone_pd(pd: &PageTable) -> PhysAddr {
-    let allocation = kernel_state().frame_allocator()
+    let allocation = kernel_state()
+        .frame_allocator()
         .allocate_pages(1)
         .expect("Could not allocate page directory");
 
@@ -345,7 +377,8 @@ fn clone_pd(pd: &PageTable) -> PhysAddr {
 /// # Panics
 /// If unable to allocate memory for the page table
 fn clone_pt(pt: &PageTable) -> PhysAddr {
-    let allocation = kernel_state().frame_allocator()
+    let allocation = kernel_state()
+        .frame_allocator()
         .allocate_pages(1)
         .expect("Could not allocate page table");
 

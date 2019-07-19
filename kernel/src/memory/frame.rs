@@ -633,7 +633,6 @@ impl FrameAllocation {
 
 // TODO: Box-like pointer type for page frame allocations that frees on drop
 
-
 #[cfg(test)]
 tests! {
     test block_tree {

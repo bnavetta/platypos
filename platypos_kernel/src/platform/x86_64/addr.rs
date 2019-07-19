@@ -1,9 +1,9 @@
-use x86_64::{VirtAddr, PhysAddr};
+use x86_64::{PhysAddr, VirtAddr};
 
 include!("../shared/addr.rs");
 
 impl VirtualAddress {
-    pub fn is_valid(&self) -> bool {
+    pub fn is_valid(self) -> bool {
         VirtAddr::try_new(self.0 as u64).is_ok()
     }
 }
@@ -15,7 +15,7 @@ impl Into<VirtAddr> for VirtualAddress {
 }
 
 impl PhysicalAddress {
-    pub fn is_valid(&self) -> bool {
+    pub fn is_valid(self) -> bool {
         PhysAddr::try_new(self.0 as u64).is_ok()
     }
 }

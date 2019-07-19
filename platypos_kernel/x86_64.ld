@@ -3,9 +3,9 @@ OUTPUT_FORMAT(elf64-x86-64)
 
 SECTIONS {
     /* . = 0x200000; */ /* 2Mib */
-    . = 0x40000000; /* 1 GiB */
+    /* . = 0x40000000; /* 1 GiB */
     /* I have a hunch that the bootloader doesn't like higher-half kernels because of the setup it does in 32-bit mode, but IDK */
-    /* . = 0xffffffff80000000; */
+    . = 0xffffffff80000000;
 
     .rodata ALIGN(4K) : {
         *(.rodata*)

@@ -1,11 +1,36 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 import os
 import getpass
+from pathlib import Path
+import sys
+import shutil
 import subprocess
 
 import click
+
+
+ROOT = Path(__file__).resolve().parents[1]
+
+BUILD_ROOT = ROOT / 'target'
+TARGET_KERNEL = ROOT / 'targets' / 'x86_64-os.json'
+TARGET_BOOTLOADER = 'x86_64-unknown-uefi' # built into rust
+
+
+OVMF_RPM_URL = 'https://www.kraxel.org/repos/jenkins/edk2/edk2.git-ovmf-x64-0-20190703.1160.g03835a8c73.noarch.rpm'
+
+
+class FatalError(Exception):
+    pass
+
+
+@click.group()
+def pos():
+    """
+    Command line tool for platypos
+    """
+    pass
 
 
 def exec_command(args, cwd=None):
@@ -17,12 +42,13 @@ def exec_command(args, cwd=None):
         return 1
 
 
-@click.group()
-def pos():
-    """
-    Command line tool for platypos
-    """
-    pass
+def build_package(name, target, features = []):
+    args = ['cargo', 'xbuild', '-p', name, '--target', target]
+    if features:
+        args.extend(['--features', ' '.join(features)])
+    if exec_command(args, cwd=ROOT) != 0:
+        click.secho(f"Building {name} failed", fg="red", err=True)
+        raise FatalError
 
 
 @pos.command()
@@ -34,14 +60,60 @@ def prereqs():
 
 @pos.command()
 def build():
-    exec_command(["bootimage", "build", "--manifest-path", "platypos_x86_64/Cargo.toml"])
+    build_package('platypos_kernel', TARGET_KERNEL)
+    build_package('platypos_loader', TARGET_BOOTLOADER)
 
+
+@pos.command()
+def run_uefi():
+    # See https://github.com/rust-osdev/uefi-rs/blob/master/uefi-test-runner/build.py
+    build_package('platypos_kernel', TARGET_KERNEL)
+    build_package('platypos_loader', TARGET_BOOTLOADER, features=['qemu'])
+
+    loader_file = BUILD_ROOT / TARGET_BOOTLOADER / 'debug' / 'platypos_loader.efi'
+    kernel_file = BUILD_ROOT / TARGET_KERNEL.stem / 'debug' / 'platypos_kernel'
+
+    esp_dir = BUILD_ROOT / 'esp'
+    if esp_dir.exists():
+        shutil.rmtree(esp_dir)
+        esp_dir.mkdir(parents=True, exist_ok=True)
+
+    boot_dir = esp_dir / 'EFI' / 'Boot'
+    boot_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(loader_file, boot_dir / 'BootX64.efi')
+
+    shutil.copy2(kernel_file, esp_dir / 'platypos_kernel')
+
+    ovmf_code = ROOT / 'foo' / 'usr' / 'share' / 'edk2.git' / 'ovmf-x64' / 'OVMF_CODE-pure-efi.fd'
+    ovmf_vars = ROOT / 'foo' / 'usr' / 'share' / 'edk2.git' / 'ovmf-x64' / 'OVMF_VARS-pure-efi.fd'
+
+    qemu_cmd = [
+        'qemu-system-x86_64',
+
+        # '-nodefaults',
+        '-machine', 'q35,accel=kvm:tcg',
+
+        # Set up OVMF
+        '-drive', f'if=pflash,format=raw,file={ovmf_code},readonly=on',
+        '-drive', f'if=pflash,format=raw,file={ovmf_vars},readonly=on',
+
+        # Mount the emulated EFI system partition
+        '-drive', f'format=raw,file=fat:rw:{esp_dir}',
+
+        '-serial', 'stdio',
+
+        # Map the QEMU exit signal to port f4
+        '-device', 'isa-debug-exit,iobase=0xf4,iosize=0x04',
+    ]
+
+    print(" ".join(qemu_cmd))
+    exec_command(qemu_cmd)
 
 @pos.command()
 @click.option('--debug/--no-debug', default=False)
 def run(debug):
     click.secho(u"🏃‍ Running in QEMU", fg="blue")
-    args = ['cargo', 'xrun']
+    args = ['cargo', 'xrun', '--target', 'x86_64-os.json']
 
     if debug:
         args.extend(['--', '-s', '-S'])
@@ -57,6 +129,9 @@ def test():
 
 
 if __name__ == '__main__':
-    root = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
-    os.chdir(root)
-    pos()
+    # root = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
+    # os.chdir(root)
+    try:
+        pos()
+    except FatalError:
+        sys.exit(1)

@@ -13,20 +13,19 @@ pub struct ProcessorLocalKey<T: 'static> {
 
     // TODO: replace with MAX_PROCESSORS once arr! supports const variable sizes
     slots: [UnsafeCell<Option<T>>; 8],
-
 }
 
-impl <T: 'static> ProcessorLocalKey<T> {
+impl<T: 'static> ProcessorLocalKey<T> {
     #[doc(hidden)] // Only exposed for use in macro
     pub const fn new(init: fn() -> T) -> ProcessorLocalKey<T> {
         ProcessorLocalKey {
             init,
-            slots: arr![UnsafeCell::new(Option::None); 8]
+            slots: arr![UnsafeCell::new(Option::None); 8],
         }
     }
 }
 
-impl <T: 'static> ProcessorLocalKey<T> {
+impl<T: 'static> ProcessorLocalKey<T> {
     /// From LocalKey::init since there are some weird ordering requirements
     unsafe fn init(&self, slot: &UnsafeCell<Option<T>>) -> &T {
         let value = (self.init)();
@@ -38,14 +37,20 @@ impl <T: 'static> ProcessorLocalKey<T> {
         // the optimizer doesn't know to remove the panic case in unwrap
         match *ptr {
             Some(ref val) => val,
-            None => unreachable_unchecked()
+            None => unreachable_unchecked(),
         }
     }
 
     /// Run a closure against the current processor's instance of the value. The value is lazily
     /// initialized if it has not been referenced on this processor yet.
-    pub fn with<F, R>(&'static self, f: F) -> R where F: FnOnce(&T) -> R {
-        debug_assert!(MAX_PROCESSORS <= 8, "ProcessorLocalKey only supports up to 8 processors");
+    pub fn with<F, R>(&'static self, f: F) -> R
+    where
+        F: FnOnce(&T) -> R,
+    {
+        debug_assert!(
+            MAX_PROCESSORS <= 8,
+            "ProcessorLocalKey only supports up to 8 processors"
+        );
 
         without_interrupts(|| {
             let key = local_id();
@@ -54,7 +59,7 @@ impl <T: 'static> ProcessorLocalKey<T> {
             let val = unsafe {
                 match *slot.get() {
                     Some(ref val) => val,
-                    None => self.init(slot)
+                    None => self.init(slot),
                 }
             };
 
@@ -65,7 +70,7 @@ impl <T: 'static> ProcessorLocalKey<T> {
 
 // Using the processor ID as a key and disabling preemption inside `with` means we'll never have
 // multiple threads accessing the same entry at the same time.
-unsafe impl <T> Sync for ProcessorLocalKey<T> {}
+unsafe impl<T> Sync for ProcessorLocalKey<T> {}
 
 // Based on the std::thread_local macro's syntax, which allows definition of multiple thread-local variables
 #[macro_export]

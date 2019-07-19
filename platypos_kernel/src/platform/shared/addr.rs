@@ -20,23 +20,23 @@ impl VirtualAddress {
         VirtualAddress(p as usize)
     }
 
-    pub fn as_pointer<T>(&self) -> *const T {
+    pub fn as_pointer<T>(self) -> *const T {
         self.0 as *const T
     }
 
-    pub unsafe fn as_ref<'a, T>(&self) -> &'a T {
+    pub unsafe fn as_ref<'a, T>(self) -> &'a T {
         &* self.as_pointer()
     }
 
-    pub fn as_mut_pointer<T>(&self) -> *mut T {
+    pub fn as_mut_pointer<T>(self) -> *mut T {
         self.0 as *mut T
     }
 
-    pub unsafe fn as_mut_ref<'a, T>(&self) -> &'a mut T {
+    pub unsafe fn as_mut_ref<'a, T>(self) -> &'a mut T {
         &mut *self.as_mut_pointer()
     }
 
-    pub fn as_usize(&self) -> usize {
+    pub fn as_usize(self) -> usize {
         self.0
     }
 }
@@ -70,7 +70,7 @@ impl PhysicalAddress {
         PhysicalAddress(addr)
     }
 
-    pub fn as_usize(&self) -> usize {
+    pub fn as_usize(self) -> usize {
         self.0
     }
 }

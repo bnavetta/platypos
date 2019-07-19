@@ -10,10 +10,18 @@ use crate::memory::physical_to_virtual;
 struct KernelAcpiHandler;
 
 impl AcpiHandler for KernelAcpiHandler {
-    fn map_physical_region<T>(&mut self, physical_address: usize, size: usize) -> PhysicalMapping<T> {
+    fn map_physical_region<T>(
+        &mut self,
+        physical_address: usize,
+        size: usize,
+    ) -> PhysicalMapping<T> {
         PhysicalMapping {
             physical_start: physical_address,
-            virtual_start: unsafe { NonNull::new_unchecked(physical_to_virtual(PhysAddr::new(physical_address as u64)).as_mut_ptr()) },
+            virtual_start: unsafe {
+                NonNull::new_unchecked(
+                    physical_to_virtual(PhysAddr::new(physical_address as u64)).as_mut_ptr(),
+                )
+            },
             region_length: size,
             mapped_length: size,
         }

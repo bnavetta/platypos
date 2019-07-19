@@ -13,6 +13,17 @@ PlatypOS is split across several crates:
 Within the kernel, platform-specific code is in the `platform` module, which is conditionally compiled to use the
 appropriate implementation for the target system.
 
+## Address Space
+
+On x86-64, PlatypOS uses the conventional higher-half kernel layout. See
+[Harvard's OS memory layout notes](https://read.seas.harvard.edu/cs161-18/doc/memory-layout/) and
+[the OSDev wiki](https://wiki.osdev.org/Higher_Half_Kernel) for more information.
+
+* The kernel is loaded into memory at 0xffffffff80000000
+* All of physical memory is mapped into the kernel address space at 0xffff800000000000
+* The loader information structure is at 0xffffffff70000000 (max 16 MiB)
+* The kernel's initial stack is from 0xffffffff71000000 to 0xffffffff71001000 (1 page)
+
 # Notes
 
 This is basically just scratch space for me.

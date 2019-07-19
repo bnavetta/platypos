@@ -24,7 +24,9 @@ pub fn halt() -> ! {
 pub fn init_perprocessor_data() {
     use log::info;
 
-    info!("per-processor data start: {:p}", unsafe { &PERPROCESSOR_START });
+    info!("per-processor data start: {:p}", unsafe {
+        &PERPROCESSOR_START
+    });
     info!("per-processor data end: {:p}", unsafe { &PERPROCESSOR_END });
 
     info!("FOO is {}", unsafe { FOO });

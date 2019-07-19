@@ -28,9 +28,9 @@ use spin::Once;
 
 use serial_logger;
 
-use crate::memory::KernelAllocator;
-use crate::memory::frame::FrameAllocator;
 use crate::memory::address_space::AddressSpace;
+use crate::memory::frame::FrameAllocator;
+use crate::memory::KernelAllocator;
 use crate::scheduler::context::Context;
 
 mod interrupts;
@@ -84,11 +84,9 @@ pub fn init_core(boot_info: &'static BootInfo) {
     let frame_allocator = unsafe { FrameAllocator::initialize(boot_info) };
     memory::bootstrap_allocator(&frame_allocator);
 
-    KERNEL_STATE.call_once(|| KernelState {
-        frame_allocator,
-    });
+    KERNEL_STATE.call_once(|| KernelState { frame_allocator });
 
-//    memory::initialize_allocator();
+    //    memory::initialize_allocator();
     topology::acpi::discover(); // needs memory allocation
 
     // Configure these, but don't enable interrupts for them yet. The APIC ID is needed for per-processor

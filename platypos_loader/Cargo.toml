@@ -1,0 +1,19 @@
+[package]
+name = "platypos_loader"
+version = "0.1.0"
+authors = ["Ben Navetta <ben.navetta@gmail.com>"]
+edition = "2018"
+description = "UEFI bootloader for PlatypOS"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+goblin = { version = "0.0.24", default-features = false, features = ["elf64"] }
+log = "0.4"
+plain = "0.2"
+uefi = { git = "https://github.com/rust-osdev/uefi-rs" }
+uefi-services = { git = "https://github.com/rust-osdev/uefi-rs" }
+x86_64 = "0.7"
+
+[features]
+qemu = ["uefi-services/qemu"]
