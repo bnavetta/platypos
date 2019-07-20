@@ -1,0 +1,3 @@
+target create target/x86_64-unknown-uefi/debug/platypos_loader.efi
+process connect --plugin gdb-remote connect://127.0.0.1:1234
+breakpoint set --name efi_main

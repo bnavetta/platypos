@@ -1,4 +1,5 @@
 use alloc::vec;
+use core::hint::unreachable_unchecked;
 use core::slice;
 
 use goblin::elf64::header::{self, Header};
@@ -9,17 +10,18 @@ use log::{debug, warn};
 
 use uefi::prelude::*;
 use uefi::proto::media::file::{FileType, RegularFile};
-use uefi::table::boot::{AllocateType, MemoryType};
+use uefi::table::boot::MemoryType;
 
 use x86_64::registers::control::{Cr3, Cr3Flags, Efer, EferFlags};
 use x86_64::structures::paging::{
-    FrameAllocator, MappedPageTable, Mapper, Page, PageSize, PageTable, PageTableFlags, PhysFrame,
+    MappedPageTable, Mapper, Page, PageTable, PageTableFlags, PhysFrame,
     Size4KiB,
 };
 use x86_64::{PhysAddr, VirtAddr};
 
 use crate::filesystem::locate_file;
-use core::hint::unreachable_unchecked;
+use crate::util::allocator::UefiPageAllocator;
+use crate::util::page_table::clone_pml4;
 
 // Use distinct memory types for the kernel code, page tables, etc. instead of LOADER_DATA
 // so that the kernel can reclaim the rest of the memory used for the loader
@@ -52,27 +54,37 @@ pub fn launch_kernel(handle: uefi::Handle, system_table: SystemTable<Boot>, kern
         .expect("Kernel not found");
 
     if let FileType::Regular(mut file) = file.into_type().unwrap_success() {
-        let mut allocator = UefiPageAllocator::new(system_table.boot_services());
-        let pml4_addr = allocator
-            .allocate_pages(KERNEL_PAGE_TABLE_MEMORY_TYPE, 1)
-            .expect("Could not allocate kernel PML4");
-        let pml4: &mut PageTable = unsafe { &mut *VirtAddr::new(pml4_addr.as_u64()).as_mut_ptr() };
-        pml4.zero();
+        let mut allocator = UefiPageAllocator::new(system_table.boot_services(), KERNEL_PAGE_TABLE_MEMORY_TYPE);
+
+        let (pml4, pml4_addr) = copy_uefi_page_table(&mut allocator);
+
+//        let pml4_addr = allocator
+//            .allocate_pages(KERNEL_PAGE_TABLE_MEMORY_TYPE, 1)
+//            .expect("Could not allocate kernel PML4");
+//        let pml4: &mut PageTable = unsafe { &mut *VirtAddr::new(pml4_addr.as_u64()).as_mut_ptr() };
+//        pml4.zero();
 
         let entry_addr = load_kernel(&mut file, &mut allocator, pml4);
 
         // Add the boot loader to the kernel page table, so we can switch to it without crashing
-        map_loader(system_table.boot_services(), &mut allocator, pml4);
+//        map_loader(system_table.boot_services(), &mut allocator, pml4);
 
         create_kernel_stack(&mut allocator, pml4);
 
         unsafe { activate_page_table(pml4_addr) };
-        exit_boot_services(handle, system_table);
+//        exit_boot_services(handle, system_table);
         unsafe { switch_to_kernel(entry_addr) };
 
     } else {
         panic!("Found a directory at expected kernel location");
     }
+}
+
+fn copy_uefi_page_table(allocator: &mut UefiPageAllocator) -> (&'static mut PageTable, PhysAddr) {
+    // Clone the UEFI page table directly, since the memory map doesn't necessarily capture everything
+    let (current_pml4_addr, _) = Cr3::read();
+    let current_pml4 = unsafe { &* (current_pml4_addr.start_address().as_u64() as usize as *const PageTable) };
+    clone_pml4(allocator, current_pml4)
 }
 
 /// Read the kernel ELF binary into memory, adding its segments to the page table. Returns the
@@ -238,7 +250,9 @@ fn map_loader(
                 entry.page_count, entry.ty, entry.phys_start
             );
 
+
             // Identity-map everything - the virt_start field seems to always be 0
+            assert_eq!(entry.virt_start, 0);
             let phys_start: PhysFrame<Size4KiB> =
                 PhysFrame::from_start_address(PhysAddr::new(entry.phys_start))
                     .expect("Memory region is not page-aligned");
@@ -297,17 +311,17 @@ fn create_kernel_stack(allocator: &mut UefiPageAllocator, pml4: &mut PageTable) 
 /// Switch to the given page table. The table must have mappings for the loader to continue to
 /// operate.
 unsafe fn activate_page_table(pml4_addr: PhysAddr) {
-    debug!("Switching to kernel page tables");
+    debug!("Switching to kernel page tables at {:#x}", pml4_addr);
 
     // Enable the no-execute flag used in the kernel page table
     Efer::update(|efer| *efer |= EferFlags::NO_EXECUTE_ENABLE);
 
     debug!("A!");
+    debug!("B");
+    let frame = PhysFrame::from_start_address(pml4_addr).expect("PML4 is not page-aligned");
+    debug!("C: {:?}", frame);
 
-    Cr3::write(
-        PhysFrame::from_start_address(pml4_addr).expect("PML4 is not page-aligned"),
-        Cr3Flags::empty(),
-    );
+    Cr3::write(frame,Cr3Flags::empty());
 
     debug!("HI!");
 }
@@ -333,32 +347,3 @@ fn identity_translator(frame: PhysFrame) -> *mut PageTable {
     VirtAddr::new(frame.start_address().as_u64()).as_mut_ptr()
 }
 
-/// Allocator for pages of memory using UEFI boot services
-struct UefiPageAllocator<'a> {
-    boot_services: &'a BootServices,
-}
-
-impl<'a> UefiPageAllocator<'a> {
-    fn new(boot_services: &'a BootServices) -> UefiPageAllocator<'a> {
-        UefiPageAllocator { boot_services }
-    }
-
-    fn allocate_pages(&mut self, memory_type: MemoryType, npages: usize) -> Option<PhysAddr> {
-        self.boot_services
-            .allocate_pages(AllocateType::AnyPages, memory_type, npages)
-            .warning_as_error()
-            .ok()
-            .map(PhysAddr::new)
-    }
-}
-
-unsafe impl<'a, S: PageSize> FrameAllocator<S> for UefiPageAllocator<'a> {
-    fn allocate_frame(&mut self) -> Option<PhysFrame<S>> {
-        let pages_needed = S::SIZE as usize / 4096; // UEFI page allocation API deals with 4KiB pages
-
-        self.allocate_pages(KERNEL_PAGE_TABLE_MEMORY_TYPE, pages_needed)
-            .map(|start| {
-                PhysFrame::from_start_address(start).expect("Pages from UEFI allocator not aligned")
-            })
-    }
-}

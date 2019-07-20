@@ -99,7 +99,7 @@ impl Log for SerialLogger {
                     record.line().unwrap_or(0),
                     COLOR_NORMAL
                 );
-                let _ = write!(w, " {}-{} {}\n", COLOR_GREY, COLOR_NORMAL, record.args());
+                let _ = write!(w, " {}-{} {}\r\n", COLOR_GREY, COLOR_NORMAL, record.args());
             })
         }
     }
