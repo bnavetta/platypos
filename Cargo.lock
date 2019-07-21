@@ -306,6 +306,7 @@ dependencies = [
  "platypos_test 0.1.0",
  "serial_logger 0.1.0",
  "spin 0.5.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "volatile 0.2.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "x86_64 0.7.2 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
@@ -316,8 +317,8 @@ dependencies = [
  "goblin 0.0.24 (registry+https://github.com/rust-lang/crates.io-index)",
  "log 0.4.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "plain 0.2.3 (registry+https://github.com/rust-lang/crates.io-index)",
- "uefi 0.1.0 (git+https://github.com/rust-osdev/uefi-rs)",
- "uefi-services 0.1.0 (git+https://github.com/rust-osdev/uefi-rs)",
+ "uefi 0.1.0 (git+https://github.com/bnavetta/uefi-rs?branch=loaded-image-proto)",
+ "uefi-services 0.1.0 (git+https://github.com/bnavetta/uefi-rs?branch=loaded-image-proto)",
  "x86_64 0.7.2 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
@@ -642,35 +643,35 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 [[package]]
 name = "uefi"
 version = "0.1.0"
-source = "git+https://github.com/rust-osdev/uefi-rs#7d0152220aa909832a86c2e00e64af38f65a0d25"
+source = "git+https://github.com/bnavetta/uefi-rs?branch=loaded-image-proto#b54ee8223bb04cff3638b4f4e6f183d7b742f4b5"
 dependencies = [
  "bitflags 1.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "log 0.4.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "ucs2 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "uefi-macros 0.1.0 (git+https://github.com/rust-osdev/uefi-rs)",
+ "uefi-macros 0.1.0 (git+https://github.com/bnavetta/uefi-rs?branch=loaded-image-proto)",
 ]
 
 [[package]]
 name = "uefi-alloc"
 version = "0.1.0"
-source = "git+https://github.com/rust-osdev/uefi-rs#7d0152220aa909832a86c2e00e64af38f65a0d25"
+source = "git+https://github.com/bnavetta/uefi-rs?branch=loaded-image-proto#b54ee8223bb04cff3638b4f4e6f183d7b742f4b5"
 dependencies = [
- "uefi 0.1.0 (git+https://github.com/rust-osdev/uefi-rs)",
+ "uefi 0.1.0 (git+https://github.com/bnavetta/uefi-rs?branch=loaded-image-proto)",
 ]
 
 [[package]]
 name = "uefi-logger"
 version = "0.1.0"
-source = "git+https://github.com/rust-osdev/uefi-rs#7d0152220aa909832a86c2e00e64af38f65a0d25"
+source = "git+https://github.com/bnavetta/uefi-rs?branch=loaded-image-proto#b54ee8223bb04cff3638b4f4e6f183d7b742f4b5"
 dependencies = [
  "log 0.4.6 (registry+https://github.com/rust-lang/crates.io-index)",
- "uefi 0.1.0 (git+https://github.com/rust-osdev/uefi-rs)",
+ "uefi 0.1.0 (git+https://github.com/bnavetta/uefi-rs?branch=loaded-image-proto)",
 ]
 
 [[package]]
 name = "uefi-macros"
 version = "0.1.0"
-source = "git+https://github.com/rust-osdev/uefi-rs#7d0152220aa909832a86c2e00e64af38f65a0d25"
+source = "git+https://github.com/bnavetta/uefi-rs?branch=loaded-image-proto#b54ee8223bb04cff3638b4f4e6f183d7b742f4b5"
 dependencies = [
  "proc-macro2 0.4.30 (registry+https://github.com/rust-lang/crates.io-index)",
  "quote 0.6.12 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -680,13 +681,13 @@ dependencies = [
 [[package]]
 name = "uefi-services"
 version = "0.1.0"
-source = "git+https://github.com/rust-osdev/uefi-rs#7d0152220aa909832a86c2e00e64af38f65a0d25"
+source = "git+https://github.com/bnavetta/uefi-rs?branch=loaded-image-proto#b54ee8223bb04cff3638b4f4e6f183d7b742f4b5"
 dependencies = [
  "log 0.4.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "rlibc 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "uefi 0.1.0 (git+https://github.com/rust-osdev/uefi-rs)",
- "uefi-alloc 0.1.0 (git+https://github.com/rust-osdev/uefi-rs)",
- "uefi-logger 0.1.0 (git+https://github.com/rust-osdev/uefi-rs)",
+ "uefi 0.1.0 (git+https://github.com/bnavetta/uefi-rs?branch=loaded-image-proto)",
+ "uefi-alloc 0.1.0 (git+https://github.com/bnavetta/uefi-rs?branch=loaded-image-proto)",
+ "uefi-logger 0.1.0 (git+https://github.com/bnavetta/uefi-rs?branch=loaded-image-proto)",
  "x86_64 0.2.14 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
@@ -860,11 +861,11 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 "checksum typenum 1.10.0 (registry+https://github.com/rust-lang/crates.io-index)" = "612d636f949607bdf9b123b4a6f6d966dedf3ff669f7f045890d3a4a73948169"
 "checksum uart_16550 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)" = "5b9392f60931fe3bf8f24e0a15ee4f51528770f1d64c48768ab66571334d95b0"
 "checksum ucs2 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)" = "8e583483194b07714e09e7f72ae3ed447d17fe6855f66a2ccbf6751e52df82e0"
-"checksum uefi 0.1.0 (git+https://github.com/rust-osdev/uefi-rs)" = "<none>"
-"checksum uefi-alloc 0.1.0 (git+https://github.com/rust-osdev/uefi-rs)" = "<none>"
-"checksum uefi-logger 0.1.0 (git+https://github.com/rust-osdev/uefi-rs)" = "<none>"
-"checksum uefi-macros 0.1.0 (git+https://github.com/rust-osdev/uefi-rs)" = "<none>"
-"checksum uefi-services 0.1.0 (git+https://github.com/rust-osdev/uefi-rs)" = "<none>"
+"checksum uefi 0.1.0 (git+https://github.com/bnavetta/uefi-rs?branch=loaded-image-proto)" = "<none>"
+"checksum uefi-alloc 0.1.0 (git+https://github.com/bnavetta/uefi-rs?branch=loaded-image-proto)" = "<none>"
+"checksum uefi-logger 0.1.0 (git+https://github.com/bnavetta/uefi-rs?branch=loaded-image-proto)" = "<none>"
+"checksum uefi-macros 0.1.0 (git+https://github.com/bnavetta/uefi-rs?branch=loaded-image-proto)" = "<none>"
+"checksum uefi-services 0.1.0 (git+https://github.com/bnavetta/uefi-rs?branch=loaded-image-proto)" = "<none>"
 "checksum unicode-segmentation 1.3.0 (registry+https://github.com/rust-lang/crates.io-index)" = "1967f4cdfc355b37fd76d2a954fb2ed3871034eb4f26d60537d88795cfc332a9"
 "checksum unicode-width 0.1.5 (registry+https://github.com/rust-lang/crates.io-index)" = "882386231c45df4700b275c7ff55b6f3698780a650026380e72dabe76fa46526"
 "checksum unicode-xid 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)" = "fc72304796d0818e357ead4e000d19c9c174ab23dc11093ac919054d20a6a7fc"

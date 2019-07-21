@@ -9,6 +9,11 @@ use super::memory;
 use crate::platform::PhysicalAddress;
 
 fn main(boot_info: &'static BootInfo) -> ! {
+    let mut wait = volatile::Volatile::new(1);
+    while wait.read() == 1 {
+        core::hint::spin_loop();
+    }
+
     serial_logger::init(platypos_config::log_levels()).expect("Could not initialize logging");
 
     info!("Hello, World!");

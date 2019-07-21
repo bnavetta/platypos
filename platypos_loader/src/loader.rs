@@ -71,8 +71,9 @@ pub fn launch_kernel(handle: uefi::Handle, system_table: SystemTable<Boot>, kern
 
         create_kernel_stack(&mut allocator, pml4);
 
+        exit_boot_services(handle, system_table);
+        debug!("HI");
         unsafe { activate_page_table(pml4_addr) };
-//        exit_boot_services(handle, system_table);
         unsafe { switch_to_kernel(entry_addr) };
 
     } else {
@@ -316,21 +317,20 @@ unsafe fn activate_page_table(pml4_addr: PhysAddr) {
     // Enable the no-execute flag used in the kernel page table
     Efer::update(|efer| *efer |= EferFlags::NO_EXECUTE_ENABLE);
 
-    debug!("A!");
-    debug!("B");
     let frame = PhysFrame::from_start_address(pml4_addr).expect("PML4 is not page-aligned");
-    debug!("C: {:?}", frame);
 
     Cr3::write(frame,Cr3Flags::empty());
-
-    debug!("HI!");
 }
 
-fn exit_boot_services(handle: uefi::Handle, system_table: SystemTable<Boot>) {
+pub fn exit_boot_services(handle: uefi::Handle, system_table: SystemTable<Boot>) {
     debug!("Exiting UEFI boot services");
 
     // TODO: allocate and then return boot info structure
-    let mut memory_map_buffer = vec![0u8; system_table.boot_services().memory_map_size() + 256];
+    let memory_map_size = system_table.boot_services().memory_map_size();
+    debug!("Memory map is {} bytes", memory_map_size);
+    let mut memory_map_buffer = vec![0u8; memory_map_size + 256];
+//    let mut memory_map_buffer = vec![0u8; 16];
+    // Might be OOM?
 
     let (runtime_table, memory_map) = system_table.exit_boot_services(handle, &mut memory_map_buffer).expect_success("Could not exit boot services");
 }

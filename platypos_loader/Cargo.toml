@@ -11,8 +11,8 @@ description = "UEFI bootloader for PlatypOS"
 goblin = { version = "0.0.24", default-features = false, features = ["elf64"] }
 log = "0.4"
 plain = "0.2"
-uefi = { git = "https://github.com/rust-osdev/uefi-rs" }
-uefi-services = { git = "https://github.com/rust-osdev/uefi-rs" }
+uefi = { git = "https://github.com/bnavetta/uefi-rs", branch = "loaded-image-proto" }
+uefi-services = { git = "https://github.com/bnavetta/uefi-rs", branch = "loaded-image-proto" }
 x86_64 = "0.7"
 
 [features]

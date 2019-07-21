@@ -1,6 +1,6 @@
 #![no_std]
 #![no_main]
-#![feature(custom_test_frameworks, alloc_error_handler)]
+#![feature(custom_test_frameworks, alloc_error_handler, renamed_spin_loop)]
 #![test_runner(platypos_test::test_runner)]
 #![reexport_test_harness_main = "test_main"]
 
