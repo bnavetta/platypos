@@ -5,8 +5,7 @@ use uefi::table::boot::{AllocateType, MemoryType};
 use x86_64::structures::paging::frame::PhysFrameRange;
 use x86_64::structures::paging::page::PageRange;
 use x86_64::structures::paging::{
-    FrameAllocator, MappedPageTable, Mapper, Page, PageSize, PageTable, PageTableFlags, PhysFrame,
-    Size2MiB, Size4KiB,
+    FrameAllocator, MappedPageTable, Mapper, Page, PageSize, PageTable, PageTableFlags, PhysFrame
 };
 use x86_64::{PhysAddr, VirtAddr};
 
@@ -26,48 +25,32 @@ where
             .ok()
             .map(PhysAddr::new)
     }
-}
 
-// MappedPageTable implements Mapper for each PageSize specifically, so we can't define a
-// map_contiguous method that's generic over PageSize :/
-// Instead, this macro generates a method for a specific size
-macro_rules! contiguous_map_impl {
-    ($method:ident, $size:ty) => {
-        impl<S: Stage> BootManager<S>
-        where
-            S: Stage<SystemTableView = Boot>,
-        {
-            pub fn $method(
-                &mut self,
-                page_range: PageRange<$size>,
-                frame_range: PhysFrameRange<$size>,
-                flags: PageTableFlags,
-            ) {
-                assert_eq!(
-                    page_range.end - page_range.start,
-                    frame_range.end - frame_range.start,
-                    "Physical and virtual ranges differ in size"
-                );
+    pub fn map_contiguous(
+        &mut self,
+        page_range: PageRange,
+        frame_range: PhysFrameRange,
+        flags: PageTableFlags,
+    ) {
+        assert_eq!(
+            page_range.end - page_range.start,
+            frame_range.end - frame_range.start,
+            "Physical and virtual ranges differ in size"
+        );
 
-                let mut mapper =
-                    unsafe { MappedPageTable::new(self.page_table, identity_translator) };
-                let mut allocator = UefiFrameAllocator::new(self.system_table.boot_services());
+        let mut mapper = unsafe { MappedPageTable::new(self.page_table, identity_translator) };
+        let mut allocator = UefiFrameAllocator::new(self.system_table.boot_services());
 
-                for (page, frame) in page_range.zip(frame_range) {
-                    unsafe {
-                        mapper
-                            .map_to(page, frame, flags, &mut allocator)
-                            .expect("Could not add to kernel page table")
-                            .ignore();
-                    }
-                }
+        for (page, frame) in page_range.zip(frame_range) {
+            unsafe {
+                mapper
+                    .map_to(page, frame, flags, &mut allocator)
+                    .expect("Could not add to kernel page table")
+                    .ignore();
             }
         }
-    };
+    }
 }
-
-contiguous_map_impl!(map_contiguous_4kib, Size4KiB);
-contiguous_map_impl!(map_contiguous_2mib, Size2MiB);
 
 /// Frame allocator that uses UEFI boot services to allocate pages
 pub struct UefiFrameAllocator<'a> {

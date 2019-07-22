@@ -3,7 +3,7 @@ use alloc::vec::Vec;
 use log::{debug, info};
 use uefi::prelude::*;
 use uefi::table::boot::{AllocateType, MemoryAttribute, MemoryDescriptor, MemoryType};
-use x86_64::structures::paging::{PageSize, PageTable, PageTableFlags, Size2MiB, Size4KiB};
+use x86_64::structures::paging::{PageSize, PageTable, PageTableFlags, Size4KiB};
 use x86_64::{PhysAddr, VirtAddr};
 
 use super::load_kernel::LoadKernel;
@@ -59,11 +59,16 @@ impl BootManager<MapUefi> {
                 } else {
                     match desc.ty {
                         // It seems like the loader's stack is allocated as BOOT_SERVICES_DATA, so we have to keep it in the mapping
-                        MemoryType::LOADER_CODE | MemoryType::LOADER_DATA | MemoryType::BOOT_SERVICES_DATA | KERNEL_IMAGE | KERNEL_DATA | KERNEL_PAGE_TABLE => true,
+                        MemoryType::LOADER_CODE
+                        | MemoryType::LOADER_DATA
+                        | MemoryType::BOOT_SERVICES_DATA
+                        | KERNEL_IMAGE
+                        | KERNEL_DATA
+                        | KERNEL_PAGE_TABLE => true,
                         _ => {
                             debug!("Skipping {:?}", desc);
                             false
-                        },
+                        }
                     }
                 }
             })
@@ -72,15 +77,8 @@ impl BootManager<MapUefi> {
         regions.sort_by_key(|desc| desc.phys_start);
 
         for region in regions.iter() {
-            let mut phys_start = PhysAddr::new(region.phys_start);
-            let mut size = region.page_count * 4096;
-
-//            // If it's a large enough region, round the starting address to the nearest 2MiB so we
-//            // can use huge pages for efficiency
-//            if size >= Size2MiB::SIZE {
-//                phys_start = phys_start.align_down(Size2MiB::SIZE);
-//                size += region.phys_start - phys_start.as_u64();
-//            }
+            let phys_start = PhysAddr::new(region.phys_start);
+            let size = region.page_count * 4096;
 
             debug!(
                 "Identity-mapping {:?} {:#x} - {:#x} ({} bytes)",
@@ -90,27 +88,16 @@ impl BootManager<MapUefi> {
                 size
             );
 
-//            // Map as much as possible with huge pages
-//            if size >= Size2MiB::SIZE {
-//                let huge_pages = (size / Size2MiB::SIZE) as usize;
-//                self.map_contiguous_2mib(
-//                    make_page_range(VirtAddr::new(phys_start.as_u64()), huge_pages),
-//                    make_frame_range(phys_start, huge_pages),
-//                    PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
-//                );
-//
-//                size -= huge_pages as u64 * Size2MiB::SIZE;
-//                phys_start += huge_pages as u64 * Size2MiB::SIZE;
-//            }
-
             assert_eq!(
                 size % Size4KiB::SIZE,
                 0,
                 "Region is not an integer number of pages"
             );
 
-            // Map the remainder with 4KiB pages
-            self.map_contiguous_4kib(
+            // We could probably use 2MiB pages for some of these, but the extra work isn't really
+            // worth the efficiency gain since the kernel creates new page tables anyways
+
+            self.map_contiguous(
                 make_page_range(
                     VirtAddr::new(phys_start.as_u64()),
                     (size / Size4KiB::SIZE) as usize,

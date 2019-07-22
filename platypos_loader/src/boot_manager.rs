@@ -38,18 +38,18 @@ pub use load_kernel::LoadKernel;
 pub use map_uefi::MapUefi;
 
 /// Memory type for the kernel image (code and data)
-pub const KERNEL_IMAGE: MemoryType = MemoryType(0x70000042);
+pub const KERNEL_IMAGE: MemoryType = MemoryType(0x7000_0042);
 
 // Memory type for data allocated by the OS loader for the kernel, such as
 // the stack and boot information
-pub const KERNEL_DATA: MemoryType = MemoryType(0x70000043);
+pub const KERNEL_DATA: MemoryType = MemoryType(0x7000_0043);
 
 /// Memory type for the initial kernel page table created by the OS loader
-pub const KERNEL_PAGE_TABLE: MemoryType = MemoryType(0x70000044);
+pub const KERNEL_PAGE_TABLE: MemoryType = MemoryType(0x7000_0044);
 
 // Virtual address range for the kernel stack
-pub const KERNEL_STACK_LOW: u64 = 0xffffffff71000000;
-pub const KERNEL_STACK_HIGH: u64 = 0xffffffff71001000;
+pub const KERNEL_STACK_LOW: u64 = 0xffff_ffff_7100_0000;
+pub const KERNEL_STACK_HIGH: u64 = 0xffff_ffff_7100_1000;
 
 pub trait Stage {
     type SystemTableView: SystemTableView;

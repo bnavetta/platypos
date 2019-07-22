@@ -5,8 +5,6 @@
 #[macro_use]
 extern crate alloc;
 
-use core::fmt::Write;
-
 use log::info;
 use uefi::prelude::*;
 use uefi::proto::console::text::Color;
@@ -14,7 +12,6 @@ use uefi::proto::loaded_image::LoadedImage;
 use uefi::Handle;
 
 mod filesystem;
-mod loader;
 mod util;
 
 mod boot_manager;

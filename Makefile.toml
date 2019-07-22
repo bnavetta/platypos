@@ -90,18 +90,8 @@ args = [
     # Create a PTY for the QEMU monitor, which allows controlling the VM
     "-monitor", "pty",
 
-#    # Create 2 serial ports - OVMF will use one for debug output, and the kernel will use the other for logging
-#    # QEMU will print out the two PTYs created, which `screen` can connect to
-#    "-serial", "pty",
-#    "-serial", "pty",
-
-#    "-monitor", "stdio",
-
-    # "-d", "cpu_reset,int,pcall,guest_errors,page",
-    # "-d", "cpu_reset,int,guest_errors",
     "-d", "cpu_reset,guest_errors",
 
-     "-s", "-S",
      "-m", "256"
 ]
 

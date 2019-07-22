@@ -163,7 +163,7 @@ impl BootManager<LoadKernel> {
             flags |= PageTableFlags::NO_EXECUTE;
         }
 
-        self.map_contiguous_4kib(
+        self.map_contiguous(
             make_page_range(VirtAddr::new(segment.p_vaddr).align_down(4096u64), pages),
             make_frame_range(phys_addr, pages),
             flags,
@@ -190,7 +190,7 @@ impl BootManager<LoadKernel> {
             .allocate_pages(KERNEL_DATA, pages)
             .expect("Could not allocate kernel stack");
 
-        self.map_contiguous_4kib(
+        self.map_contiguous(
             make_page_range(VirtAddr::new(KERNEL_STACK_LOW), pages),
             make_frame_range(phys_addr, pages),
             PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::NO_EXECUTE,

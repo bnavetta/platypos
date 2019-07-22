@@ -8,6 +8,7 @@ use x86_64::VirtAddr;
 
 use super::handoff::Handoff;
 use super::{BootManager, Stage};
+use crate::util::halt_loop;
 
 pub struct ExitUefiBootServices {
     /// Address of the kernel entry point
@@ -30,23 +31,30 @@ impl BootManager<ExitUefiBootServices> {
         let mut debug_port = unsafe { SerialPort::new(0x3F8) };
         debug_port.init();
 
-        let table = match self.system_table.exit_boot_services(self.image_handle, &mut memory_map_buffer) {
+        let table = match self
+            .system_table
+            .exit_boot_services(self.image_handle, &mut memory_map_buffer)
+        {
             Ok(comp) => {
                 let (status, (table, _)) = comp.split();
                 if status.is_success() {
                     table
                 } else {
-                    writeln!(&mut debug_port, "Warning exiting boot services: {:?}", status);
-                    loop {}
+                    writeln!(
+                        &mut debug_port,
+                        "Warning exiting boot services: {:?}",
+                        status
+                    ).unwrap();
+                    halt_loop();
                 }
-            },
+            }
             Err(err) => {
-                writeln!(&mut debug_port, "Error exiting boot services: {:?}", err);
-                loop {}
+                writeln!(&mut debug_port, "Error exiting boot services: {:?}", err).unwrap();
+                halt_loop();
             }
         };
 
-        writeln!(&mut debug_port, "Exited boot services!");
+        writeln!(&mut debug_port, "Exited UEFI boot services").unwrap();
 
         // Can't deallocate it since we no longer have an allocator
         mem::forget(memory_map_buffer);
