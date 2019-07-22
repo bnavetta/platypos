@@ -66,7 +66,7 @@ impl BootManager<Handoff> {
         ).unwrap();
         asm!("pushq $0\n\t\
               retq\n\t\
-              hlt" : : "r"(self.stage.kernel_entry_addr), "{rsp}"(KERNEL_STACK_HIGH) : "memory" : "volatile");
+              hlt" : : "r"(self.stage.kernel_entry_addr), "{rsp}"(KERNEL_STACK_HIGH), "{rdi}"(42u64) : "memory" : "volatile");
         unreachable_unchecked();
     }
 }

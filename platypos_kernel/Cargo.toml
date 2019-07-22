@@ -17,8 +17,6 @@ log = "0.4"
 spin = "0.5"
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]
-bootloader = { version = "0.6", features = ["map_physical_memory"] }
-#bootloader = { path = "/Users/ben/src/bootloader", features = ["map_physical_memory"] }
 x86_64 = "0.7"
 volatile = "0.2"
 serial_logger = { path = "../serial_logger" }

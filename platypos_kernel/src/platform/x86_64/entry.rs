@@ -1,5 +1,3 @@
-use bootloader::bootinfo::MemoryRegionType;
-use bootloader::{entry_point, BootInfo};
 use log::info;
 
 use platypos_config;
@@ -8,25 +6,12 @@ use serial_logger;
 use super::memory;
 use crate::platform::PhysicalAddress;
 
-fn main(boot_info: &'static BootInfo) -> ! {
-    //    let mut wait = volatile::Volatile::new(1);
-    //    while wait.read() == 1 {
-    //        core::hint::spin_loop();
-    //    }
-    //
+#[export_name = "_start"]
+extern "C" fn start(arg: u64) -> ! {
     serial_logger::init(platypos_config::log_levels()).expect("Could not initialize logging");
 
     info!("Hello, World!");
-    //    memory::init(boot_info);
-    //
-    //    for region in boot_info.memory_map.iter() {
-    //        info!(
-    //            "{:#10x} - {:#10x}: {:?}",
-    //            PhysicalAddress::new(region.range.start_addr() as usize),
-    //            PhysicalAddress::new(region.range.end_addr() as usize),
-    //            region.region_type
-    //        );
-    //    }
+    info!("Arg is {}", arg);
 
     super::halt();
 
@@ -41,4 +26,3 @@ fn main(boot_info: &'static BootInfo) -> ! {
     //    }
 }
 
-entry_point!(main);
