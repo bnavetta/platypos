@@ -1,5 +1,6 @@
 use alloc::vec;
 use core::hint::unreachable_unchecked;
+use core::mem;
 use core::slice;
 
 use goblin::elf64::header::{self, Header};
@@ -14,14 +15,14 @@ use uefi::table::boot::MemoryType;
 
 use x86_64::registers::control::{Cr3, Cr3Flags, Efer, EferFlags};
 use x86_64::structures::paging::{
-    MappedPageTable, Mapper, Page, PageTable, PageTableFlags, PhysFrame,
-    Size4KiB,
+    MappedPageTable, Mapper, Page, PageTable, PageTableFlags, PhysFrame, Size4KiB,
 };
 use x86_64::{PhysAddr, VirtAddr};
 
 use crate::filesystem::locate_file;
 use crate::util::allocator::UefiPageAllocator;
 use crate::util::page_table::clone_pml4;
+use uefi::proto::loaded_image::LoadedImage;
 
 // Use distinct memory types for the kernel code, page tables, etc. instead of LOADER_DATA
 // so that the kernel can reclaim the rest of the memory used for the loader
@@ -54,28 +55,27 @@ pub fn launch_kernel(handle: uefi::Handle, system_table: SystemTable<Boot>, kern
         .expect("Kernel not found");
 
     if let FileType::Regular(mut file) = file.into_type().unwrap_success() {
-        let mut allocator = UefiPageAllocator::new(system_table.boot_services(), KERNEL_PAGE_TABLE_MEMORY_TYPE);
+        let mut allocator =
+            UefiPageAllocator::new(system_table.boot_services(), KERNEL_PAGE_TABLE_MEMORY_TYPE);
 
-        let (pml4, pml4_addr) = copy_uefi_page_table(&mut allocator);
+        //        let (pml4, pml4_addr) = copy_uefi_page_table(&mut allocator);
 
-//        let pml4_addr = allocator
-//            .allocate_pages(KERNEL_PAGE_TABLE_MEMORY_TYPE, 1)
-//            .expect("Could not allocate kernel PML4");
-//        let pml4: &mut PageTable = unsafe { &mut *VirtAddr::new(pml4_addr.as_u64()).as_mut_ptr() };
-//        pml4.zero();
+        let pml4_addr = allocator
+            .allocate_pages(KERNEL_PAGE_TABLE_MEMORY_TYPE, 1)
+            .expect("Could not allocate kernel PML4");
+        let pml4: &mut PageTable = unsafe { &mut *VirtAddr::new(pml4_addr.as_u64()).as_mut_ptr() };
+        pml4.zero();
 
         let entry_addr = load_kernel(&mut file, &mut allocator, pml4);
 
         // Add the boot loader to the kernel page table, so we can switch to it without crashing
-//        map_loader(system_table.boot_services(), &mut allocator, pml4);
+        map_loader(&system_table, handle, &mut allocator, pml4);
 
         create_kernel_stack(&mut allocator, pml4);
 
         exit_boot_services(handle, system_table);
-        debug!("HI");
         unsafe { activate_page_table(pml4_addr) };
         unsafe { switch_to_kernel(entry_addr) };
-
     } else {
         panic!("Found a directory at expected kernel location");
     }
@@ -84,7 +84,8 @@ pub fn launch_kernel(handle: uefi::Handle, system_table: SystemTable<Boot>, kern
 fn copy_uefi_page_table(allocator: &mut UefiPageAllocator) -> (&'static mut PageTable, PhysAddr) {
     // Clone the UEFI page table directly, since the memory map doesn't necessarily capture everything
     let (current_pml4_addr, _) = Cr3::read();
-    let current_pml4 = unsafe { &* (current_pml4_addr.start_address().as_u64() as usize as *const PageTable) };
+    let current_pml4 =
+        unsafe { &*(current_pml4_addr.start_address().as_u64() as usize as *const PageTable) };
     clone_pml4(allocator, current_pml4)
 }
 
@@ -226,52 +227,66 @@ fn map_segment(
 }
 
 fn map_loader(
-    boot_services: &BootServices,
+    system_table: &SystemTable<Boot>,
+    handle: uefi::Handle,
     allocator: &mut UefiPageAllocator,
     pml4: &mut PageTable,
 ) {
+    let loaded_image = system_table
+        .boot_services()
+        .handle_protocol::<LoadedImage>(handle)
+        .expect_success("Could not locate LOADED_IMAGE protocol");
+    let loaded_image = unsafe { &*loaded_image.get() };
+
     let mut mapper = unsafe { MappedPageTable::new(pml4, identity_translator) };
 
-    // Make the buffer a bit larger than specified, since allocating it may add to the memory map
-    let mut buf = vec![0u8; boot_services.memory_map_size() + 256];
-    let (_, memory_map) = boot_services
-        .memory_map(&mut buf)
-        .expect_success("Could not get memory map");
+    debug!(
+        "Mapping {}-byte loader starting from {:#x}",
+        loaded_image.image_size(),
+        loaded_image.image_base()
+    );
 
-    for entry in memory_map {
-        if entry.ty == MemoryType::LOADER_DATA
-            || entry.ty == MemoryType::LOADER_CODE
-            || entry.ty == MemoryType::BOOT_SERVICES_CODE
-            || entry.ty == MemoryType::BOOT_SERVICES_DATA
-            || entry.ty == MemoryType::RUNTIME_SERVICES_CODE
-            || entry.ty == MemoryType::RUNTIME_SERVICES_DATA
-        {
-            debug!(
-                "Adding {}-page {:?} mapping at {:#x}",
-                entry.page_count, entry.ty, entry.phys_start
-            );
+    let start_page: Page<Size4KiB> =
+        Page::containing_address(VirtAddr::new(loaded_image.image_base() as u64));
+    let start_frame =
+        PhysFrame::containing_address(PhysAddr::new(loaded_image.image_base() as u64));
+    let npages = loaded_image.image_size() / 4096 + 1;
 
+    for i in 0..npages {
+        unsafe {
+            mapper
+                .map_to(
+                    start_page + i,
+                    start_frame + i,
+                    PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
+                    allocator,
+                )
+                .expect("Could not map loader")
+                .ignore()
+        }
+    }
 
-            // Identity-map everything - the virt_start field seems to always be 0
-            assert_eq!(entry.virt_start, 0);
-            let phys_start: PhysFrame<Size4KiB> =
-                PhysFrame::from_start_address(PhysAddr::new(entry.phys_start))
-                    .expect("Memory region is not page-aligned");
-            let virt_start = Page::from_start_address(VirtAddr::new(entry.phys_start)).unwrap();
-
-            for i in 0..entry.page_count {
-                unsafe {
-                    mapper
-                        .map_to(
-                            virt_start + i,
-                            phys_start + i,
-                            PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
-                            allocator,
-                        )
-                        .unwrap()
-                        .ignore()
-                };
-            }
+    debug!(
+        "Mapping BootServices table at {:#p}",
+        system_table.boot_services()
+    );
+    let start_page: Page<Size4KiB> = Page::containing_address(VirtAddr::from_ptr(
+        system_table.boot_services() as *const BootServices,
+    ));
+    let start_frame =
+        PhysFrame::containing_address(PhysAddr::new(start_page.start_address().as_u64()));
+    let npages = (mem::size_of::<BootServices>() / 4096 + 1) as u64;
+    for i in 0..npages {
+        unsafe {
+            mapper
+                .map_to(
+                    start_page + i,
+                    start_frame + i,
+                    PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
+                    allocator,
+                )
+                .expect("Could not map boot services")
+                .ignore()
         }
     }
 }
@@ -306,20 +321,23 @@ fn create_kernel_stack(allocator: &mut UefiPageAllocator, pml4: &mut PageTable) 
         stack.write_bytes(0, pages * 4096);
     }
 
-    debug!("Allocated kernel stack at {:?} ({} pages)", phys_addr, pages);
+    debug!(
+        "Allocated kernel stack at {:?} ({} pages)",
+        phys_addr, pages
+    );
 }
 
 /// Switch to the given page table. The table must have mappings for the loader to continue to
 /// operate.
 unsafe fn activate_page_table(pml4_addr: PhysAddr) {
-    debug!("Switching to kernel page tables at {:#x}", pml4_addr);
+    //    debug!("Switching to kernel page tables at {:#x}", pml4_addr);
 
     // Enable the no-execute flag used in the kernel page table
     Efer::update(|efer| *efer |= EferFlags::NO_EXECUTE_ENABLE);
 
     let frame = PhysFrame::from_start_address(pml4_addr).expect("PML4 is not page-aligned");
 
-    Cr3::write(frame,Cr3Flags::empty());
+    Cr3::write(frame, Cr3Flags::empty());
 }
 
 pub fn exit_boot_services(handle: uefi::Handle, system_table: SystemTable<Boot>) {
@@ -329,10 +347,12 @@ pub fn exit_boot_services(handle: uefi::Handle, system_table: SystemTable<Boot>)
     let memory_map_size = system_table.boot_services().memory_map_size();
     debug!("Memory map is {} bytes", memory_map_size);
     let mut memory_map_buffer = vec![0u8; memory_map_size + 256];
-//    let mut memory_map_buffer = vec![0u8; 16];
+    //    let mut memory_map_buffer = vec![0u8; 16];
     // Might be OOM?
 
-    let (runtime_table, memory_map) = system_table.exit_boot_services(handle, &mut memory_map_buffer).expect_success("Could not exit boot services");
+    let (runtime_table, memory_map) = system_table
+        .exit_boot_services(handle, &mut memory_map_buffer)
+        .expect_success("Could not exit boot services");
 }
 
 unsafe fn switch_to_kernel(entry_addr: VirtAddr) -> ! {
@@ -346,4 +366,3 @@ unsafe fn switch_to_kernel(entry_addr: VirtAddr) -> ! {
 fn identity_translator(frame: PhysFrame) -> *mut PageTable {
     VirtAddr::new(frame.start_address().as_u64()).as_mut_ptr()
 }
-

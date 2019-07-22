@@ -2,6 +2,7 @@
 #![no_main]
 #![feature(asm)]
 
+#[macro_use]
 extern crate alloc;
 
 use log::info;
@@ -13,6 +14,11 @@ use uefi::Handle;
 mod filesystem;
 mod loader;
 mod util;
+
+mod boot_manager;
+
+use crate::boot_manager::BootManager;
+use crate::util::to_string;
 
 #[no_mangle]
 pub extern "win64" fn efi_main(handle: Handle, system_table: SystemTable<Boot>) -> Status {
@@ -29,14 +35,24 @@ pub extern "win64" fn efi_main(handle: Handle, system_table: SystemTable<Boot>) 
 
     info!("Welcome to the PlatypOS loader!");
 
-    let rev = system_table.uefi_revision();
-    info!("Running on UEFI {}.{}", rev.major(), rev.minor());
+    info!("Running on UEFI {:?}", system_table.uefi_revision());
+    info!(
+        "Firmware vendor: {}",
+        to_string(system_table.firmware_vendor())
+    );
+    info!("Firmware version: {:?}", system_table.firmware_revision());
 
-    let loaded_image = system_table.boot_services().handle_protocol::<LoadedImage>(handle).expect_success("Could not locate LoadedImage protocol");
-    let loaded_image = unsafe { &* loaded_image.get() };
+    let loaded_image = system_table
+        .boot_services()
+        .handle_protocol::<LoadedImage>(handle)
+        .expect_success("Could not locate LoadedImage protocol");
+    let loaded_image = unsafe { &*loaded_image.get() };
     info!("Loader image located at {:#x}", loaded_image.image_base());
 
-    loader::launch_kernel(handle, system_table, &["platypos_kernel"]);
+    //    loader::launch_kernel(handle, system_table, &["platypos_kernel"]);
+
+    let boot_manager = BootManager::new(system_table);
+    boot_manager.apply_memory_map().load_kernel();
 
     loop {}
 }

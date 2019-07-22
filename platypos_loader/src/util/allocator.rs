@@ -1,8 +1,8 @@
 use uefi::prelude::*;
 use uefi::table::boot::{AllocateType, MemoryType};
 
+use x86_64::structures::paging::{FrameAllocator, PageSize, PhysFrame};
 use x86_64::PhysAddr;
-use x86_64::structures::paging::{PageSize, FrameAllocator, PhysFrame};
 
 /// Allocator for pages of memory using UEFI boot services
 pub struct UefiPageAllocator<'a> {
@@ -11,8 +11,14 @@ pub struct UefiPageAllocator<'a> {
 }
 
 impl<'a> UefiPageAllocator<'a> {
-    pub fn new(boot_services: &'a BootServices, page_table_memory_type: MemoryType) -> UefiPageAllocator<'a> {
-        UefiPageAllocator { boot_services, page_table_memory_type }
+    pub fn new(
+        boot_services: &'a BootServices,
+        page_table_memory_type: MemoryType,
+    ) -> UefiPageAllocator<'a> {
+        UefiPageAllocator {
+            boot_services,
+            page_table_memory_type,
+        }
     }
 
     pub fn allocate_pages(&mut self, memory_type: MemoryType, npages: usize) -> Option<PhysAddr> {

@@ -1,7 +1,7 @@
 //! Make a deep clone of a page table. All levels of page tables are cloned, but the referenced page
 //! frames themselves are not.
 //!
-use x86_64::structures::paging::{PageTable, PageTableFlags, FrameAllocator, PhysFrame, Size4KiB};
+use x86_64::structures::paging::{FrameAllocator, PageTable, PageTableFlags, PhysFrame, Size4KiB};
 use x86_64::{PhysAddr, VirtAddr};
 
 use crate::util::allocator::UefiPageAllocator;
@@ -15,11 +15,11 @@ pub fn clone_pml4(
     allocator: &mut UefiPageAllocator,
     pml4: &PageTable,
 ) -> (&'static mut PageTable, PhysAddr) {
-    let allocation: PhysFrame<Size4KiB> = allocator
-        .allocate_frame()
-        .expect("Could not allocate PML4");
+    let allocation: PhysFrame<Size4KiB> =
+        allocator.allocate_frame().expect("Could not allocate PML4");
 
-    let new_pml4: &mut PageTable = unsafe { &mut *VirtAddr::new(allocation.start_address().as_u64()).as_mut_ptr() };
+    let new_pml4: &mut PageTable =
+        unsafe { &mut *VirtAddr::new(allocation.start_address().as_u64()).as_mut_ptr() };
 
     // PML4s only contain PDPTs (page directory pointer tables), so we don't have to worry about
     // huge pages _yet_
@@ -45,15 +45,11 @@ pub fn clone_pml4(
 ///
 /// # Panics
 /// If unable to allocate memory for any of the needed tables
-fn clone_pdpt(
-    allocator: &mut UefiPageAllocator,
-    pdpt: &PageTable,
-) -> PhysAddr {
-    let allocation: PhysFrame = allocator
-        .allocate_frame()
-        .expect("Could not allocate PDPT");
+fn clone_pdpt(allocator: &mut UefiPageAllocator, pdpt: &PageTable) -> PhysAddr {
+    let allocation: PhysFrame = allocator.allocate_frame().expect("Could not allocate PDPT");
 
-    let new_pdpt: &mut PageTable = unsafe { &mut *VirtAddr::new(allocation.start_address().as_u64()).as_mut_ptr() };
+    let new_pdpt: &mut PageTable =
+        unsafe { &mut *VirtAddr::new(allocation.start_address().as_u64()).as_mut_ptr() };
 
     // PDPTs can reference 1GiB pages, so we have to check for them
     for (i, entry) in pdpt.iter().enumerate() {
@@ -85,7 +81,8 @@ fn clone_pd(allocator: &mut UefiPageAllocator, pd: &PageTable) -> PhysAddr {
         .allocate_frame()
         .expect("Could not allocate page directory");
 
-    let new_pd: &mut PageTable = unsafe { &mut *VirtAddr::new(allocation.start_address().as_u64()).as_mut_ptr() };
+    let new_pd: &mut PageTable =
+        unsafe { &mut *VirtAddr::new(allocation.start_address().as_u64()).as_mut_ptr() };
 
     // Page directories can reference 2MiB pages
     for (i, entry) in pd.iter().enumerate() {
@@ -117,7 +114,8 @@ fn clone_pt(allocator: &mut UefiPageAllocator, pt: &PageTable) -> PhysAddr {
         .allocate_frame()
         .expect("Could not allocate page table");
 
-    let new_pt: &mut PageTable = unsafe { &mut *VirtAddr::new(allocation.start_address().as_u64()).as_mut_ptr() };
+    let new_pt: &mut PageTable =
+        unsafe { &mut *VirtAddr::new(allocation.start_address().as_u64()).as_mut_ptr() };
 
     // Page tables are nice and simple, they point directly at page frames
     for (i, entry) in pt.iter().enumerate() {
