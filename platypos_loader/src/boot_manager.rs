@@ -57,6 +57,7 @@ pub trait Stage {
 
 pub struct BootManager<S: Stage> {
     stage: S,
+    image_handle: Handle,
     system_table: SystemTable<S::SystemTableView>,
 
     // Top-level page table (PML4) and its physical address

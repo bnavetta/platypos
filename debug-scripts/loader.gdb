@@ -4,6 +4,7 @@
 set arch i386:x86-64:intel
 target remote localhost:1234
 # Load the symbol file with relocations (have to check that the relocation address matches the one printed out)
-add-symbol-file target/x86_64-unknown-uefi/debug/platypos_loader.efi 0xd487000 -s .data 0xd487000
+# Base: 0xd3f4000
+add-symbol-file target/x86_64-unknown-uefi/debug/platypos_loader.efi 0xd3f5000 -s .data 0xd40a000 -s .rdata 0xd404000
 
-break platypos_loader::loader::exit_boot_services
+hbreak handoff.rs:29

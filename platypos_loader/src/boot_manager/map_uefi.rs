@@ -1,19 +1,14 @@
-use alloc::vec;
 use alloc::vec::Vec;
-use core::cmp::max;
 
 use log::{debug, info};
 use uefi::prelude::*;
 use uefi::table::boot::{AllocateType, MemoryAttribute, MemoryDescriptor, MemoryType};
-use x86_64::structures::paging::{
-    MappedPageTable, Mapper, Page, PageSize, PageTable, PageTableFlags, PhysFrame,
-    Size2MiB, Size4KiB,
-};
+use x86_64::structures::paging::{PageSize, PageTable, PageTableFlags, Size2MiB, Size4KiB};
 use x86_64::{PhysAddr, VirtAddr};
 
 use super::load_kernel::LoadKernel;
-use super::util::{identity_translator, UefiFrameAllocator};
-use super::{BootManager, Stage};
+use super::util::{make_frame_range, make_page_range};
+use super::{BootManager, Stage, KERNEL_DATA, KERNEL_IMAGE, KERNEL_PAGE_TABLE};
 
 /// Stage 1: Mapping the UEFI environment
 pub struct MapUefi;
@@ -24,10 +19,13 @@ impl Stage for MapUefi {
 
 impl BootManager<MapUefi> {
     /// Create a new BootManager (stage 0) prepared for mapping the UEFI environment.
-    pub fn new(system_table: SystemTable<Boot>) -> BootManager<MapUefi> {
+    pub fn new(
+        system_table: SystemTable<Boot>,
+        image_handle: uefi::Handle,
+    ) -> BootManager<MapUefi> {
         let pml4_addr = system_table
             .boot_services()
-            .allocate_pages(AllocateType::AnyPages, MemoryType::LOADER_DATA, 1)
+            .allocate_pages(AllocateType::AnyPages, KERNEL_PAGE_TABLE, 1)
             .expect_success("Could not allocate PML4");
 
         let pml4 = unsafe { &mut *(pml4_addr as usize as *mut PageTable) };
@@ -36,13 +34,14 @@ impl BootManager<MapUefi> {
         BootManager {
             stage: MapUefi,
             system_table,
+            image_handle,
             page_table: pml4,
             page_table_address: PhysAddr::new(pml4_addr),
         }
     }
 
     /// Transition from stage 1 to stage 2 by adding page table mappings for UEFI
-    pub fn apply_memory_map(self) -> BootManager<LoadKernel> {
+    pub fn apply_memory_map(mut self) -> BootManager<LoadKernel> {
         let mut buf = vec![0u8; self.system_table.boot_services().memory_map_size()];
         let (_, memory_map) = self
             .system_table
@@ -59,8 +58,12 @@ impl BootManager<MapUefi> {
                     true
                 } else {
                     match desc.ty {
-                        MemoryType::LOADER_CODE | MemoryType::LOADER_DATA => true,
-                        _ => false,
+                        // It seems like the loader's stack is allocated as BOOT_SERVICES_DATA, so we have to keep it in the mapping
+                        MemoryType::LOADER_CODE | MemoryType::LOADER_DATA | MemoryType::BOOT_SERVICES_DATA | KERNEL_IMAGE | KERNEL_DATA | KERNEL_PAGE_TABLE => true,
+                        _ => {
+                            debug!("Skipping {:?}", desc);
+                            false
+                        },
                     }
                 }
             })
@@ -68,71 +71,53 @@ impl BootManager<MapUefi> {
 
         regions.sort_by_key(|desc| desc.phys_start);
 
-        let mut mapper = unsafe { MappedPageTable::new(self.page_table, identity_translator) };
-        let mut allocator = UefiFrameAllocator::new(self.system_table.boot_services());
-
         for region in regions.iter() {
-            let mut start = PhysAddr::new(region.phys_start);
-            let mut remaining = region.page_count * 4096;
+            let mut phys_start = PhysAddr::new(region.phys_start);
+            let mut size = region.page_count * 4096;
 
-            // If it's a large enough region, round the starting address to the nearest 2MiB so we
-            // can use huge pages for efficiency
-            if remaining >= Size2MiB::SIZE {
-                start = start.align_down(Size2MiB::SIZE);
-                remaining += region.phys_start - start.as_u64();
-            }
+//            // If it's a large enough region, round the starting address to the nearest 2MiB so we
+//            // can use huge pages for efficiency
+//            if size >= Size2MiB::SIZE {
+//                phys_start = phys_start.align_down(Size2MiB::SIZE);
+//                size += region.phys_start - phys_start.as_u64();
+//            }
 
             debug!(
                 "Identity-mapping {:?} {:#x} - {:#x} ({} bytes)",
                 region.ty,
-                start,
-                start + remaining,
-                remaining
+                phys_start,
+                phys_start + size,
+                size
             );
 
-            while remaining >= Size2MiB::SIZE {
-                let page = Page::<Size2MiB>::from_start_address(VirtAddr::new(start.as_u64()))
-                    .expect("Region not aligned to a 2MiB boundary");
-                let frame = PhysFrame::from_start_address(start).unwrap();
+//            // Map as much as possible with huge pages
+//            if size >= Size2MiB::SIZE {
+//                let huge_pages = (size / Size2MiB::SIZE) as usize;
+//                self.map_contiguous_2mib(
+//                    make_page_range(VirtAddr::new(phys_start.as_u64()), huge_pages),
+//                    make_frame_range(phys_start, huge_pages),
+//                    PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
+//                );
+//
+//                size -= huge_pages as u64 * Size2MiB::SIZE;
+//                phys_start += huge_pages as u64 * Size2MiB::SIZE;
+//            }
 
-                unsafe {
-                    mapper
-                        .map_to(
-                            page,
-                            frame,
-                            PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
-                            &mut allocator,
-                        )
-                        .expect("Could not map region")
-                        .ignore();
-                }
+            assert_eq!(
+                size % Size4KiB::SIZE,
+                0,
+                "Region is not an integer number of pages"
+            );
 
-                remaining -= Size2MiB::SIZE;
-                start += Size2MiB::SIZE;
-            }
-
-            while remaining >= Size4KiB::SIZE {
-                let page = Page::<Size4KiB>::from_start_address(VirtAddr::new(start.as_u64()))
-                    .expect("Region not aligned to a 4KiB boundary");
-                let frame = PhysFrame::from_start_address(start).unwrap();
-
-                unsafe {
-                    mapper
-                        .map_to(
-                            page,
-                            frame,
-                            PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
-                            &mut allocator,
-                        )
-                        .expect("Could not map region")
-                        .ignore();
-                }
-
-                remaining -= Size4KiB::SIZE;
-                start += Size4KiB::SIZE;
-            }
-
-            assert_eq!(remaining, 0, "Region is not an integral number of pages");
+            // Map the remainder with 4KiB pages
+            self.map_contiguous_4kib(
+                make_page_range(
+                    VirtAddr::new(phys_start.as_u64()),
+                    (size / Size4KiB::SIZE) as usize,
+                ),
+                make_frame_range(phys_start, (size / Size4KiB::SIZE) as usize),
+                PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
+            );
         }
 
         info!("Populated kernel page table with UEFI mappings");
@@ -140,90 +125,9 @@ impl BootManager<MapUefi> {
         BootManager {
             stage: LoadKernel,
             system_table: self.system_table,
+            image_handle: self.image_handle,
             page_table: self.page_table,
             page_table_address: self.page_table_address,
         }
     }
-
-    /// Returns the amount of physical memory the system has, usable or otherwise
-    fn phys_mem_size(&self) -> u64 {
-        let mut max_addr: u64 = 0;
-
-        let mut buf = vec![0u8; self.system_table.boot_services().memory_map_size()];
-        let (_, memory_map) = self
-            .system_table
-            .boot_services()
-            .memory_map(&mut buf)
-            .log_warning()
-            .expect("Could not get memory map");
-
-        for descriptor in memory_map {
-            // Skip memory types that don't correspond to actual physical memory
-            if descriptor.ty == MemoryType::MMIO || descriptor.ty == MemoryType::RESERVED {
-                continue;
-            }
-            max_addr = max(
-                max_addr,
-                descriptor.phys_start + descriptor.page_count * 4096,
-            );
-        }
-
-        // Since max_addr is address right after end of region, it'll be the amount of physical memory
-        max_addr
-    }
-
-    /*
-
-    /// Identity-map all of physical memory, so that UEFI services are accessible in the kernel
-    /// address space.
-    fn map_physical(&mut self) {
-        let mem_size = self.phys_mem_size();
-        debug!("Detected {} bytes of physical memory", mem_size);
-
-        let pages_needed = (mem_size + Size1GiB::SIZE - 1) / Size1GiB::SIZE;
-
-        let page_start = Page::<Size1GiB>::containing_address(VirtAddr::new(0));
-        let frame_start = PhysFrame::containing_address(PhysAddr::new(0));
-
-        let mut mapper = unsafe { MappedPageTable::new(self.page_table, identity_translator) };
-        let mut allocator = UefiFrameAllocator::new(self.system_table.boot_services());
-
-        for i in 0..pages_needed {
-            unsafe {
-                mapper
-                    .map_to(
-                        page_start + i,
-                        frame_start + i,
-                        PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
-                        &mut allocator,
-                    )
-                    .expect("Could not map physical memory")
-                    .ignore()
-            };
-        }
-
-        debug!("Identity-mapped physical memory");
-    }
-
-    fn map_mmio(&mut self) {
-        // add MMIO mappings we ignored earlier (use 2MiB and 4KiB)
-
-        // TODO: need max phys addr, in case there's MMIO below that to skip
-        // OR do a single pass, mapping MMIO as encountered?
-    }
-
-    /// Transition from stage 1 to stage 2 by adding page table mappings for UEFI
-    pub fn create_uefi_mappings(mut self) -> BootManager<LoadKernel> {
-        self.map_physical();
-        self.map_mmio();
-
-        BootManager {
-            stage: LoadKernel,
-            system_table: self.system_table,
-            page_table: self.page_table,
-            page_table_address: self.page_table_address,
-        }
-    }
-
-    */
 }

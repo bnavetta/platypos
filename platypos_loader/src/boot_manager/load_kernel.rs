@@ -9,8 +9,9 @@ use uefi::proto::media::file::{FileType, RegularFile};
 use x86_64::structures::paging::PageTableFlags;
 use x86_64::VirtAddr;
 
-use super::util::{make_page_range, make_frame_range};
-use super::{BootManager, Stage, KERNEL_IMAGE, KERNEL_DATA, KERNEL_STACK_LOW, KERNEL_STACK_HIGH};
+use super::exit_uefi::ExitUefiBootServices;
+use super::util::{make_frame_range, make_page_range};
+use super::{BootManager, Stage, KERNEL_DATA, KERNEL_IMAGE, KERNEL_STACK_HIGH, KERNEL_STACK_LOW};
 use crate::filesystem::locate_file;
 
 pub struct LoadKernel;
@@ -20,7 +21,9 @@ impl Stage for LoadKernel {
 }
 
 impl BootManager<LoadKernel> {
-    pub fn load_kernel(mut self) {
+    /// Transition from stage 2 to stage 3 by reading the kernel image into memory and mapping
+    /// it into the kernel address space.
+    pub fn load_kernel(mut self) -> BootManager<ExitUefiBootServices> {
         let mut kernel_file = self.locate_kernel(&["platypos_kernel"]);
 
         let header = self.read_elf_header(&mut kernel_file);
@@ -57,8 +60,19 @@ impl BootManager<LoadKernel> {
         self.allocate_kernel_stack();
 
         info!("Kernel image loaded");
+
+        BootManager {
+            stage: ExitUefiBootServices {
+                kernel_entry_addr: VirtAddr::new(header.e_entry),
+            },
+            system_table: self.system_table,
+            image_handle: self.image_handle,
+            page_table: self.page_table,
+            page_table_address: self.page_table_address,
+        }
     }
 
+    /// Locate the file handle for the kernel image
     fn locate_kernel(&self, kernel_path: &[&str]) -> RegularFile {
         let file = locate_file(self.system_table.boot_services(), kernel_path)
             .expect_success("Could not locate kernel")
@@ -71,6 +85,7 @@ impl BootManager<LoadKernel> {
         }
     }
 
+    /// Read the ELF header from the file, verifying that it is correct
     fn read_elf_header(&self, kernel_file: &mut RegularFile) -> Header {
         kernel_file.set_position(0).unwrap_success();
 
@@ -111,6 +126,8 @@ impl BootManager<LoadKernel> {
         *header
     }
 
+    /// Load an individual segment of the kernel into memory and map it into the kernel address
+    /// space.
     fn load_segment(&mut self, kernel_file: &mut RegularFile, segment: &ProgramHeader) {
         let pages = (segment.p_memsz as usize + 4095) / 4096;
         let phys_addr = self
@@ -149,7 +166,7 @@ impl BootManager<LoadKernel> {
         self.map_contiguous_4kib(
             make_page_range(VirtAddr::new(segment.p_vaddr).align_down(4096u64), pages),
             make_frame_range(phys_addr, pages),
-            flags
+            flags,
         );
 
         debug!(
@@ -160,16 +177,23 @@ impl BootManager<LoadKernel> {
         );
     }
 
+    /// Allocate and map an initial stack for the kernel.
     fn allocate_kernel_stack(&mut self) {
-        assert_eq!((KERNEL_STACK_HIGH - KERNEL_STACK_LOW) % 4096, 0, "Kernel stack size is not an integer number of pages");
+        assert_eq!(
+            (KERNEL_STACK_HIGH - KERNEL_STACK_LOW) % 4096,
+            0,
+            "Kernel stack size is not an integer number of pages"
+        );
 
         let pages = (KERNEL_STACK_HIGH - KERNEL_STACK_LOW) as usize / 4096;
-        let phys_addr = self.allocate_pages(KERNEL_DATA, pages).expect("Could not allocate kernel stack");
+        let phys_addr = self
+            .allocate_pages(KERNEL_DATA, pages)
+            .expect("Could not allocate kernel stack");
 
         self.map_contiguous_4kib(
             make_page_range(VirtAddr::new(KERNEL_STACK_LOW), pages),
             make_frame_range(phys_addr, pages),
-            PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::NO_EXECUTE
+            PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::NO_EXECUTE,
         );
 
         // Zero out the stack
@@ -178,6 +202,10 @@ impl BootManager<LoadKernel> {
             stack.write_bytes(0, pages * 4096);
         }
 
-        debug!("Allocated kernel stack at {:#x} ({} bytes)", phys_addr, pages * 4096);
+        debug!(
+            "Allocated kernel stack at {:#x} ({} bytes)",
+            phys_addr,
+            pages * 4096
+        );
     }
 }

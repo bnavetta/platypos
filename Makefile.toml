@@ -101,7 +101,7 @@ args = [
     # "-d", "cpu_reset,int,guest_errors",
     "-d", "cpu_reset,guest_errors",
 
-#     "-S", "-s",
+     "-s", "-S",
      "-m", "256"
 ]
 

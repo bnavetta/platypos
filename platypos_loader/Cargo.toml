@@ -14,6 +14,7 @@ plain = "0.2"
 uefi = { git = "https://github.com/bnavetta/uefi-rs", branch = "master" }
 uefi-services = { git = "https://github.com/bnavetta/uefi-rs", branch = "master" }
 uefi-exts = { git = "https://github.com/bnavetta/uefi-rs", branch = "master" }
+uart_16550 = "~0.2.0"
 x86_64 = "0.7"
 
 [features]

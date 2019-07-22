@@ -317,6 +317,7 @@ dependencies = [
  "goblin 0.0.24 (registry+https://github.com/rust-lang/crates.io-index)",
  "log 0.4.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "plain 0.2.3 (registry+https://github.com/rust-lang/crates.io-index)",
+ "uart_16550 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "uefi 0.1.0 (git+https://github.com/bnavetta/uefi-rs)",
  "uefi-exts 0.1.0 (git+https://github.com/bnavetta/uefi-rs)",
  "uefi-services 0.1.0 (git+https://github.com/bnavetta/uefi-rs)",

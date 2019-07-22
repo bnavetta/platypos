@@ -5,6 +5,8 @@
 #[macro_use]
 extern crate alloc;
 
+use core::fmt::Write;
+
 use log::info;
 use uefi::prelude::*;
 use uefi::proto::console::text::Color;
@@ -49,10 +51,10 @@ pub extern "win64" fn efi_main(handle: Handle, system_table: SystemTable<Boot>) 
     let loaded_image = unsafe { &*loaded_image.get() };
     info!("Loader image located at {:#x}", loaded_image.image_base());
 
-    //    loader::launch_kernel(handle, system_table, &["platypos_kernel"]);
-
-    let boot_manager = BootManager::new(system_table);
-    boot_manager.apply_memory_map().load_kernel();
-
-    loop {}
+    let boot_manager = BootManager::new(system_table, handle);
+    boot_manager
+        .apply_memory_map()
+        .load_kernel()
+        .exit_boot_services()
+        .handoff();
 }
