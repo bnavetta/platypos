@@ -39,7 +39,7 @@ def exec_command(args, cwd=None):
 
 
 def build_package(name, target = None, features = []):
-    args = ['cargo', 'xbuild', '-p', name]
+    args = ['cargo', 'xbuild' if target else 'build', '-p', name]
     if target:
         args.extend(['--target', target])
     if features:
@@ -67,6 +67,7 @@ def build():
 @click.option('--debug/--no-debug', default=False)
 def run(debug):
     click.secho(u"🏃‍ Running in QEMU", fg="blue")
+    build_package('platypos_runner') # Not built by cargo-xrun
     args = ['cargo', 'xrun', '--target', TARGET_KERNEL, '-p', 'platypos_kernel']
 
     if debug:
