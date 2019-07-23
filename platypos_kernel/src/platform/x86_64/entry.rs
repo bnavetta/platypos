@@ -13,6 +13,10 @@ extern "C" fn start(arg: u64) -> ! {
     info!("Hello, World!");
     info!("Arg is {}", arg);
 
+    #[cfg(test)] {
+        crate::test_main();
+    }
+
     super::halt();
 
     //    super::init_perprocessor_data();

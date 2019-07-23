@@ -1,5 +1,3 @@
-#[build]
-#target = "platypos_kernel/x86_64-os.json"
-
 [target.'cfg(target_os = "none")']
-runner = "bootimage runner"
+#runner = "cargo run -p platypos_runner --"
+runner = "target/debug/platypos_runner"

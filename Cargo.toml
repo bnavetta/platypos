@@ -1,15 +1,14 @@
 [workspace]
 members = [
-	"kernel",
 	"apic",
-	"kutil",
 	"serial_logger",
 
     "platypos_loader",
     "platypos_config",
 	"platypos_kernel",
 	"platypos_test",
-	"platypos_test/macro"
+	"platypos_test/macro",
+	"platypos_runner",
 ]
 
 [profile.dev]
