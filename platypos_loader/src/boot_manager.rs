@@ -49,7 +49,7 @@ pub const KERNEL_PAGE_TABLE: MemoryType = MemoryType(0x7000_0044);
 
 // Virtual address range for the kernel stack
 pub const KERNEL_STACK_LOW: u64 = 0xffff_ffff_7100_0000;
-pub const KERNEL_STACK_HIGH: u64 = 0xffff_ffff_7100_1000;
+pub const KERNEL_STACK_HIGH: u64 = 0xffff_ffff_7100_4000;
 
 pub trait Stage {
     type SystemTableView: SystemTableView;
