@@ -8,7 +8,7 @@ use x86_64::registers::model_specific::{Efer, EferFlags};
 use x86_64::structures::paging::PhysFrame;
 use x86_64::{PhysAddr, VirtAddr};
 
-use super::{BootManager, Stage, KERNEL_STACK_HIGH};
+use super::{BootManager, Stage, KERNEL_STACK_HIGH, BOOT_INFO_ADDR};
 
 pub struct Handoff {
     /// Address of the kernel entry point
@@ -66,7 +66,7 @@ impl BootManager<Handoff> {
         ).unwrap();
         asm!("pushq $0\n\t\
               retq\n\t\
-              hlt" : : "r"(self.stage.kernel_entry_addr), "{rsp}"(KERNEL_STACK_HIGH), "{rdi}"(42u64) : "memory" : "volatile");
+              hlt" : : "r"(self.stage.kernel_entry_addr), "{rsp}"(KERNEL_STACK_HIGH), "{rdi}"(BOOT_INFO_ADDR) : "memory" : "volatile");
         unreachable_unchecked();
     }
 }

@@ -890,6 +890,13 @@ version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
+name = "platypos_boot_info"
+version = "0.1.0"
+dependencies = [
+ "x86_64 0.7.2 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
 name = "platypos_config"
 version = "0.1.0"
 dependencies = [
@@ -909,6 +916,7 @@ dependencies = [
  "bit_field 0.10.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "intrusive-collections 0.8.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "log 0.4.6 (registry+https://github.com/rust-lang/crates.io-index)",
+ "platypos_boot_info 0.1.0",
  "platypos_config 0.1.0",
  "platypos_test 0.1.0",
  "serial_logger 0.1.0",
@@ -924,6 +932,7 @@ dependencies = [
  "goblin 0.0.24 (registry+https://github.com/rust-lang/crates.io-index)",
  "log 0.4.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "plain 0.2.3 (registry+https://github.com/rust-lang/crates.io-index)",
+ "platypos_boot_info 0.1.0",
  "uart_16550 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "uefi 0.1.0 (git+https://github.com/bnavetta/uefi-rs)",
  "uefi-exts 0.1.0 (git+https://github.com/bnavetta/uefi-rs)",

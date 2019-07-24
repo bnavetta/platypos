@@ -4,6 +4,7 @@ members = [
 	"serial_logger",
 
     "platypos_loader",
+    "platypos_boot_info",
     "platypos_config",
 	"platypos_kernel",
 	"platypos_test",

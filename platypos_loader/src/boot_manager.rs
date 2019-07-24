@@ -51,6 +51,9 @@ pub const KERNEL_PAGE_TABLE: MemoryType = MemoryType(0x7000_0044);
 pub const KERNEL_STACK_LOW: u64 = 0xffff_ffff_7100_0000;
 pub const KERNEL_STACK_HIGH: u64 = 0xffff_ffff_7100_4000;
 
+/// Virtual address where the boot info struct is stored
+pub const BOOT_INFO_ADDR: u64 = 0xffff_ffff_7200_0000;
+
 pub trait Stage {
     type SystemTableView: SystemTableView;
 }
