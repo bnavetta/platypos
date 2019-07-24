@@ -1,3 +1,4 @@
+use x86_64::instructions::hlt;
 use x86_64::instructions::port::Port;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -14,5 +15,8 @@ pub fn exit(code: ExitCode) -> ! {
     }
 
     // Needed since the compiler doesn't know that writing to that port exits QEMU
-    unreachable!("QEMU did not exit")
+    // We can't use unreachable!() because QEMU doesn't necessarily exit right away
+    loop {
+        hlt();
+    }
 }

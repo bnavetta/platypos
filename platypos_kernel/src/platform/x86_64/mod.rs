@@ -8,7 +8,6 @@ pub mod processor;
 // Modules internal to x86-64
 mod apic;
 
-#[cfg(not(test))]
 mod entry;
 
 pub use addr::{PhysicalAddress, VirtualAddress};

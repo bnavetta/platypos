@@ -77,9 +77,14 @@ def run(debug):
 
 
 @pos.command()
-def test():
+@click.option('--debug/--no-debug', default=False)
+def test(debug):
     click.secho("Testing kernel", fg="blue")
-    exec_command(["cargo", "xtest"], cwd="platypos_kernel")
+    build_package('platypos_runner')
+    args = ['cargo', 'xtest', '--target', TARGET_KERNEL, '-p', 'platypos_kernel']
+    if debug:
+        args.extend(['--', '-d'])
+    exec_command(args)
 
 
 if __name__ == '__main__':

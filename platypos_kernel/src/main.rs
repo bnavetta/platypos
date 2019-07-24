@@ -51,14 +51,3 @@ pub fn handle_panic(info: &PanicInfo) -> ! {
     error!("{}", info);
     platform::halt()
 }
-
-//#[cfg(test)]
-//mod test_entry {
-//    use bootloader::{entry_point, BootInfo};
-//
-//    pub fn test_kernel_main(_boot_info: &'static BootInfo) -> ! {
-//        platypos_test::launch(crate::test_main)
-//    }
-//
-//    entry_point!(test_kernel_main);
-//}

@@ -30,3 +30,8 @@ extern "C" fn start(arg: u64) -> ! {
     //    }
 }
 
+#[cfg(test)]
+#[platypos_test::kernel_test]
+fn fail() {
+    assert!(false);
+}
