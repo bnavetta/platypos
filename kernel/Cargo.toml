@@ -1,0 +1,11 @@
+[package]
+name = "platypos_kernel"
+version = "0.0.1"
+authors = ["Ben Navetta <ben.navetta@gmail.com>"]
+edition = "2018"
+
+[target.'cfg(target_arch = "x86_64")'.dependencies]
+x86_64 = "0.10"
+
+[package.metadata.cargo-xbuild]
+memcpy = true

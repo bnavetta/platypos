@@ -1,0 +1,15 @@
+[package]
+name = "platypos_loader"
+version = "0.0.1"
+authors = ["Ben Navetta <ben.navetta@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+goblin = { version = "0.2", default-features = false, features = ["elf64"] }
+log = { version = "0.4", default-features = false }
+uefi = "0.4"
+uefi-services = "0.2"
+x86_64 = "0.10"
+
+[package.metadata.cargo-xbuild]
+memcpy = true
