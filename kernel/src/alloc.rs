@@ -45,8 +45,3 @@ unsafe impl GlobalAlloc for KernelAllocator {
         // freeing not supported
     }
 }
-
-#[alloc_error_handler]
-fn handle_alloc_error(layout: Layout) -> ! {
-    panic!("Allocating {:?} failed", layout);
-}

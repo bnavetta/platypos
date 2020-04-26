@@ -34,6 +34,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4785bdd1c96b2a846b2bd7cc02e86b6b3dbf14e7e53446c4f54c92a361040822"
 
 [[package]]
+name = "conquer-once"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6f7644600a548ecad74e4a918392af1798f7dd045be610be3203b9e129b4f98f"
+dependencies = [
+ "conquer-util",
+]
+
+[[package]]
+name = "conquer-util"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "654fb2472cc369d311c547103a1fa81d467bef370ae7a0680f65939895b1182a"
+
+[[package]]
 name = "goblin"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -71,6 +86,7 @@ checksum = "b4596b6d070b27117e987119b4dac604f3c58cfb0b191112e24771b2faeac1a6"
 name = "platypos_kernel"
 version = "0.0.1"
 dependencies = [
+ "conquer-once",
  "slog",
  "slog_kernel",
  "spinning_top",
