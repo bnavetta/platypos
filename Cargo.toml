@@ -2,5 +2,6 @@
 members = [
     "loader",
     "kernel",
+    "slog_kernel",
     "x86_64_ext"
 ]

@@ -1,5 +1,6 @@
 #![no_std]
 
-mod paging;
+pub mod instructions;
+pub mod paging;
 
 pub use paging::*;

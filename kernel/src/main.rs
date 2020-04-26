@@ -1,16 +1,18 @@
 #![no_std]
 #![no_main]
+#![feature(alloc_error_handler)]
 
-use core::fmt::Write;
-
-use uart_16550::SerialPort;
+use slog::{o, info};
+use slog_kernel;
+use x86_64_ext::instructions::hlt_loop;
 
 mod panic;
+mod alloc;
 
 #[export_name = "_start"]
 extern "C" fn start() {
-    let mut serial_port = unsafe { SerialPort::new(0x3F8) };;
-    serial_port.init();
-    let _ = writeln!(&mut serial_port, "Welcome to PlatypOS!");
-    loop {}
+    let logger = slog_kernel::kernel_logger(o!("version" => env!("CARGO_PKG_VERSION")));
+
+    info!(logger, "Welcome to PlatypOS!");
+    hlt_loop();
 }

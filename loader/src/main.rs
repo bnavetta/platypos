@@ -6,6 +6,7 @@ extern crate alloc;
 
 use log::{self, info, LevelFilter};
 use uefi::prelude::*;
+use uefi::proto::console::text::Color;
 
 use uefi_services;
 
@@ -28,6 +29,11 @@ pub extern "win64" fn efi_main(handle: Handle, system_table: SystemTable<Boot>) 
         .stdout()
         .reset(false)
         .expect_success("Could not reset screen");
+
+    system_table
+        .stdout()
+        .set_color(Color::White, Color::Black)
+        .expect_success("Could not set console colors");
 
     info!(
         "Running on UEFI revision {:?}",
