@@ -7,9 +7,12 @@ edition = "2018"
 [dependencies]
 goblin = { version = "0.2", default-features = false, features = ["elf64"] }
 log = { version = "0.4", default-features = false }
+plain = "0.2"
+uart_16550 = "0.2"
 uefi = "0.4"
 uefi-services = "0.2"
 x86_64 = "0.10"
+x86_64_ext = { path = "../x86_64_ext" }
 
 [package.metadata.cargo-xbuild]
 memcpy = true

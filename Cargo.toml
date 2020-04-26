@@ -1,5 +1,6 @@
 [workspace]
 members = [
     "loader",
-    "kernel"
+    "kernel",
+    "x86_64_ext"
 ]

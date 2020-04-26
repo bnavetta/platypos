@@ -1,0 +1,9 @@
+[package]
+name = "x86_64_ext"
+version = "0.0.1"
+authors = ["Ben Navetta <ben.navetta@gmail.com>"]
+description = "Extensions to the x86_64 crate"
+edition = "2018"
+
+[dependencies]
+x86_64 = "0.10"

@@ -9,6 +9,11 @@ install_crate = "cargo-xbuild"
 command = "cargo"
 args = ["xbuild", "--target", "${TARGET}"]
 
+[tasks.check]
+install_crate = "cargo-xbuild"
+command = "cargo"
+args = ["xcheck", "--target", "${TARGET}"]
+
 [tasks.build_all]
 workspace = false
 run_task = { name = "build", fork = true }
