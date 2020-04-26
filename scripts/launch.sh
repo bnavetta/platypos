@@ -55,6 +55,7 @@ qemu_args=(
     '-m' '256'
 
     # TODO: QEMU debugging
+    '-s'
 )
 
 qemu_cmd="$(IFS=' ' echo ${qemu_args[*]})"

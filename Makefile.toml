@@ -22,5 +22,5 @@ command = "./scripts/launch.sh"
 workspace = false
 script = ['''
 # TODO: support more than just Arch
-sudo pacman -Syu qemu ovmf socat
+sudo pacman -Syu gdb qemu ovmf socat
 ''']
