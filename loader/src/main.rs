@@ -4,7 +4,7 @@
 
 extern crate alloc;
 
-use log::{self, info, LevelFilter};
+use log::info;
 use uefi::prelude::*;
 use uefi::proto::console::text::Color;
 
@@ -22,7 +22,6 @@ use crate::page_table::KernelPageTable;
 #[no_mangle]
 pub extern "win64" fn efi_main(handle: Handle, system_table: SystemTable<Boot>) -> Status {
     uefi_services::init(&system_table).expect_success("Failed to initialize utilities");
-    log::set_max_level(LevelFilter::Trace);
 
     // Clear the screen
     system_table
@@ -35,10 +34,14 @@ pub extern "win64" fn efi_main(handle: Handle, system_table: SystemTable<Boot>) 
         .set_color(Color::White, Color::Black)
         .expect_success("Could not set console colors");
 
+    info!("Welcome to the PlatypOS bootloader!");
+
     info!(
         "Running on UEFI revision {:?}",
         system_table.uefi_revision()
     );
+
+    info!("Firmware {} {:?}", system_table.firmware_vendor(), system_table.firmware_revision());
 
     let boot_services = system_table.boot_services();
 
@@ -49,5 +52,5 @@ pub extern "win64" fn efi_main(handle: Handle, system_table: SystemTable<Boot>) 
 
     memory_map::create_kernel_stack(&mut page_table, boot_services);
     memory_map::map_uefi_environment(&mut page_table, boot_services);
-    handoff::handoff(handle, system_table, &kernel, &page_table);
+    handoff::handoff(handle, system_table, &kernel, &mut page_table);
 }

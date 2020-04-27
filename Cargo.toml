@@ -2,6 +2,7 @@
 members = [
     "loader",
     "kernel",
+    "boot_info",
     "slog_kernel",
     "x86_64_ext"
 ]

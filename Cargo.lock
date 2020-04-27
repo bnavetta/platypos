@@ -83,10 +83,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b4596b6d070b27117e987119b4dac604f3c58cfb0b191112e24771b2faeac1a6"
 
 [[package]]
+name = "platypos_boot_info"
+version = "0.0.1"
+dependencies = [
+ "x86_64 0.10.1",
+ "x86_64_ext",
+]
+
+[[package]]
 name = "platypos_kernel"
 version = "0.0.1"
 dependencies = [
  "conquer-once",
+ "platypos_boot_info",
  "slog",
  "slog_kernel",
  "spinning_top",
@@ -101,6 +110,7 @@ dependencies = [
  "goblin",
  "log",
  "plain",
+ "platypos_boot_info",
  "uart_16550",
  "uefi",
  "uefi-services",

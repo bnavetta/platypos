@@ -5,6 +5,7 @@ authors = ["Ben Navetta <ben.navetta@gmail.com>"]
 edition = "2018"
 
 [dependencies]
+platypos_boot_info = { path = "../boot_info" }
 goblin = { version = "0.2", default-features = false, features = ["elf64"] }
 log = { version = "0.4", default-features = false }
 plain = "0.2"

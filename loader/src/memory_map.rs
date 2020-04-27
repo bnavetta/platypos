@@ -11,6 +11,8 @@ use x86_64::structures::paging::frame::PhysFrame;
 
 use x86_64_ext::*;
 
+use platypos_boot_info::BootInfo;
+
 use crate::page_table::KernelPageTable;
 
 /// Memory type for the kernel image (both code and data)
@@ -27,6 +29,9 @@ pub const KERNEL_STACK_START: VirtAddr = VirtAddr::new_truncate(0xffff_ffff_7100
 
 /// Kernel stack size, in 4KiB pages
 pub const KERNEL_STACK_PAGES: usize = 4;
+
+/// Virtual address where the boot info struct is stored
+pub const BOOT_INFO_ADDRESS: VirtAddr = VirtAddr::new_truncate(0xffff_ffff_7200_0000);
 
 /// Add mappings needed by the UEFI environment to the kernel's page table. These mappings are only needed when
 /// switching to the kernel page table while still inside the OS loader, but are not necessarily needed by the kernel itself.
@@ -68,4 +73,19 @@ pub fn create_kernel_stack(page_table: &mut KernelPageTable, boot_services: &Boo
     }
 
     debug!("Allocated {}-page kernel stack at {:#x}", KERNEL_STACK_PAGES, phys_start);
+}
+
+/// Allocates and maps (but does not initialize) the boot info structure
+pub fn create_boot_info(page_table: &mut KernelPageTable, boot_services: &BootServices) -> *mut BootInfo {
+    let phys_addr = boot_services
+        .allocate_pages(AllocateType::AnyPages, KERNEL_DATA, 1)
+        .expect_success("Could not allocate boot info");
+    
+    let pages = Page::from_start_address(BOOT_INFO_ADDRESS).unwrap().range_to(1);
+    let frames = PhysFrame::from_start_address(PhysAddr::new(phys_addr)).unwrap().range_to(1);
+    page_table.map(boot_services, pages, frames, PageTableFlags::PRESENT | PageTableFlags::NO_EXECUTE);
+
+    debug!("Allocated boot info at {:#x}", phys_addr);
+
+    VirtAddr::new(phys_addr).as_mut_ptr()
 }
