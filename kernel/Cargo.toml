@@ -5,6 +5,7 @@ authors = ["Ben Navetta <ben.navetta@gmail.com>"]
 edition = "2018"
 
 [dependencies]
+intrusive-collections = "0.9"
 platypos_boot_info = { path = "../boot_info" }
 slog_kernel = { path = "../slog_kernel" }
 

@@ -3,7 +3,7 @@ use alloc::vec;
 use goblin::elf64::header::{self, Header};
 use goblin::elf64::program_header::{self, ProgramHeader};
 
-use log::{info, debug};
+use log::{debug, info};
 
 use plain::Plain;
 
@@ -12,9 +12,9 @@ use uefi::proto::media::file::{File, FileAttribute, FileMode, FileType, RegularF
 use uefi::proto::media::fs::SimpleFileSystem;
 use uefi::table::boot::AllocateType;
 
-use x86_64::{PhysAddr, VirtAddr};
-use x86_64::structures::paging::{Size4KiB, Page, PageTableFlags};
 use x86_64::structures::paging::frame::PhysFrame;
+use x86_64::structures::paging::{Page, PageTableFlags, Size4KiB};
+use x86_64::{PhysAddr, VirtAddr};
 
 use x86_64_ext::*;
 
@@ -113,15 +113,19 @@ impl KernelImage {
     }
 
     /// Loads and maps an individual segment of the kernel
-    fn load_segment(&mut self, boot_services: &BootServices, page_table: &mut KernelPageTable, segment: &ProgramHeader) {
+    fn load_segment(
+        &mut self,
+        boot_services: &BootServices,
+        page_table: &mut KernelPageTable,
+        segment: &ProgramHeader,
+    ) {
         let num_pages = Size4KiB::pages_containing(segment.p_memsz as usize);
         let phys_start = boot_services
             .allocate_pages(AllocateType::AnyPages, KERNEL_IMAGE, num_pages)
             .expect_success("Could not allocate memory for kernel segment");
-        
-        let buf: &mut [u8] = unsafe {
-            core::slice::from_raw_parts_mut(phys_start as *mut u8, num_pages * 4096)
-        };
+
+        let buf: &mut [u8] =
+            unsafe { core::slice::from_raw_parts_mut(phys_start as *mut u8, num_pages * 4096) };
 
         let offset = segment.p_vaddr as usize % 4096; // start of the actual segment contents within the allocated buffer
         let data_size = segment.p_filesz as usize; // size of the actual segment contents
@@ -136,8 +140,15 @@ impl KernelImage {
             *e = 0
         }
 
-        self.file.set_position(segment.p_offset).expect_success("Could not seek to start of segment");
-        assert_eq!(self.file.read(&mut buf[offset..offset+data_size]).expect_success("Could not read segment"), data_size);
+        self.file
+            .set_position(segment.p_offset)
+            .expect_success("Could not seek to start of segment");
+        assert_eq!(
+            self.file
+                .read(&mut buf[offset..offset + data_size])
+                .expect_success("Could not read segment"),
+            data_size
+        );
 
         let mut flags = PageTableFlags::PRESENT | PageTableFlags::GLOBAL;
         if segment.p_flags & program_header::PF_W != 0 {
@@ -147,11 +158,19 @@ impl KernelImage {
             flags |= PageTableFlags::NO_EXECUTE;
         }
 
-        let pages = Page::<Size4KiB>::containing_address(VirtAddr::new(segment.p_vaddr)).range_to(num_pages);
-        let frames = PhysFrame::<Size4KiB>::from_start_address(PhysAddr::new(phys_start)).unwrap().range_to(num_pages);
+        let pages = Page::<Size4KiB>::containing_address(VirtAddr::new(segment.p_vaddr))
+            .range_to(num_pages);
+        let frames = PhysFrame::<Size4KiB>::from_start_address(PhysAddr::new(phys_start))
+            .unwrap()
+            .range_to(num_pages);
         page_table.map(boot_services, pages, frames, flags);
 
-        debug!("Loaded {:#x} - {:#x} of kernel image starting at {:#x}", segment.p_vaddr, segment.p_vaddr + segment.p_memsz, phys_start);
+        debug!(
+            "Loaded {:#x} - {:#x} of kernel image starting at {:#x}",
+            segment.p_vaddr,
+            segment.p_vaddr + segment.p_memsz,
+            phys_start
+        );
     }
 }
 

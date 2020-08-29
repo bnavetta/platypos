@@ -16,7 +16,10 @@ pub struct BootInfo {
 
 impl BootInfo {
     pub fn new(rsdp_address: PhysAddr, memory_map: MemoryMap) -> BootInfo {
-        BootInfo { rsdp_address, memory_map }
+        BootInfo {
+            rsdp_address,
+            memory_map,
+        }
     }
 
     /// Physical address of the ACPI RSDP (root system description pointer)

@@ -1,32 +1,40 @@
+use alloc::vec;
 use core::fmt::Write;
 use core::hint::unreachable_unchecked;
 use core::mem;
-use alloc::vec;
 
 use log::info;
 
 use uart_16550::SerialPort;
 
 use uefi::prelude::*;
+use uefi::table::boot::{MemoryAttribute, MemoryMapIter, MemoryType};
 use uefi::Guid;
-use uefi::table::boot::{MemoryAttribute, MemoryType, MemoryMapIter};
 
-use x86_64::PhysAddr;
 use x86_64::registers::control::{Cr3, Cr3Flags};
 use x86_64::registers::model_specific::{Efer, EferFlags};
-use x86_64::structures::paging::{PageSize, Size4KiB, PhysFrame};
-use x86_64_ext::paging::PhysFrameExt;
+use x86_64::structures::paging::{PageSize, PhysFrame, Size4KiB};
+use x86_64::PhysAddr;
 use x86_64_ext::instructions::hlt_loop;
+use x86_64_ext::paging::PhysFrameExt;
 
+use platypos_boot_info::memory_map::*;
 use platypos_boot_info::BootInfo;
-use platypos_boot_info::memory_map::{MemoryMap, MemoryRegion, MemoryKind, MAX_ENTRIES};
 
 use crate::kernel_image::KernelImage;
+use crate::memory_map::{
+    create_boot_info, BOOT_INFO_ADDRESS, KERNEL_DATA, KERNEL_IMAGE, KERNEL_PAGE_TABLE,
+    KERNEL_STACK_PAGES, KERNEL_STACK_START,
+};
 use crate::page_table::KernelPageTable;
-use crate::memory_map::{KERNEL_IMAGE, KERNEL_PAGE_TABLE, KERNEL_DATA, KERNEL_STACK_START, KERNEL_STACK_PAGES, create_boot_info, BOOT_INFO_ADDRESS};
 
 /// Hands off to the kernel by exiting UEFI boot services and jumping to its entry point.
-pub fn handoff(loaded_image: Handle, system_table: SystemTable<Boot>, kernel_image: &KernelImage, page_table: &mut KernelPageTable) -> ! {
+pub fn handoff(
+    loaded_image: Handle,
+    system_table: SystemTable<Boot>,
+    kernel_image: &KernelImage,
+    page_table: &mut KernelPageTable,
+) -> ! {
     let mut debug_port = unsafe { SerialPort::new(0x3F8) };
 
     let boot_info = create_boot_info(page_table, system_table.boot_services());
@@ -39,7 +47,12 @@ pub fn handoff(loaded_image: Handle, system_table: SystemTable<Boot>, kernel_ima
 }
 
 /// Exits UEFI boot services
-fn exit_boot_services(debug_port: &mut SerialPort, loaded_image: Handle, system_table: SystemTable<Boot>, boot_info: *mut BootInfo) {
+fn exit_boot_services(
+    debug_port: &mut SerialPort,
+    loaded_image: Handle,
+    system_table: SystemTable<Boot>,
+    boot_info: *mut BootInfo,
+) {
     // Add padding in case the memory map grows between now and calling exit_boot_services
     let mut memory_map_buf = vec![0u8; system_table.boot_services().memory_map_size() + 256];
 
@@ -55,10 +68,14 @@ fn exit_boot_services(debug_port: &mut SerialPort, loaded_image: Handle, system_
             if status.is_success() {
                 res
             } else {
-                let _ = writeln!(debug_port, "Warning exiting UEFI boot services: {:?}", status);
+                let _ = writeln!(
+                    debug_port,
+                    "Warning exiting UEFI boot services: {:?}",
+                    status
+                );
                 hlt_loop();
             }
-        },
+        }
         Err(err) => {
             let _ = writeln!(debug_port, "Error exiting UEFI boot services: {:?}", err);
             hlt_loop();
@@ -77,8 +94,20 @@ fn exit_boot_services(debug_port: &mut SerialPort, loaded_image: Handle, system_
 
 // See section 5.2.5.2 of the UEFI ACPI specification, v6.2 (https://uefi.org/sites/default/files/resources/ACPI_6_2.pdf)
 
-const ACPI_1_0_RSDP_GUID: Guid = Guid::from_values(0xeb9d2d30, 0x2d88, 0x11d3, 0x9a16, [0x00, 0x90, 0x27, 0x3f, 0xc1, 0x4d]);
-const ACPI_2_0_RSDP_GUID: Guid = Guid::from_values(0x8868e871, 0xe4f1, 0x11d3, 0xbc22, [0x00, 0x80, 0xc7, 0x3c, 0x88, 0x81]); // technically 2.0+
+const ACPI_1_0_RSDP_GUID: Guid = Guid::from_values(
+    0xeb9d2d30,
+    0x2d88,
+    0x11d3,
+    0x9a16,
+    [0x00, 0x90, 0x27, 0x3f, 0xc1, 0x4d],
+);
+const ACPI_2_0_RSDP_GUID: Guid = Guid::from_values(
+    0x8868e871,
+    0xe4f1,
+    0x11d3,
+    0xbc22,
+    [0x00, 0x80, 0xc7, 0x3c, 0x88, 0x81],
+); // technically 2.0+
 
 fn find_rsdp(system_table: &SystemTable<Boot>) -> PhysAddr {
     for entry in system_table.config_table() {
@@ -103,31 +132,56 @@ fn build_memory_map<'a>(debug_port: &mut SerialPort, uefi_map: MemoryMapIter<'a>
     for (i, descriptor) in uefi_map.enumerate() {
         // Check explicitly, because the panic handler relies on UEFI services
         if i >= MAX_ENTRIES {
-            let _ = writeln!(debug_port, "Fatal error: more than {} entries in UEFI memory map", MAX_ENTRIES);
+            let _ = writeln!(
+                debug_port,
+                "Fatal error: more than {} entries in UEFI memory map",
+                MAX_ENTRIES
+            );
             hlt_loop();
         }
 
-        let kind = if descriptor.att.contains(MemoryAttribute::RUNTIME) {
-            MemoryKind::UefiRuntime
+        let usability = if descriptor.att.contains(MemoryAttribute::RUNTIME) {
+            MemoryUsability::UefiRuntime
         } else {
             match descriptor.ty {
-                KERNEL_IMAGE | KERNEL_DATA => MemoryKind::Kernel,
-                KERNEL_PAGE_TABLE |
-                MemoryType::LOADER_CODE |
-                MemoryType::LOADER_DATA |
-                MemoryType::BOOT_SERVICES_CODE |
-                MemoryType::BOOT_SERVICES_DATA => MemoryKind::BootReclaimable,
-                MemoryType::RUNTIME_SERVICES_CODE | MemoryType::RUNTIME_SERVICES_DATA => MemoryKind::UefiRuntime,
-                MemoryType::CONVENTIONAL => MemoryKind::Conventional,
-                MemoryType::ACPI_RECLAIM => MemoryKind::AcpiReclaimable,
-                // other => MemoryKind::Other { uefi_type: other.0 }
-                // Skip entries the kernel can't do anything useful with to save space
-                _ => continue
+                KERNEL_IMAGE | KERNEL_DATA => MemoryUsability::Kernel,
+                KERNEL_PAGE_TABLE => MemoryUsability::InitialPageTable,
+                MemoryType::LOADER_CODE
+                | MemoryType::LOADER_DATA
+                | MemoryType::BOOT_SERVICES_CODE
+                | MemoryType::BOOT_SERVICES_DATA => MemoryUsability::BootReclaimable,
+                MemoryType::RUNTIME_SERVICES_CODE | MemoryType::RUNTIME_SERVICES_DATA => {
+                    MemoryUsability::UefiRuntime
+                }
+                MemoryType::CONVENTIONAL => MemoryUsability::Usable,
+                MemoryType::ACPI_RECLAIM => MemoryUsability::AcpiReclaimable,
+                MemoryType::PERSISTENT_MEMORY => MemoryUsability::Usable,
+                _ => MemoryUsability::Reserved,
             }
         };
 
-        let frames = PhysFrame::containing_address(PhysAddr::new(descriptor.phys_start)).range_to(descriptor.page_count as usize);
-        map.set_entry(i, MemoryRegion::new(frames, kind));
+        let kind = match descriptor.ty {
+            KERNEL_IMAGE
+            | KERNEL_DATA
+            | KERNEL_PAGE_TABLE
+            | MemoryType::LOADER_CODE
+            | MemoryType::LOADER_DATA
+            | MemoryType::BOOT_SERVICES_CODE
+            | MemoryType::BOOT_SERVICES_DATA
+            | MemoryType::RUNTIME_SERVICES_CODE
+            | MemoryType::RUNTIME_SERVICES_DATA
+            | MemoryType::ACPI_RECLAIM
+            | MemoryType::CONVENTIONAL => MemoryKind::Conventional,
+            MemoryType::UNUSABLE => MemoryKind::Unusable,
+            MemoryType::PERSISTENT_MEMORY => MemoryKind::Persistent,
+            MemoryType::ACPI_NON_VOLATILE => MemoryKind::AcpiNonVolatile,
+            MemoryType::MMIO | MemoryType::MMIO_PORT_SPACE => MemoryKind::MemoryMappedIo,
+            other => MemoryKind::Other { uefi_type: other.0 },
+        };
+
+        let frames = PhysFrame::containing_address(PhysAddr::new(descriptor.phys_start))
+            .range_to(descriptor.page_count as usize);
+        map.set_entry(i, MemoryRegion::new(frames, kind, usability));
     }
 
     map.finish();
@@ -140,7 +194,11 @@ unsafe fn activate_page_table(debug_port: &mut SerialPort, page_table: &KernelPa
     // Set the no-execute enable flag. Otherwise, switching to a page table using NO_EXECUTE bits will fail
     Efer::update(|efer| *efer |= EferFlags::NO_EXECUTE_ENABLE);
 
-    let _ = writeln!(debug_port, "Activating kernel page table at {:?}", page_table.page_table_frame());
+    let _ = writeln!(
+        debug_port,
+        "Activating kernel page table at {:?}",
+        page_table.page_table_frame()
+    );
     Cr3::write(page_table.page_table_frame(), Cr3Flags::empty());
 }
 

@@ -4,13 +4,13 @@
 
 use conquer_once::spin::OnceCell;
 
-use slog::{Logger, o, info};
+use slog::{info, o, Logger};
 use slog_kernel::fuse_loop::FuseLoop;
 use slog_kernel::serial::SerialDrain;
 use slog_kernel::spinlock::SpinlockDrain;
 
+mod mm;
 mod panic;
-mod alloc;
 
 #[cfg_attr(target_arch = "x86_64", path = "arch/x86_64/mod.rs")]
 mod arch;
@@ -35,13 +35,17 @@ pub fn root_logger() -> &'static KernelLogger {
                 FuseLoop::new(drain)
             });
 
-            Logger::root_typed(drain, o!("version" => env!("CARGO_PKG_VERSION")))
+            Logger::root_typed(drain, o!())
         })
     })
 }
 
 pub fn kernel_main() -> ! {
     let logger = root_logger();
-    info!(logger, "Welcome to PlatypOS!");
+    info!(
+        logger,
+        "Welcome to PlatypOS v{}!",
+        env!("CARGO_PKG_VERSION")
+    );
     arch::halt_processor();
 }

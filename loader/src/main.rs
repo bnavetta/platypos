@@ -41,7 +41,11 @@ pub extern "win64" fn efi_main(handle: Handle, system_table: SystemTable<Boot>) 
         system_table.uefi_revision()
     );
 
-    info!("Firmware {} {:?}", system_table.firmware_vendor(), system_table.firmware_revision());
+    info!(
+        "Firmware {} {:?}",
+        system_table.firmware_vendor(),
+        system_table.firmware_revision()
+    );
 
     let boot_services = system_table.boot_services();
 

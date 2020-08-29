@@ -1,9 +1,9 @@
 //! Drain for logging to the 16550 UART serial port
 
-use core::cell::{RefCell, BorrowMutError};
-use core::fmt::{self, Write, Arguments};
+use core::cell::{BorrowMutError, RefCell};
+use core::fmt::{self, Arguments, Write};
 
-use slog::{Drain, Record, Level, KV, Key, OwnedKVList, Serializer};
+use slog::{Drain, Key, Level, OwnedKVList, Record, Serializer, KV};
 
 use uart_16550::SerialPort;
 
@@ -17,7 +17,9 @@ impl SerialDrain {
     /// Creates a new `SerialDrain` writing to the given port. The serial port must
     /// already be initialized.
     pub fn new(port: SerialPort) -> SerialDrain {
-        SerialDrain { port: RefCell::new(port) }
+        SerialDrain {
+            port: RefCell::new(port),
+        }
     }
 
     /// Creates a new `SerialDrain` writing to the port at the given base address. Unsafe because the caller
@@ -39,6 +41,7 @@ const COLOR_CYAN: &str = "\x1b[36m";
 const COLOR_WHITE: &str = "\x1b[37m";
 const COLOR_GREY: &str = "\x1b[90m";
 const COLOR_BRIGHT_RED: &str = "\x1b[91m";
+const COLOR_BOLD: &str = "\x1b[1m";
 
 impl Drain for SerialDrain {
     type Ok = ();
@@ -48,14 +51,20 @@ impl Drain for SerialDrain {
         let mut port = self.port.try_borrow_mut()?;
 
         let level_color = match record.level() {
-            Level::Trace    => COLOR_WHITE,
-            Level::Debug    => COLOR_BLUE,
-            Level::Info     => COLOR_GREEN,
-            Level::Warning  => COLOR_YELLOW,
-            Level::Error    => COLOR_RED,
-            Level::Critical => COLOR_BRIGHT_RED
+            Level::Trace => COLOR_WHITE,
+            Level::Debug => COLOR_BLUE,
+            Level::Info => COLOR_GREEN,
+            Level::Warning => COLOR_YELLOW,
+            Level::Error => COLOR_RED,
+            Level::Critical => COLOR_BRIGHT_RED,
         };
-        write!(port, "{}{}{} ", COLOR_RESET, level_color, record.level().as_str())?;
+        write!(
+            port,
+            "{}{}{} ",
+            COLOR_RESET,
+            level_color,
+            record.level().as_str()
+        )?;
         write!(port, "{}[{}:{}]", COLOR_CYAN, record.file(), record.line())?;
         write!(port, "{} - {}{}", COLOR_GREY, COLOR_RESET, record.msg())?;
 
@@ -77,7 +86,7 @@ pub enum SerialDrainError {
     WriteError(fmt::Error),
 
     /// Slog produced an error
-    SlogError(slog::Error)
+    SlogError(slog::Error),
 }
 
 impl From<fmt::Error> for SerialDrainError {
@@ -100,12 +109,12 @@ impl From<slog::Error> for SerialDrainError {
 
 /// Implementation of slog's `Serializer` trait that writes K/V pairs to a serial port
 struct SerialPortSerializer<'a> {
-    port: &'a mut SerialPort
+    port: &'a mut SerialPort,
 }
 
-impl <'a> Serializer for SerialPortSerializer<'a> {
+impl<'a> Serializer for SerialPortSerializer<'a> {
     fn emit_arguments(&mut self, key: Key, val: &Arguments) -> slog::Result {
-        write!(self.port, " {} = {}", key, val)?;
+        write!(self.port, " {}{}{} = {}", COLOR_BOLD, key, COLOR_RESET, val)?;
         Ok(())
     }
 

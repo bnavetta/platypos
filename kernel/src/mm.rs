@@ -1,11 +1,16 @@
+//! Memory Management
+
 use core::alloc::{GlobalAlloc, Layout};
 use core::ptr;
 
 use spinning_top::Spinlock;
 
+pub mod address;
+pub mod frame;
+
 // For now, fixed-size bump allocator to unblock using slog (which relies heavily on Arc)
 struct KernelAllocator {
-    inner: Spinlock<AllocatorInner>
+    inner: Spinlock<AllocatorInner>,
 }
 
 impl KernelAllocator {
@@ -13,15 +18,15 @@ impl KernelAllocator {
         KernelAllocator {
             inner: Spinlock::new(AllocatorInner {
                 heap: [0; 1024],
-                index: 0
-            })
+                index: 0,
+            }),
         }
     }
 }
 
 struct AllocatorInner {
     heap: [u8; 1024],
-    index: usize
+    index: usize,
 }
 
 #[global_allocator]

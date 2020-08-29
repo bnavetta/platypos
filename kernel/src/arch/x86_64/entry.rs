@@ -2,6 +2,7 @@ use slog::info;
 
 use platypos_boot_info::BootInfo;
 
+use crate::arch::mm::initialize_frame_allocator;
 use crate::{kernel_main, root_logger};
 
 #[export_name = "_start"]
@@ -11,6 +12,7 @@ extern "C" fn start(boot_info: &'static BootInfo) -> ! {
     let logger = root_logger();
 
     info!(logger, "Boot info:\n{}", boot_info);
+    initialize_frame_allocator(logger, boot_info.memory_map());
 
     kernel_main()
 }

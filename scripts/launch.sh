@@ -51,8 +51,8 @@ qemu_args=(
     # Start QEMU monitor on a socket for listening in another window
     '-monitor' "unix:$QEMU_SOCKET,server,nowait"
 
-    # 256 MiB of RAM
-    '-m' '256'
+    # Amount of memory, in MiB
+    '-m' '1024'
 
     # TODO: QEMU debugging
     '-s'
