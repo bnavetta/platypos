@@ -8,7 +8,7 @@ use log::info;
 use uart_16550::SerialPort;
 
 use uefi::prelude::*;
-use uefi::table::boot::{MemoryAttribute, MemoryMapIter, MemoryType};
+use uefi::table::boot::{MemoryAttribute, MemoryType};
 use uefi::Guid;
 
 use x86_64::registers::control::{Cr3, Cr3Flags};
@@ -18,12 +18,9 @@ use x86_64::PhysAddr;
 use x86_64_ext::instructions::hlt_loop;
 use x86_64_ext::paging::PhysFrameExt;
 
-use platypos_boot_info::memory_map::*;
-use platypos_boot_info::BootInfo;
-
 use crate::kernel_image::KernelImage;
 use crate::memory_map::{
-    create_boot_info, BOOT_INFO_ADDRESS, KERNEL_DATA, KERNEL_IMAGE, KERNEL_PAGE_TABLE,
+    BOOT_INFO_ADDRESS, KERNEL_DATA, KERNEL_IMAGE, KERNEL_PAGE_TABLE,
     KERNEL_STACK_PAGES, KERNEL_STACK_START,
 };
 use crate::page_table::KernelPageTable;
@@ -37,9 +34,9 @@ pub fn handoff(
 ) -> ! {
     let mut debug_port = unsafe { SerialPort::new(0x3F8) };
 
-    let boot_info = create_boot_info(page_table, system_table.boot_services());
+    // let boot_info = create_boot_info(page_table, system_table.boot_services());
 
-    exit_boot_services(&mut debug_port, loaded_image, system_table, boot_info);
+    exit_boot_services(&mut debug_port, loaded_image, system_table);
     unsafe {
         activate_page_table(&mut debug_port, page_table);
         jump_to_kernel(&mut debug_port, kernel_image);
@@ -51,7 +48,7 @@ fn exit_boot_services(
     debug_port: &mut SerialPort,
     loaded_image: Handle,
     system_table: SystemTable<Boot>,
-    boot_info: *mut BootInfo,
+    // boot_info: *mut BootInfo,
 ) {
     // Add padding in case the memory map grows between now and calling exit_boot_services
     let mut memory_map_buf = vec![0u8; system_table.boot_services().memory_map_size() + 256];
@@ -62,7 +59,7 @@ fn exit_boot_services(
 
     debug_port.init();
 
-    let (_, memory_map) = match system_table.exit_boot_services(loaded_image, &mut memory_map_buf) {
+    let (_, _) = match system_table.exit_boot_services(loaded_image, &mut memory_map_buf) {
         Ok(completion) => {
             let (status, res) = completion.split();
             if status.is_success() {
@@ -84,7 +81,7 @@ fn exit_boot_services(
 
     let _ = writeln!(debug_port, "Exited UEFI boot services");
 
-    unsafe { *boot_info = BootInfo::new(rsdp, build_memory_map(debug_port, memory_map)) };
+    // unsafe { *boot_info = BootInfo::new(rsdp, build_memory_map(debug_port, memory_map)) };
 
     let _ = writeln!(debug_port, "Populated boot info");
 
@@ -125,68 +122,6 @@ fn find_rsdp(system_table: &SystemTable<Boot>) -> PhysAddr {
     panic!("ACPI RSDP not found in UEFI config table");
 }
 
-/// Builds a PlatypOS memory map out of the one provided by UEFI when we exited boot services
-fn build_memory_map<'a>(debug_port: &mut SerialPort, uefi_map: MemoryMapIter<'a>) -> MemoryMap {
-    let mut map = MemoryMap::new();
-
-    for (i, descriptor) in uefi_map.enumerate() {
-        // Check explicitly, because the panic handler relies on UEFI services
-        if i >= MAX_ENTRIES {
-            let _ = writeln!(
-                debug_port,
-                "Fatal error: more than {} entries in UEFI memory map",
-                MAX_ENTRIES
-            );
-            hlt_loop();
-        }
-
-        let usability = if descriptor.att.contains(MemoryAttribute::RUNTIME) {
-            MemoryUsability::UefiRuntime
-        } else {
-            match descriptor.ty {
-                KERNEL_IMAGE | KERNEL_DATA => MemoryUsability::Kernel,
-                KERNEL_PAGE_TABLE => MemoryUsability::InitialPageTable,
-                MemoryType::LOADER_CODE
-                | MemoryType::LOADER_DATA
-                | MemoryType::BOOT_SERVICES_CODE
-                | MemoryType::BOOT_SERVICES_DATA => MemoryUsability::BootReclaimable,
-                MemoryType::RUNTIME_SERVICES_CODE | MemoryType::RUNTIME_SERVICES_DATA => {
-                    MemoryUsability::UefiRuntime
-                }
-                MemoryType::CONVENTIONAL => MemoryUsability::Usable,
-                MemoryType::ACPI_RECLAIM => MemoryUsability::AcpiReclaimable,
-                MemoryType::PERSISTENT_MEMORY => MemoryUsability::Usable,
-                _ => MemoryUsability::Reserved,
-            }
-        };
-
-        let kind = match descriptor.ty {
-            KERNEL_IMAGE
-            | KERNEL_DATA
-            | KERNEL_PAGE_TABLE
-            | MemoryType::LOADER_CODE
-            | MemoryType::LOADER_DATA
-            | MemoryType::BOOT_SERVICES_CODE
-            | MemoryType::BOOT_SERVICES_DATA
-            | MemoryType::RUNTIME_SERVICES_CODE
-            | MemoryType::RUNTIME_SERVICES_DATA
-            | MemoryType::ACPI_RECLAIM
-            | MemoryType::CONVENTIONAL => MemoryKind::Conventional,
-            MemoryType::UNUSABLE => MemoryKind::Unusable,
-            MemoryType::PERSISTENT_MEMORY => MemoryKind::Persistent,
-            MemoryType::ACPI_NON_VOLATILE => MemoryKind::AcpiNonVolatile,
-            MemoryType::MMIO | MemoryType::MMIO_PORT_SPACE => MemoryKind::MemoryMappedIo,
-            other => MemoryKind::Other { uefi_type: other.0 },
-        };
-
-        let frames = PhysFrame::containing_address(PhysAddr::new(descriptor.phys_start))
-            .range_to(descriptor.page_count as usize);
-        map.set_entry(i, MemoryRegion::new(frames, kind, usability));
-    }
-
-    map.finish();
-    map
-}
 
 /// Switches to the transitional kernel page table. The transitional page table must contain both mappings needed for the loader
 /// and mappings needed for the kernel

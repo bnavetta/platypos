@@ -3,6 +3,7 @@
 #![feature(llvm_asm)]
 
 extern crate alloc;
+extern crate rlibc;
 
 use log::info;
 use uefi::prelude::*;

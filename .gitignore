@@ -1,1 +1,6 @@
+# Rust built files
 target/
+
+# IDE files
+*.iml
+.idea/
