@@ -13,7 +13,7 @@
     "linker-flavor": "ld.lld",
     "linker": "rust-lld",
     "pre-link-args": {
-        "ld.lld": ["--script=kernel/linker/x86_64.ld"]
+        "ld.lld": ["--script=kernel_x86_64/x86_64.ld"]
     },
     "panic-strategy": "abort",
     "disable-redzone": "true",

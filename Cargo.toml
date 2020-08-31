@@ -1,11 +1,12 @@
 [workspace]
 members = [
-    "kernel",
     "boot_info",
     "slog_kernel",
     "x86_64_ext",
 
     "pos_cli",
+    "pal",
+    "kernel",
     "kernel_x86_64",
     "loader_uefi"
 ]

@@ -2,14 +2,14 @@ use std::fs;
 use std::io::Write;
 use std::path::Path;
 use std::process::Command;
+use std::os::unix::fs as unix_fs;
+use std::os::unix::process::CommandExt;
 
-use eyre::{Result, WrapErr};
+use eyre::{Result, WrapErr, eyre};
 use log::{info, debug};
 use tempfile::{TempDir, NamedTempFile};
 
 use crate::run;
-
-const QEMU_SOCKET: &str = "target/qemu-monitor.sock";
 
 /// Runs PlatypOS in QEMU using an UEFI bootloader
 pub fn run_uefi(uefi_app: &Path, kernel_executable: &Path, debug: bool) -> Result<()> {
@@ -30,12 +30,14 @@ pub fn run_uefi(uefi_app: &Path, kernel_executable: &Path, debug: bool) -> Resul
         .arg("-drive").arg(format!("format=raw,file=fat:rw:{}", esp_root.path().display()))
         // Use port 0xf4 to exit QEMU
         .args(&["-device", "isa-debug-exit,iobase=0xf4,iosize=0x04"])
-        // Redirect serial port and UEFI stdout to the terminal
-        .args(&["-serial", "stdio"])
-        // Start the QEMU monitor on a unix domain socket
-        .arg("-monitor").arg(format!("unix:{},server,nowait", QEMU_SOCKET))
+        // Redirect serial port and UEFI stdout to a log file
+        .args(&["-serial", "file:target/qemu.log"])
+        // Start the QEMU monitor on stdin/out
+        .args(&["-monitor", "stdio"])
         // Amount of memory, in MiB
-        .args(&["-m", "1024"]);
+        .args(&["-m", "1024"])
+        // Additional logging, see qemu-system-x86_64 -d help
+        .args(&["-d", "int,guest_errors,in_asm"]);
     if debug {
         qemu.args(&["-s", "-S"]);
     }
@@ -45,21 +47,13 @@ pub fn run_uefi(uefi_app: &Path, kernel_executable: &Path, debug: bool) -> Resul
     Ok(())
 }
 
-/// Connects to the QEMU monitor
-pub fn connect_monitor() -> Result<()> {
-    // TODO: could probably replace socat with Rust
-    let mut command = Command::new("socat");
-    command
-        .arg("-")
-        .arg(format!("unix-connect:{}", QEMU_SOCKET));
-    run(&mut command)
-}
-
 /// Connects to the GDB server
 pub fn connect_debugger(kernel_path: &Path) -> Result<()> {
+    println!("Remember, use hbreak instead of break for best results!");
+
     let mut init = NamedTempFile::new()
         .wrap_err("Could not create GDB command file")?;
-    writeln!(&mut init, "file {}", kernel_path.display())
+    writeln!(&mut init, "symbol-file {}", kernel_path.display())
         .wrap_err("Could not write to GDB command file")?;
     writeln!(&mut init, "target remote localhost:1234")
         .wrap_err("Could not write to GDB command file")?;
@@ -67,7 +61,10 @@ pub fn connect_debugger(kernel_path: &Path) -> Result<()> {
 
     let mut gdb = Command::new("gdb");
     gdb.arg("-ix").arg(&init_path);
-    run(&mut gdb)
+    // exec GDB instead of spawning and waiting for it. This makes sure it receives Ctrl-C properly
+    // instead of exiting the wrapper program. Alternatively, use tcsetpgrp
+    gdb.exec();
+    Err(eyre!("Could not execute GDB"))
 }
 
 /// Creates the EFI system partition directory
@@ -85,22 +82,10 @@ fn build_esp(uefi_app: &Path, kernel_executable: &Path) -> Result<TempDir> {
     let boot_dir = esp_root.path().join("EFI").join("Boot");
     fs::create_dir_all(&boot_dir)
         .wrap_err("Could not create EFI/Boot directory in ESP")?;
-    symlink_file(uefi_app, boot_dir.join("Bootx64.efi"))
+    unix_fs::symlink(uefi_app, boot_dir.join("Bootx64.efi"))
         .wrap_err("Could not link UEFI bootloader application into ESP")?;
-    symlink_file(kernel_executable, esp_root.path().join("platypos_kernel"))
+    unix_fs::symlink(kernel_executable, esp_root.path().join("platypos_kernel"))
         .wrap_err("Could not link kernel into ESP")?;
 
     Ok(esp_root)
-}
-
-#[cfg(unix)]
-fn symlink_file<P: AsRef<Path>, Q: AsRef<Path>>(src: P, dest: Q) -> Result<()> {
-    ::std::os::unix::fs::symlink(src, dest)?;
-    Ok(())
-}
-
-#[cfg(windows)]
-fn symlink_file<P: AsRef<Path>, Q: AsRef<Path>>(src: P, dest: Q) -> Result<()> {
-    ::std::os::windows::fs::symlink_file(src, dest)?;
-    Ok(())
 }

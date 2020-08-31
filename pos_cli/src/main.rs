@@ -41,8 +41,6 @@ enum Task {
         #[structopt(long)]
         debug: bool,
     },
-    /// Connect to a running QEMU monitor
-    Monitor,
     /// connect to a running QEMU GDB server
     Debugger,
 }
@@ -70,9 +68,6 @@ fn main() -> Result<()> {
                     qemu::run_uefi(&loader, &kernel, debug)?;
                 },
             }
-        },
-        Task::Monitor => {
-            qemu::connect_monitor()?;
         },
         Task::Debugger => {
             let kernel = kernel_path(args.platform, args.mode);

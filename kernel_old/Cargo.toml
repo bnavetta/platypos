@@ -1,0 +1,29 @@
+[package]
+name = "platypos_kernel"
+version = "0.0.1"
+authors = ["Ben Navetta <ben.navetta@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+intrusive-collections = "0.9"
+platypos_boot_info = { path = "../boot_info" }
+slog_kernel = { path = "../slog_kernel" }
+
+[dependencies.conquer-once]
+version = "0.2"
+default-features = false
+
+[dependencies.slog]
+version = "2.5"
+default-features = false
+
+[dependencies.spinning_top]
+version = "0.1"
+features = ["nightly"]
+
+[target.'cfg(target_arch = "x86_64")'.dependencies]
+x86_64 = "0.10"
+x86_64_ext = { path = "../x86_64_ext" }
+
+[package.metadata.cargo-xbuild]
+memcpy = true
