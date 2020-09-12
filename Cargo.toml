@@ -10,3 +10,9 @@ members = [
     "kernel_x86_64",
     "loader_uefi"
 ]
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"

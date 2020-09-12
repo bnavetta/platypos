@@ -45,6 +45,16 @@ impl <P: Platform> VirtualAddress<P> {
     pub const fn into_inner(self) -> usize {
         self.raw
     }
+
+    /// Converts this address to a pointer
+    pub fn as_ptr<T>(self) -> *const T {
+        self.raw as *const T
+    }
+
+    /// Converts this address to a mutable pointer
+    pub fn as_mut<T>(self) -> *mut T {
+        self.raw as *mut T
+    }
 }
 
 //endregion
@@ -245,36 +255,3 @@ impl <P: Platform> fmt::Binary for PhysicalAddress<P> {
 }
 
 //endregion
-
-/// An error validating a memory address
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ValidateAddressError {
-    kind: AddressErrorKind,
-    raw: usize
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum AddressErrorKind {
-    InvalidPhysicalAddress,
-    InvalidVirtualAddress
-}
-
-impl ValidateAddressError {
-    pub(crate) fn new(kind: AddressErrorKind, raw: usize) -> ValidateAddressError {
-        ValidateAddressError { kind, raw }
-    }
-
-    /// The raw address value
-    pub fn raw_address(&self) -> usize {
-        self.raw
-    }
-}
-
-impl fmt::Display for ValidateAddressError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self.kind {
-            AddressErrorKind::InvalidPhysicalAddress => write!(f, "not a valid physical address: {:#x}", self.raw),
-            AddressErrorKind::InvalidVirtualAddress => write!(f, "not a valid virtual address: {:#x}", self.raw)
-        }
-    }
-}

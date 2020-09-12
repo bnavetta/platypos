@@ -11,7 +11,6 @@ use rgb::RGB8;
 use spinning_top::Spinlock;
 use uart_16550::SerialPort;
 use x86_64::instructions::interrupts;
-use x86_64_ext::instructions::hlt_loop;
 
 /// Serial port to log in
 const SERIAL_PORT: u16 = 0x3f8;

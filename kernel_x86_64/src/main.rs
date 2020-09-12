@@ -7,18 +7,15 @@ extern crate rlibc;
 use core::panic::PanicInfo;
 use log::{error, warn, debug};
 
-use platypos_pal as pal;
 use platypos_kernel::kernel_main;
 use x86_64_ext::instructions::hlt_loop;
 
 mod logger;
+mod mem;
+mod platform;
 
-use crate::logger::{KernelLog};
-
-/// x86-64 PAL implementation
-struct Platform;
-
-impl pal::Platform for Platform {}
+use crate::logger::KernelLog;
+use crate::platform::Platform;
 
 static LOG: KernelLog = KernelLog::new();
 
