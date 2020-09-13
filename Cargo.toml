@@ -1,6 +1,5 @@
 [workspace]
 members = [
-    "boot_info",
     "slog_kernel",
     "x86_64_ext",
 
@@ -8,6 +7,7 @@ members = [
     "pal",
     "kernel",
     "kernel_x86_64",
+    "kernel_x86_64/boot_info",
     "loader_uefi"
 ]
 

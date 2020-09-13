@@ -2,6 +2,9 @@
 #![no_std]
 #![feature(const_fn)]
 
+#[macro_use]
+extern crate bitflags;
+
 use core::any::Any;
 use core::fmt::Debug;
 

@@ -8,6 +8,7 @@ edition = "2018"
 ansi_rgb = "0.2"
 platypos_kernel = { path = "../kernel" }
 platypos_pal = { path = "../pal" }
+platypos_boot_info = { path = "./boot_info" }
 rgb = "0.8"
 rlibc = "1.0.0"
 uart_16550 = "0.2"

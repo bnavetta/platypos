@@ -100,7 +100,7 @@ impl <P: pal::Platform> RegionInner<P> {
     fn allocate(&mut self, order: BlockOrder) -> Option<Block<P>> {
         if let Some(free_block) = self.free_lists[order.as_usize()].cursor_mut().remove() {
             free_block.validate(order);
-            let block = free_block.into_block();
+            let block = free_block.as_block();
             // Only need to mark the block as allocated, since we already removed it from the free list
             self.set_allocated_bit(&block, true);
             Some(block)
@@ -109,9 +109,9 @@ impl <P: pal::Platform> RegionInner<P> {
             self.set_allocated_bit(&low, true);
             self.make_free(high);
             Some(low)
+        } else {
+            None
         }
-
-        None
     }
 
     /// Frees a previously-allocated block.
@@ -262,7 +262,7 @@ impl <P: pal::Platform> Block<P> {
             let start = if self.is_low() {
                 self.start
             } else {
-                self.start + self.order.frames();
+                self.start + self.order.frames()
             };
 
             Some(Block { order, start })
@@ -293,7 +293,7 @@ impl <P: pal::Platform> FreeBlock<P> {
 
     /// Converts this `FreeBlock` into a `Block` structure. This does *not* update any free lists
     /// or bitmaps.
-    fn into_block(self) -> Block<P> {
+    fn as_block(&self) -> Block<P> {
         Block { start: self.start, order: self.order }
     }
 }

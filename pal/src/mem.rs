@@ -4,9 +4,10 @@ use crate::Platform;
 
 mod address;
 mod frame;
+pub mod map;
 
 pub use self::address::{PhysicalAddress, VirtualAddress};
-pub use self::frame::PageFrame;
+pub use self::frame::{PageFrame, PageFrameRange};
 
 // A platform's memory model. PlatypOS assumes that all platforms use flat address spaces divided
 // into fixed-size frames. It also assumes multiple virtual address spaces mapped onto the physical
