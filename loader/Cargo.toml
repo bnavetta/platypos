@@ -1,0 +1,16 @@
+[package]
+name = "platypos_loader"
+version = "0.1.0"
+authors = ["Ben Navetta <ben.navetta@gmail.com>"]
+edition = "2018"
+description = "UEFI bootloader for PlatypOS"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+goblin = { version = "0.3.4", features = ["elf64"], default-features = false }
+log = "0.4.14"
+plain = "0.2.3"
+uefi = "0.8.0"
+uefi-services = "0.5.0"
+x86_64 = "0.13.2"
