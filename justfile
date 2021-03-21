@@ -52,6 +52,9 @@ run: boot_dir
 gdb:
   gdb -x gdb/init
 
+addr2line +ADDRS:
+  @addr2line -C -p -f -e "{{ kernel_exe }}" {{ ADDRS }}
+
 check:
   cargo check -p {{loader_package}} --target {{loader_target}}
   cargo check -p {{kernel_package}} --target {{kernel_target}}
@@ -60,5 +63,5 @@ format:
   cargo fmt --all
 
 dependencies:
-  yay -S ugdb qemu edk2-ovmf
+  yay -S qemu edk2-ovmf
   pip3 install --user pefile

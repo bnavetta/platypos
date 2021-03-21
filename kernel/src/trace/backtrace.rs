@@ -29,7 +29,7 @@ impl Frame {
         Frame {
             base_pointer: VirtAddr::new(bp),
             stack_pointer: VirtAddr::new(sp),
-            instruction_pointer: VirtAddr::new(ip)
+            instruction_pointer: VirtAddr::new(ip),
         }
     }
 
@@ -42,7 +42,7 @@ impl Frame {
 
         // This assumes we start with a null RBP when the kernel begins to execute
         if self.base_pointer.is_null() {
-            return None
+            return None;
         }
 
         // The caller's return address should be right above the current stack frame, since it's pushed by the call instruction
@@ -51,11 +51,11 @@ impl Frame {
         let parent_sp = self.base_pointer;
         // And the parent's base pointer is pushed to the start of our stack frame
         let parent_bp = self.base_pointer.as_ptr::<u64>().read();
-        
+
         Some(Frame {
             base_pointer: VirtAddr::new(parent_bp),
             instruction_pointer: VirtAddr::new(parent_ip),
-            stack_pointer: parent_sp
+            stack_pointer: parent_sp,
         })
     }
 }

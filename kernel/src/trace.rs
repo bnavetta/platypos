@@ -3,13 +3,19 @@
 //! The kernel tracing implementation does not allocate, so it may be called from memory management code.
 // TODO: make sure this is also interrupt-safe
 
-use core::{panic::PanicInfo, sync::atomic::{AtomicU64, Ordering}};
+use core::{
+    panic::PanicInfo,
+    sync::atomic::{AtomicU64, Ordering},
+};
 
 use arrayvec::ArrayVec;
 use spinning_top::Spinlock;
-use tracing::{span, Event, Metadata, dispatch::{self, Dispatch}};
+use tracing::{
+    dispatch::{self, Dispatch},
+    span, Event, Metadata,
+};
 use tracing_core::span::Current;
-use x86_64::instructions::{interrupts, hlt};
+use x86_64::instructions::{hlt, interrupts};
 
 mod backtrace;
 mod logger;
@@ -23,7 +29,6 @@ pub struct Collector {
     state: Spinlock<LocalState>,
 }
 
-
 /// Per-core collector state
 struct LocalState {
     stack: SpanStack,
@@ -32,7 +37,7 @@ struct LocalState {
 static COLLECTOR: Collector = Collector {
     id: AtomicU64::new(1),
     state: Spinlock::new(LocalState {
-        stack: SpanStack::new()
+        stack: SpanStack::new(),
     }),
 };
 
@@ -74,7 +79,6 @@ impl tracing::Collect for Collector {
 
     fn record_follows_from(&self, span: &span::Id, follows: &span::Id) {
         // TODO
-
     }
 
     fn event(&self, event: &Event<'_>) {
@@ -82,9 +86,7 @@ impl tracing::Collect for Collector {
     }
 
     fn enter(&self, span: &span::Id) {
-        self.with_local(|state| {
-            state.stack.push(span.clone())
-        })
+        self.with_local(|state| state.stack.push(span.clone()))
     }
 
     fn exit(&self, span: &span::Id) {
@@ -103,13 +105,13 @@ impl tracing::Collect for Collector {
 
 /// Stack of currently-executing spans. This stack has a fixed depth
 struct SpanStack {
-    stack: ArrayVec<[span::Id; 32]>
+    stack: ArrayVec<[span::Id; 32]>,
 }
 
 impl SpanStack {
     pub const fn new() -> SpanStack {
         SpanStack {
-            stack: ArrayVec::new()
+            stack: ArrayVec::new(),
         }
     }
 
@@ -120,7 +122,12 @@ impl SpanStack {
     }
 
     pub fn pop(&mut self, id: &span::Id) {
-        let entry = self.stack.iter().enumerate().rev().find(|(_, current_id)| *current_id == id);
+        let entry = self
+            .stack
+            .iter()
+            .enumerate()
+            .rev()
+            .find(|(_, current_id)| *current_id == id);
         if let Some((index, _)) = entry {
             self.stack.remove(index);
         }

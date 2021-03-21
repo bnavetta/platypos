@@ -5,7 +5,7 @@
 use core::fmt::Write;
 use core::panic::PanicInfo;
 
-use tracing::{Level, span, info};
+use tracing::{info, span, Level};
 use x86_64::instructions::{hlt, interrupts};
 
 mod trace;

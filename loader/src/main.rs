@@ -9,8 +9,8 @@ use util::memory_map_size;
 
 use log::info;
 use uefi::prelude::*;
-use uefi::table::Runtime;
 use uefi::table::boot::MemoryType;
+use uefi::table::Runtime;
 use uefi_services;
 
 mod elf;
@@ -73,10 +73,15 @@ fn setup_kernel_stack(system_table: &SystemTable<Boot>, page_table: &mut KernelP
 }
 
 /// Exits UEFI boot services. This is unsafe because the caller must ensure that no boot services are used after calling this function.
-unsafe fn exit_boot_services(image_handle: uefi::Handle, system_table: SystemTable<Boot>) -> SystemTable<Runtime> {
+unsafe fn exit_boot_services(
+    image_handle: uefi::Handle,
+    system_table: SystemTable<Boot>,
+) -> SystemTable<Runtime> {
     info!("Exiting UEFI boot services");
     let mut map_buf = vec![0u8; memory_map_size(&system_table)];
-    let (runtime_table, _) = system_table.exit_boot_services(image_handle, &mut map_buf).expect_success("Failed to exit UEFI boot services");
+    let (runtime_table, _) = system_table
+        .exit_boot_services(image_handle, &mut map_buf)
+        .expect_success("Failed to exit UEFI boot services");
 
     // We can't deallocate the memory map, because it was allocated using UEFI boot services that no longer exist
     ::core::mem::forget(map_buf);
@@ -87,7 +92,7 @@ unsafe fn exit_boot_services(image_handle: uefi::Handle, system_table: SystemTab
 unsafe fn launch(kernel: &elf::Object, page_table: &KernelPageTable, kernel_stack: usize) -> ! {
     use x86_64::registers::{
         control::{Cr3, Cr3Flags},
-        model_specific::{Efer, EferFlags}
+        model_specific::{Efer, EferFlags},
     };
 
     // 1: Enable the no-execute bit, because the kernel page table uses it
@@ -121,9 +126,12 @@ static mut DEBUGGER_ATTACHED: u8 = 0;
 #[cfg(feature = "gdb")]
 fn wait_for_debugger(system_table: &SystemTable<Boot>, image_handle: uefi::Handle) {
     use uefi::proto::loaded_image::LoadedImage;
-    let image = system_table.boot_services().handle_protocol::<LoadedImage>(image_handle).expect_success("Could not locate loaded image");
+    let image = system_table
+        .boot_services()
+        .handle_protocol::<LoadedImage>(image_handle)
+        .expect_success("Could not locate loaded image");
     let base_address = unsafe {
-        let image = &* image.get();
+        let image = &*image.get();
         let (base_address, _size) = image.info();
         base_address
     };

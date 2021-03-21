@@ -2,9 +2,9 @@
 
 use alloc::vec;
 
-use log::{trace, debug};
-use uefi::{ResultExt, prelude::*};
+use log::{debug, trace};
 use uefi::table::boot::AllocateType;
+use uefi::{prelude::*, ResultExt};
 use x86_64::{
     structures::paging::{
         FrameAllocator, Mapper, OffsetPageTable, Page, PageTable, PageTableFlags, PhysFrame,
@@ -13,8 +13,8 @@ use x86_64::{
     PhysAddr, VirtAddr,
 };
 
-use crate::{KERNEL_RECLAIMABLE, KERNEL_DATA, PAGE_SIZE};
 use crate::util::{allocate_frames, memory_map_size};
+use crate::{KERNEL_DATA, KERNEL_RECLAIMABLE, PAGE_SIZE};
 
 pub struct KernelPageTable {
     /// Kernel PML4 (top-level page table)
@@ -88,28 +88,56 @@ impl KernelPageTable {
         use uefi::table::boot::MemoryType;
 
         let mut map_storage = vec![0u8; memory_map_size(system_table)];
-        let (_, memory_map) = system_table.boot_services().memory_map(&mut map_storage).expect_success("Could not retrieve UEFI memory map");
+        let (_, memory_map) = system_table
+            .boot_services()
+            .memory_map(&mut map_storage)
+            .expect_success("Could not retrieve UEFI memory map");
         for desc in memory_map {
             // TODO: also map runtime services?
             let flags = match desc.ty {
                 MemoryType::LOADER_CODE => PageTableFlags::PRESENT,
                 // We have to keep BOOT_SERVICES_DATA around, since that contains the bootloader stack
-                MemoryType::LOADER_DATA | MemoryType::BOOT_SERVICES_DATA | KERNEL_DATA | KERNEL_RECLAIMABLE => PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::NO_EXECUTE,
+                MemoryType::LOADER_DATA
+                | MemoryType::BOOT_SERVICES_DATA
+                | KERNEL_DATA
+                | KERNEL_RECLAIMABLE => {
+                    PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::NO_EXECUTE
+                }
                 _ => {
-                    debug!("Skipping {:?} at {:#x} - {:#x}", desc.ty, desc.phys_start, desc.phys_start + desc.page_count * PAGE_SIZE);
+                    debug!(
+                        "Skipping {:?} at {:#x} - {:#x}",
+                        desc.ty,
+                        desc.phys_start,
+                        desc.phys_start + desc.page_count * PAGE_SIZE
+                    );
                     continue;
                 }
             };
 
-            debug!("Adding loader mapping for {:?} at {:#x} - {:#x}", desc.ty, desc.phys_start, desc.phys_start + desc.page_count * PAGE_SIZE);
+            debug!(
+                "Adding loader mapping for {:?} at {:#x} - {:#x}",
+                desc.ty,
+                desc.phys_start,
+                desc.phys_start + desc.page_count * PAGE_SIZE
+            );
 
             let page_start = Page::from_start_address(VirtAddr::new(if desc.virt_start == 0 {
                 // In practice, it seems like virt_start is always 0, so identity-map at the physical address
                 desc.phys_start
-            } else { desc.virt_start })).expect("Unaligned memory descriptor");
-            let frame_start = PhysFrame::from_start_address(PhysAddr::new(desc.phys_start)).expect("Unaligned memory descriptor");
-            
-            self.map(system_table, page_start, frame_start, desc.page_count as usize, flags);
+            } else {
+                desc.virt_start
+            }))
+            .expect("Unaligned memory descriptor");
+            let frame_start = PhysFrame::from_start_address(PhysAddr::new(desc.phys_start))
+                .expect("Unaligned memory descriptor");
+
+            self.map(
+                system_table,
+                page_start,
+                frame_start,
+                desc.page_count as usize,
+                flags,
+            );
         }
     }
 

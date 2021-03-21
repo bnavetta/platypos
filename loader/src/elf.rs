@@ -22,7 +22,9 @@ use x86_64::{
     VirtAddr,
 };
 
-use crate::{file::File, page_table::KernelPageTable, KERNEL_IMAGE, PAGE_SIZE, util::allocate_frames};
+use crate::{
+    file::File, page_table::KernelPageTable, util::allocate_frames, KERNEL_IMAGE, PAGE_SIZE,
+};
 
 /// An ELF object (binary). In practice, this will only ever be the kernel executable.
 pub struct Object {
@@ -44,7 +46,11 @@ impl Object {
     }
 
     /// Loads this object's segments into memory and updates `page_table` with the corresponding virtual memory mappings.
-    pub fn load_and_map(&mut self, system_table: &SystemTable<Boot>, page_table: &mut KernelPageTable) {
+    pub fn load_and_map(
+        &mut self,
+        system_table: &SystemTable<Boot>,
+        page_table: &mut KernelPageTable,
+    ) {
         let vaddr_range = self.metadata.virtual_range();
         let base_virt_addr = align_down(vaddr_range.start, PAGE_SIZE);
         let pages = ((vaddr_range.end - base_virt_addr + PAGE_SIZE - 1) / PAGE_SIZE) as usize;
@@ -60,7 +66,8 @@ impl Object {
             *entry = 0;
         }
 
-        for phdr in self.metadata
+        for phdr in self
+            .metadata
             .program_headers()
             .iter()
             .filter(|ph| ph.p_type == PT_LOAD)
@@ -83,7 +90,8 @@ impl Object {
                 perm(PF_X, 'x')
             );
             let buffer_offset = (phdr.p_vaddr - base_virt_addr) as usize;
-            let bytes_read = self.file
+            let bytes_read = self
+                .file
                 .read(
                     phdr.p_offset as usize,
                     &mut buf[buffer_offset..][..phdr.p_filesz as usize],
