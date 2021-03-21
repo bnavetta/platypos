@@ -5,29 +5,27 @@
 use core::fmt::Write;
 use core::panic::PanicInfo;
 
-use uart_16550::SerialPort;
+use tracing::{Level, span, info};
 use x86_64::instructions::{hlt, interrupts};
+
+mod trace;
 
 static foo: &str = "Hello, World!";
 
 #[no_mangle]
 pub extern "C" fn _start() -> ! {
     wait_for_debugger();
-    interrupts::disable();
+    trace::Collector::install();
 
-    let mut port = unsafe { SerialPort::new(0x3F8) };
-    port.init();
+    let span = span!(Level::INFO, "kernel main");
+    let _enter = span.enter();
+    info!(foo = 1, "This is traced!");
 
-    let _ = writeln!(&mut port, "{}", foo);
+    panic!("oops");
 
     loop {
         hlt();
     }
-}
-
-#[panic_handler]
-fn panic(_info: &PanicInfo) -> ! {
-    loop {}
 }
 
 /// The GDB setup script will set this to 1 after it's attached
