@@ -102,6 +102,7 @@ unsafe fn launch(kernel: &elf::Object, page_table: &KernelPageTable, kernel_stac
     asm!(
         "mov {kernel_stack}, rsp",
         "and rsp, 0xfffffffffffffff0",
+        "xor rbp, rbp", // So we start with a null base pointer for backtraces
         "call {kernel_entry}",
         kernel_stack = in(reg) kernel_stack,
         kernel_entry = in(reg) kernel.metadata.entry().as_u64(),

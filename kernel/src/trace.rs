@@ -11,15 +11,16 @@ use tracing::{span, Event, Metadata, dispatch::{self, Dispatch}};
 use tracing_core::span::Current;
 use x86_64::instructions::{interrupts, hlt};
 
+mod backtrace;
 mod logger;
 
+use self::backtrace::Frame;
 use self::logger::Logger;
 
 pub struct Collector {
     id: AtomicU64,
     // TODO: this needs to actually be per-core
     state: Spinlock<LocalState>,
-    logger: Logger,
 }
 
 
@@ -33,13 +34,12 @@ static COLLECTOR: Collector = Collector {
     state: Spinlock::new(LocalState {
         stack: SpanStack::new()
     }),
-    logger: Logger::new(),
 };
 
 impl Collector {
     /// Installs the kernel Collector as the global default
     pub fn install() {
-        COLLECTOR.logger.init();
+        Logger::initialize();
 
         let dispatch = Dispatch::from_static(&COLLECTOR);
         dispatch::set_global_default(dispatch).expect("global default collector already installed")
@@ -78,7 +78,7 @@ impl tracing::Collect for Collector {
     }
 
     fn event(&self, event: &Event<'_>) {
-        self.logger.log_event(event);
+        Logger::with(|logger| logger.log_event(event))
     }
 
     fn enter(&self, span: &span::Id) {
@@ -133,7 +133,20 @@ impl SpanStack {
 
 #[panic_handler]
 fn handle_panic(info: &PanicInfo) -> ! {
-    COLLECTOR.logger.log_panic(info);
+    let mut frame = Frame::current();
+    Logger::with(|logger| {
+        logger.log_panic(info);
+
+        // This is safe-ish, because we know we just grabbed the current frame.
+        // We make sure to log the panic message before trying this, in case the stack is corrupted.
+        for _ in 0..50 {
+            logger.log_backtrace_frame(&frame);
+            match unsafe { frame.parent() } {
+                Some(parent) => frame = parent,
+                None => break,
+            }
+        }
+    });
     loop {
         hlt();
     }

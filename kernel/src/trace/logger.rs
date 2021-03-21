@@ -9,46 +9,49 @@ use spinning_top::Spinlock;
 use uart_16550::SerialPort;
 use x86_64::instructions::interrupts;
 
-const SERIAL_PORT: u16 = 0x3F8;
+const SERIAL_PORT_BASE: u16 = 0x3F8;
+
+use super::backtrace::Frame;
 
 /// Logger backed by the UART 16550 serial port.
 pub struct Logger {
-    port: Spinlock<SerialPort>,
+    port: SerialPort,
 }
 
+static LOGGER: Spinlock<Logger> = Spinlock::new(Logger {
+    port: unsafe { SerialPort::new(SERIAL_PORT_BASE) }
+});
+
 impl Logger {
-    /// Creates a new Logger. [`init`] must be called before the logger is used.
-    pub const fn new() -> Logger {
-        Logger {
-            port: Spinlock::new(unsafe { SerialPort::new(SERIAL_PORT) })
-        }
+    pub fn with<T, F: FnOnce(&mut Logger) -> T>(f: F) -> T {
+        interrupts::without_interrupts(|| {
+            let mut logger = LOGGER.lock();
+            f(&mut logger)
+        })
     }
 
     /// Performs runtime logger initialization
-    pub fn init(&self) {
-        let mut port = self.port.lock();
-        port.init();
+    pub fn initialize() {
+        Logger::with(|logger| logger.port.init())
     }
 
-    pub fn log_event(&self, event: &Event) {
-        interrupts::without_interrupts(|| {
-            let mut port = self.port.lock();
-            let metadata = event.metadata();
-            let _ = write!(&mut port, "{} [{}] -", level_color(metadata.level()), metadata.target());
+    pub fn log_event(&mut self, event: &Event) {
+        let metadata = event.metadata();
+        let _ = write!(&mut self.port, "{} [{}] -", level_color(metadata.level()), metadata.target());
 
-            let mut visitor = SerialVisitor { port: &mut port };
-            event.record(&mut visitor);
+        let mut visitor = SerialVisitor { port: &mut self.port };
+        event.record(&mut visitor);
 
-            let _ = writeln!(&mut port);
-        })
+        let _ = writeln!(&mut self.port);
     }
 
-    pub fn log_panic(&self, panic: &PanicInfo) {
+    pub fn log_panic(&mut self, panic: &PanicInfo) {
         use ansi_rgb::red;
-        interrupts::without_interrupts(|| {
-            let mut port = self.port.lock();
-            let _ = writeln!(&mut port, "{}: {}", "PANIC".fg(red()), panic);
-        })
+        let _ = writeln!(&mut self.port, "{}: {}", "PANIC".fg(red()), panic);
+    }
+
+    pub fn log_backtrace_frame(&mut self, frame: &Frame) {
+        let _ = writeln!(&mut self.port, "  -> {:#x}", frame.instruction_pointer.as_u64());
     }
 }
 
