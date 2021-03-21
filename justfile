@@ -17,15 +17,16 @@ ovmf_fw_path := "/usr/share/ovmf/x64/OVMF_CODE.fd"
 ovmf_vars_path := "/usr/share/ovmf/x64/OVMF_VARS.fd"
 
 # Options
-debug := "false"
+debug_loader := "false"
+debug_kernel := "false"
 
 # Build the bootloader
 loader:
-  cargo build -p {{loader_package}} --target {{loader_target}}
+  cargo build -p {{loader_package}} --target {{loader_target}} {{ if debug_loader == "true" { "--features gdb" } else { "" } }}
 
 # Build the kernel
 kernel:
-  cargo build -p {{kernel_package}} --target {{kernel_target}}
+  cargo build -p {{kernel_package}} --target {{kernel_target}} {{ if debug_kernel == "true" { "--features gdb" } else { "" } }}
 
 # Prepare the UEFI boot directory (ESP)
 @boot_dir: loader kernel
@@ -35,7 +36,7 @@ kernel:
   cp {{kernel_exe}} {{boot_dir}}/{{kernel_package}}
 
 # Run PlatypOS
-run : boot_dir
+run: boot_dir
   qemu-system-x86_64 \
     -nodefaults \
     -vga std \
@@ -44,11 +45,12 @@ run : boot_dir
     -drive if=pflash,format=raw,readonly,file={{ovmf_fw_path}} \
     -drive if=pflash,format=raw,readonly,file={{ovmf_vars_path}} \
     -drive format=raw,file=fat:rw:{{boot_dir}} \
-    {{ if debug == "true" { "-s -S" } else { "" } }} \
+    -d int,cpu_reset \
+    {{ if debug_loader == "true" { "-s" } else { if debug_kernel == "true" { "-s" } else { "" } } }} \
     -serial stdio
 
 gdb:
-  ugdb -x gdb/init
+  gdb -x gdb/init
 
 check:
   cargo check -p {{loader_package}} --target {{loader_target}}

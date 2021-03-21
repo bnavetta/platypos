@@ -104,7 +104,8 @@ impl Object {
             // Figure out which pages we need to map for this segment
             let page_start = Page::containing_address(VirtAddr::new(phdr.p_vaddr));
             let frame_start = PhysFrame::containing_address(base_phys_addr + buffer_offset);
-            let count = (phdr.p_memsz + PAGE_SIZE - 1) / PAGE_SIZE;
+            let padding = phdr.p_vaddr - page_start.start_address().as_u64();
+            let count = (padding + phdr.p_memsz + PAGE_SIZE - 1) / PAGE_SIZE;
             page_table.map(system_table, page_start, frame_start, count as usize, flags);
         }
     }
