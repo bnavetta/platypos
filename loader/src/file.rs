@@ -12,7 +12,7 @@ use uefi::{
 };
 
 pub struct File {
-    inner: RegularFile
+    inner: RegularFile,
 }
 
 impl File {
@@ -53,9 +53,7 @@ impl File {
             .discard_errdata()
             .log_warning()?;
 
-        self.inner
-            .read(buf)
-            .discard_errdata()
+        self.inner.read(buf).discard_errdata()
     }
 
     pub fn read_as<T: Plain + Default, const SIZE: usize>(&mut self, offset: usize) -> T {
@@ -64,7 +62,10 @@ impl File {
         let mut buf = [0u8; SIZE];
         let bytes_read = self.read(offset, &mut buf).unwrap_success();
         if bytes_read != SIZE {
-            panic!("Could not read {} bytes from file, got {}", SIZE, bytes_read);
+            panic!(
+                "Could not read {} bytes from file, got {}",
+                SIZE, bytes_read
+            );
         }
 
         let mut result = T::default();
@@ -72,11 +73,21 @@ impl File {
         result
     }
 
-    pub fn read_vec_as<T: Plain + Default + Clone, const SIZE: usize>(&mut self, offset: usize, count: usize) -> Vec<T> {
+    pub fn read_vec_as<T: Plain + Default + Clone, const SIZE: usize>(
+        &mut self,
+        offset: usize,
+        count: usize,
+    ) -> Vec<T> {
         let mut buf = vec![0u8; SIZE * count];
         let bytes_read = self.read(offset, &mut buf).unwrap_success();
         if bytes_read != SIZE * count {
-            panic!("Could not read {} bytes from file ({} items of size {}), got {}", SIZE * count, count, SIZE, bytes_read);
+            panic!(
+                "Could not read {} bytes from file ({} items of size {}), got {}",
+                SIZE * count,
+                count,
+                SIZE,
+                bytes_read
+            );
         }
 
         let mut results = vec![T::default(); count];

@@ -1,0 +1,6 @@
+target remote localhost:1234
+source ./gdb/bootloader.py
+
+# Continue until we reach the wait-loop in the bootloader. After we get there,
+# the setup-bootloader command will load symbols
+# continue
