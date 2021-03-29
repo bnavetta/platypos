@@ -151,6 +151,7 @@ struct UefiFrameAllocator<'a>(&'a SystemTable<Boot>);
 
 unsafe impl<'a> FrameAllocator<Size4KiB> for UefiFrameAllocator<'a> {
     fn allocate_frame(&mut self) -> Option<PhysFrame> {
+        // TODO: consider allocating a pool of frames and using that, so all the initial kernel page table memory is in one place
         self.0
             .boot_services()
             .allocate_pages(AllocateType::AnyPages, KERNEL_RECLAIMABLE, 1)

@@ -8,6 +8,7 @@ description = "UEFI bootloader for PlatypOS"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+platypos_boot_info = { path = "../boot_info" }
 goblin = { version = "0.3.4", features = ["elf64"], default-features = false }
 log = "0.4.14"
 plain = "0.2.3"

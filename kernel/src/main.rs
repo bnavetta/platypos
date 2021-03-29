@@ -1,34 +1,35 @@
 #![no_std]
 #![no_main]
-#![feature(asm)]
+#![feature(alloc_error_handler, allocator_api, asm, const_ptr_offset, maybe_uninit_array_assume_init, maybe_uninit_uninit_array, nonnull_slice_from_raw_parts, slice_ptr_get)]
 
-use core::fmt::Write;
-use core::panic::PanicInfo;
+// extern crate alloc;
 
-use tracing::{info, span, Level};
-use x86_64::instructions::{hlt, interrupts};
+use platypos_boot_info::BootInfo;
+use tracing::info;
+use x86_64::instructions::hlt;
 
+mod memory;
 mod trace;
-
-static foo: &str = "Hello, World!";
+mod util;
 
 #[no_mangle]
-pub extern "C" fn _start() -> ! {
+pub extern "C" fn _start(boot_info: &'static BootInfo) -> ! {
     wait_for_debugger();
-    trace::Collector::install();
-
-    let span = span!(Level::INFO, "kernel main");
-    let _enter = span.enter();
-    info!(foo = 1, "This is traced!");
-
-    panic!("oops");
-
+    trace::init();
+    kernel_main(boot_info);
     loop {
         hlt();
     }
 }
 
+#[tracing::instrument]
+fn kernel_main(boot_info: &'static BootInfo) {
+    boot_info.assert_valid();
+    info!(%boot_info, "Boot info address: {:#p}", boot_info);
+}
+
 /// The GDB setup script will set this to 1 after it's attached
+#[cfg(feature = "gdb")]
 static mut KERNEL_DEBUGGER_ATTACHED: u8 = 0;
 
 #[cfg(feature = "gdb")]

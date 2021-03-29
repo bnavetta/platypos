@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "boot_info",
     "kernel",
     "loader"
 ]
@@ -9,3 +10,4 @@ panic = "abort"
 
 [profile.release]
 panic = "abort"
+lto = "thin"

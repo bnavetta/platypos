@@ -1,12 +1,12 @@
 //! Serial port logger to report tracing information
 
-use core::fmt::{self, Write};
+use core::{alloc::Layout, fmt::{self, Write}};
 use core::panic::PanicInfo;
 
 use ansi_rgb::{Foreground, WithForeground};
 use spinning_top::Spinlock;
 use tracing::{
-    field::{Field, Value, Visit},
+    field::{Field, Visit},
     Event, Level,
 };
 use uart_16550::SerialPort;
@@ -55,17 +55,28 @@ impl Logger {
         let _ = writeln!(&mut self.port);
     }
 
+    // TODO: better abstraction for these
+
     pub fn log_panic(&mut self, panic: &PanicInfo) {
         use ansi_rgb::red;
         let _ = writeln!(&mut self.port, "{}: {}", "PANIC".fg(red()), panic);
     }
 
-    pub fn log_backtrace_frame(&mut self, frame: &Frame) {
-        let _ = writeln!(
-            &mut self.port,
-            "  -> {:#x}",
-            frame.instruction_pointer.as_u64()
-        );
+    pub fn log_allocation_failure(&mut self, layout: Layout) {
+        use ansi_rgb::{red, cyan_blue};
+        let _ = writeln!(&mut self.port, "{}: memory allocation of {} bytes failed", "OOM".fg(red()), layout.size().fg(cyan_blue()));
+    }
+
+    /// Logs a backtrace starting at `frame`
+    pub unsafe fn log_backtrace(&mut self, mut frame: Frame) {
+        // Limit how many stack frames we can walk, in case they're corrupted
+        for _ in 0..50 {
+            let _ = writeln!(&mut self.port, "  -> {:#x}", frame.instruction_pointer.as_u64());
+            match frame.parent() {
+                Some(parent) => frame = parent,
+                None => break,
+            }
+        }
     }
 }
 

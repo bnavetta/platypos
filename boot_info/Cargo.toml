@@ -1,0 +1,11 @@
+[package]
+name = "platypos_boot_info"
+version = "0.1.0"
+authors = ["Ben Navetta <ben.navetta@gmail.com>"]
+edition = "2018"
+description = "Boot information structure passed from the loader to the kernel"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+x86_64 = "0.13.2"
