@@ -4,14 +4,16 @@
 // TODO: make sure this is also interrupt-safe
 
 use core::{
+    fmt::{self, Write},
     panic::PanicInfo,
     sync::atomic::{AtomicU64, Ordering},
 };
 
+use ansi_rgb::{self, Foreground};
 use arrayvec::ArrayVec;
 use lazy_static::lazy_static;
 use spinning_top::Spinlock;
-use tracing::{Event, Metadata, dispatch::{self, Dispatch}, span};
+use tracing::{Event, Level, Metadata, dispatch::{self, Dispatch}, field::{Visit, Field}, span};
 use tracing_core::span::Current;
 use x86_64::instructions::{hlt, interrupts};
 
@@ -134,7 +136,7 @@ impl tracing::Collect for Collector {
 
         self.with_spans(|spans| {
             let prev = spans.insert(id.clone(), data)
-                .expect_insert("Exceeded max number of live spans supported");
+                .expect("Exceeded max number of live spans supported");
             assert!(prev.is_none(), "Found existing span {:?} for id {:?}", prev, id);
         });
         
@@ -167,16 +169,46 @@ impl tracing::Collect for Collector {
         })
     }
 
-    fn record(&self, span: &span::Id, values: &span::Record<'_>) {
+    fn record(&self, _span: &span::Id, _values: &span::Record<'_>) {
         // TODO
     }
 
-    fn record_follows_from(&self, span: &span::Id, follows: &span::Id) {
+    fn record_follows_from(&self, _span: &span::Id, _follows: &span::Id) {
         // TODO
     }
 
     fn event(&self, event: &Event<'_>) {
-        Logger::with(|logger| logger.log_event(event))
+        Logger::with(|logger| {
+            let metadata = event.metadata();
+            logger.emit(metadata.level(), metadata.target(), |w| {
+                // Inspired by the tracing_subscriber::fmt Pretty format, log the event fields followed by line and span information
+
+                struct LogVisitor<'a>(&'a mut logger::LogWriter);
+
+                impl <'a> Visit for LogVisitor<'a> {
+                    fn record_debug(&mut self, field: &Field, value: &dyn fmt::Debug) {
+                        // Color the field names so it's easier to see where one field ends and the next begins
+                        let _ = write!(self.0, " {}: {:?}", field.name().fg(ansi_rgb::magenta()), value);
+                    }
+                }
+
+                event.record(&mut LogVisitor(w));
+
+                writeln!(w, "\n    {} {}:{}", "at".fg(ansi_rgb::cyan_blue()), metadata.file().unwrap_or("<unknown>"), metadata.line().unwrap_or(0))?;
+
+                // Events either (a) have an explicit parent (b) are contextual children of the current span or (c) roots
+                let id = event.parent().cloned().or_else(|| if event.is_contextual() { self.current_span_id() } else { None });
+                if let Some(id) = id {
+                    write!(w, "    {} ", "in".fg(ansi_rgb::cyan_blue()))?;
+                    self.with_spans(|spans| {
+                        print_span_chain(w, spans, &id)
+                    })?;
+                    writeln!(w)?;
+                }
+
+                Ok(())
+            });
+        })
     }
 
     fn enter(&self, span: &span::Id) {
@@ -198,6 +230,21 @@ impl tracing::Collect for Collector {
             None => Current::none()
         }
     }
+}
+
+/// Helper to print out a chain of spans, in the format `grandparent > parent > child`.
+fn print_span_chain(writer: &mut impl fmt::Write, spans: &SpanMap, id: &span::Id) -> fmt::Result {
+    let span = match spans.get(id) {
+        Some(span) => span,
+        None => return Ok(())
+    };
+
+    if let Some(parent) = span.parent.as_ref() {
+        print_span_chain(writer, spans, parent)?;
+        write!(writer, " > ")?;
+    }
+
+    write!(writer, "{}", span.metadata.name())
 }
 
 /// Stack of currently-executing spans. This stack has a fixed depth
@@ -235,20 +282,16 @@ impl SpanStack {
     }
 }
 
-// TODO: Use HashBrown with the new_in allocator API using a statically-allocated bump allocator to hold trace data
-// - this assumes HashBrown only has to allocate to grow the hashmap, won't ever shrink it
-// - should be fine for traces, can assume we only ever need to support some fixed # of live traces at a time
-// (can't use bumpalo - https://github.com/fitzgen/bumpalo/issues/100)
-
 #[panic_handler]
 fn handle_panic(info: &PanicInfo) -> ! {
     let frame = Frame::current();
     Logger::with(|logger| {
-        logger.log_panic(info);
-
-        // This is safe-ish, because we know we just grabbed the current frame.
-        // We make sure to log the panic message before trying this, in case the stack is corrupted.
-        unsafe { logger.log_backtrace(frame) }
+        logger.emit(&Level::ERROR, "PANIC", |w| {
+            writeln!(w, "{}", info)?;
+            // This is safe-ish, because we know we just grabbed the current frame.
+            // We make sure to log the error message before trying this, in case the stack is corrupted.
+            unsafe { add_backtrace(w, frame) }
+        });
     });
     loop {
         hlt();
@@ -259,11 +302,26 @@ fn handle_panic(info: &PanicInfo) -> ! {
 fn handle_alloc_error(layout: ::core::alloc::Layout) -> ! {
     let frame = Frame::current();
     Logger::with(|logger| {
-        // This is safe-ish, because we know we just grabbed the current frame.
-        // We make sure to log the error message before trying this, in case the stack is corrupted.
-        unsafe { logger.log_backtrace(frame) }
+        logger.emit(&Level::ERROR, "OOM", |w| {
+            writeln!(w, "memory allocation of {} bytes failed", layout.size())?;
+            // This is safe-ish, because we know we just grabbed the current frame.
+            // We make sure to log the error message before trying this, in case the stack is corrupted.
+            unsafe { add_backtrace(w, frame) }
+        })
     });
     loop {
         hlt();
     }
+}
+
+unsafe fn add_backtrace<W: Write>(writer: &mut W, mut frame: Frame) -> fmt::Result {
+    // Limit how many stack frames we can walk, in case they're corrupted
+    for _ in 0..50 {
+        writeln!(writer, "  -> {:#x}", frame.instruction_pointer.as_u64())?;
+        match frame.parent() {
+            Some(parent) => frame = parent,
+            None => break,
+        }
+    }
+    Ok(())
 }

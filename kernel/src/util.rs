@@ -18,14 +18,6 @@ struct Entry<K, V> {
     value: V
 }
 
-/// The result of inserting a hash map entry
-pub enum InsertResult<V> {
-    /// There was no space in the map for the new entry
-    NoCapacity,
-    /// The entry was inserted, and the `Option` holds the previous value at this key, if any.
-    Inserted(Option<V>)
-}
-
 impl <K: Hash + Eq, V, S: BuildHasher, const CAPACITY: usize> BoundedHashMap<K, V, S, CAPACITY> {
     /// Creates a new BoundedHashMap using the given hashing algorithm.
     pub fn with_hasher(hasher: S) -> BoundedHashMap<K, V, S, CAPACITY> {
@@ -61,17 +53,21 @@ impl <K: Hash + Eq, V, S: BuildHasher, const CAPACITY: usize> BoundedHashMap<K, 
     }
 
     /// Insert a new entry into the hash map.
+    /// If the map is full, `Err(value)` is returned.
+    /// Otherwise, if the map already contained an entry for `key`, it's updated with the new value and
+    /// `Ok(<previous value>)` is returned. If the map did not contain `key`, then a new entry is created
+    /// and `Ok(None)` is returned.
     #[inline]
-    pub fn insert(&mut self, key: K, value: V) -> InsertResult<V> {
+    pub fn insert(&mut self, key: K, value: V) -> Result<Option<V>, V> {
         match self.find_slot(&key) {
             Some(index) => match &mut self.data[index] {
-                Some(entry) => InsertResult::Inserted(Some(entry.set(value))),
+                Some(entry) => Ok(Some(entry.set(value))),
                 None => {
                     self.data[index] = Some(Entry::new(key, value));
-                    InsertResult::Inserted(None)
+                    Ok(None)
                 }
             },
-            None => InsertResult::NoCapacity
+            None => Err(value)
         }
     }
 
@@ -137,15 +133,5 @@ impl <K, V> Entry<K, V> {
     /// Updates this entry with a new value, returning the previous one.
     fn set(&mut self, new_value: V) -> V {
         replace(&mut self.value, new_value)
-    }
-}
-
-impl <V> InsertResult<V> {
-    /// Asserts that this insertion was successful, panicking otherwise.
-    pub fn expect_insert(self, msg: &str) -> Option<V> {
-        match self {
-            InsertResult::Inserted(prev) => prev,
-            InsertResult::NoCapacity => panic!("{}", msg),
-        }
     }
 }

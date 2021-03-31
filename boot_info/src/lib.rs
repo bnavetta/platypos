@@ -95,6 +95,7 @@ struct Slice<T: 'static> {
 }
 
 impl <T: 'static> Slice<T> {
+    #[allow(dead_code)]
     pub fn empty() -> Slice<T> {
         Slice {
             ptr: ::core::ptr::null(),

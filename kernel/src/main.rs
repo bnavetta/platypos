@@ -26,6 +26,13 @@ pub extern "C" fn _start(boot_info: &'static BootInfo) -> ! {
 fn kernel_main(boot_info: &'static BootInfo) {
     boot_info.assert_valid();
     info!(%boot_info, "Boot info address: {:#p}", boot_info);
+
+    do_stuff();
+}
+
+#[tracing::instrument]
+fn do_stuff() {
+    info!("This is stuff");
 }
 
 /// The GDB setup script will set this to 1 after it's attached
