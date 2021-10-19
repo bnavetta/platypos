@@ -183,6 +183,7 @@ impl tracing::Collect for Collector {
             logger.emit(metadata.level(), metadata.target(), |w| {
                 // Inspired by the tracing_subscriber::fmt Pretty format, log the event fields followed by line and span information
 
+                // The Pretty format puts the whole event field line in the level color, that might work well here too
                 struct LogVisitor<'a>(&'a mut logger::LogWriter);
 
                 impl <'a> Visit for LogVisitor<'a> {
@@ -196,7 +197,7 @@ impl tracing::Collect for Collector {
 
                 writeln!(w, "\n    {} {}:{}", "at".fg(ansi_rgb::cyan_blue()), metadata.file().unwrap_or("<unknown>"), metadata.line().unwrap_or(0))?;
 
-                // Events either (a) have an explicit parent (b) are contextual children of the current span or (c) roots
+                // Events either (a) have an explicit parent (b) are contextual children of the current span or (c) are roots
                 let id = event.parent().cloned().or_else(|| if event.is_contextual() { self.current_span_id() } else { None });
                 if let Some(id) = id {
                     write!(w, "    {} ", "in".fg(ansi_rgb::cyan_blue()))?;
@@ -249,13 +250,13 @@ fn print_span_chain(writer: &mut impl fmt::Write, spans: &SpanMap, id: &span::Id
 
 /// Stack of currently-executing spans. This stack has a fixed depth
 struct SpanStack {
-    stack: ArrayVec<[span::Id; 32]>,
+    stack: ArrayVec<span::Id, 32>,
 }
 
 impl SpanStack {
     pub const fn new() -> SpanStack {
         SpanStack {
-            stack: ArrayVec::new(),
+            stack: ArrayVec::new_const(),
         }
     }
 

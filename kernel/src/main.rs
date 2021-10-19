@@ -33,6 +33,9 @@ fn kernel_main(boot_info: &'static BootInfo) {
 #[tracing::instrument]
 fn do_stuff() {
     info!("This is stuff");
+
+    let mut allocator: crate::memory::phys::MemoryManager = unsafe { core::mem::MaybeUninit::uninit().assume_init() };
+    info!("Allocated {:?}", allocator.allocate_frame());
 }
 
 /// The GDB setup script will set this to 1 after it's attached

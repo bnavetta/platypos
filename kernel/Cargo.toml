@@ -9,7 +9,8 @@ edition = "2018"
 [dependencies]
 ahash = { version = "0.7.2", default-features = false, features = ["compile-time-rng"] }
 ansi_rgb = "0.2.0"
-arrayvec = { version = "0.5.2", default-features = false, features = ["unstable-const-fn"] }
+arrayvec = { version = "0.7.0", default-features = false }
+fixed-slice-vec = "0.7.1"
 lazy_static = { version = "1.4.0", features = ["spin_no_std"] }
 paste = "1.0.4"
 platypos_boot_info = { path = "../boot_info" }
@@ -18,6 +19,11 @@ tracing = { git = "https://github.com/tokio-rs/tracing", default-features = fals
 tracing-core = { git = "https://github.com/tokio-rs/tracing", default-features = false }
 uart_16550 = { version = "0.2.12", features = ["nightly"] }
 x86_64 = "0.13.2"
+
+[dependencies.bitvec]
+version = "0.22.1"
+default-features = false
+features = ["atomic"]
 
 [features]
 gdb = []
