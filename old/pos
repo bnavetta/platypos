@@ -1,4 +1,0 @@
-#!/bin/sh
-
-exec cargo -q run -p pos_cli -- "$@"
-

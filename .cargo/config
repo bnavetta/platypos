@@ -1,7 +1,0 @@
-[unstable]
-build-std = ["core", "compiler_builtins", "alloc"]
-build-std-features = ["compiler-builtins-mem"]
-
-[build]
-# For backtraces (TODO: make this debug-only, see https://github.com/rust-lang/cargo/issues/7878)
-rustflags = ["-Cforce-frame-pointers"]

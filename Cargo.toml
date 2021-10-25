@@ -1,9 +1,8 @@
 [workspace]
 members = [
-    "boot_info",
     "kernel",
-    "loader"
 ]
+exclude = ["oreboot"]
 
 [profile.dev]
 panic = "abort"
