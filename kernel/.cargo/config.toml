@@ -4,4 +4,4 @@ build-std-features = ["compiler-builtins-mem"]
 
 [build]
 target = "riscv64gc-unknown-none-elf"
-rustflags = ["-Clink-arg=-Tkernel/src/arch/riscv/kernel.lds"]
+rustflags = ["-Clink-arg=-Tsrc/arch/riscv/kernel.lds"]

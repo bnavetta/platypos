@@ -1,32 +1,37 @@
 #![no_std]
 #![no_main]
-#![feature(panic_info_message, asm, global_asm, array_chunks)]
+#![feature(panic_info_message, allocator_api, asm, global_asm, array_chunks, nonnull_slice_from_raw_parts)]
 
 use core::fmt::Write;
 
 use driver::uart::Uart;
-use fdt_rs::base::iters::StringPropIter;
-use fdt_rs::index::DevTreeIndexNode;
-use fdt_rs::prelude::*;
-use fdt_rs::base::*;
+use sys::devicetree::DeviceTree;
+
 
 // #[cfg_attr(target_arch="riscv", path="arch/riscv.rs")]
 #[path ="arch/riscv.rs"]
 mod arch;
 
+mod alloc;
 mod driver;
+mod sys;
 
 #[no_mangle]
-extern "C" fn kmain(hart_id: usize, fdt_addr: *const u8) {
-    let mut driver = unsafe {
-        let mut uart = crate::driver::uart::Uart::new(0x1000_0000);
+extern "C" fn kmain(hart_id: usize, fdt_addr: *const u8) -> ! {
+    let mut serial = unsafe {
+        let mut uart = Uart::new(0x1000_0000);
         uart.init();
         uart
     };
 
-    let _ = writeln!(&mut driver, "Hello, World!");
-    let _ = writeln!(&mut driver, "hart id: {}\nfdt address: {:?}", hart_id, fdt_addr);
+    let _ = writeln!(&mut serial, "Hello, World!");
+    let _ = writeln!(&mut serial, "hart id: {}\nfdt address: {:?}", hart_id, fdt_addr);
 
+    let device_tree = unsafe { DeviceTree::new(fdt_addr, &mut serial) };
+    let _ = writeln!(&mut serial, "Here!");
+    let _ = device_tree.info(&mut serial);
+
+    /*
     let devtree = unsafe {
         
         DevTree::from_raw_pointer(fdt_addr).unwrap()
@@ -49,7 +54,12 @@ extern "C" fn kmain(hart_id: usize, fdt_addr: *const u8) {
             },
         }
     }
+    */
+
+    abort();
 }
+
+/*
 
 fn write_prop(w: &mut Uart, prop: &DevTreeProp, indent: &str) {
     let _ = write!(w, "{}{} = ", indent, prop.name().unwrap());
@@ -85,6 +95,8 @@ fn all_strings(mut it: StringPropIter) -> bool {
         }
     }
 }
+
+*/
 
 #[panic_handler]
 fn panic(_info: &core::panic::PanicInfo) -> ! {

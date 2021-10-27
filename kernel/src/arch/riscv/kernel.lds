@@ -11,7 +11,7 @@ OUTPUT_ARCH( "riscv" )
 ENTRY( _start )
 
 /*
- * Put the kernel where it's expected (TODO: this may be for SBI, see what U-Boot does)
+ * Put the kernel where it's expected by the SBI implementation
  */
 BASE_ADDRESS = 0x80200000;
 
