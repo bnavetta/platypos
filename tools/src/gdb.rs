@@ -35,7 +35,7 @@ fn generate_gdbinit(build_info: &BuildInfo) -> Result<TempPath> {
 
     writeln!(&mut file, "target remote :1234").into_diagnostic()?;
     writeln!(&mut file, "file {}", build_info.kernel_elf.display()).into_diagnostic()?;
-    writeln!(&mut file, "break kmain");
+    writeln!(&mut file, "break kmain").into_diagnostic()?;
 
     Ok(file.into_temp_path())
 }

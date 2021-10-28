@@ -1,6 +1,6 @@
 #![no_std]
 #![no_main]
-#![feature(panic_info_message, allocator_api, asm, global_asm, array_chunks, nonnull_slice_from_raw_parts)]
+#![feature(panic_info_message, allocator_api, asm, global_asm, array_chunks, maybe_uninit_slice, nonnull_slice_from_raw_parts, ptr_as_uninit, slice_ptr_get, slice_ptr_len)]
 
 use core::fmt::Write;
 
@@ -99,7 +99,9 @@ fn all_strings(mut it: StringPropIter) -> bool {
 */
 
 #[panic_handler]
-fn panic(_info: &core::panic::PanicInfo) -> ! {
+fn panic(info: &core::panic::PanicInfo) -> ! {
+    let mut uart = unsafe { Uart::new(0x1000_0000) };
+    let _ = writeln!(uart, "PANIC: {}", info);
     abort();
 }
 
