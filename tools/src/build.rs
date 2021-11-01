@@ -1,10 +1,19 @@
 //! Building PlatypOS
 
-use std::{io::BufReader, path::{Path, PathBuf}, process::{Command, ExitStatus, Stdio}};
 use std::fs;
+use std::io::BufReader;
+use std::path::Path;
+use std::path::PathBuf;
+use std::process::Command;
+use std::process::ExitStatus;
+use std::process::Stdio;
 
-use cargo_metadata::{Artifact, Message};
-use miette::{Context, Diagnostic, IntoDiagnostic, Result};
+use cargo_metadata::Artifact;
+use cargo_metadata::Message;
+use miette::Context;
+use miette::Diagnostic;
+use miette::IntoDiagnostic;
+use miette::Result;
 use owo_colors::OwoColorize;
 use thiserror::Error;
 
@@ -16,7 +25,7 @@ pub enum Mode {
 
 pub struct BuildInfo {
     pub kernel_elf: PathBuf,
-    pub kernel_binary: PathBuf
+    pub kernel_binary: PathBuf,
 }
 
 #[derive(Error, Diagnostic, Debug)]
@@ -53,7 +62,7 @@ pub fn build_kernel(root: &Path, mode: Mode) -> Result<BuildInfo> {
         .current_dir(kernel_dir)
         .args(&["build", "--message-format=json-render-diagnostics"])
         .stdout(Stdio::piped());
-    
+
     if mode == Mode::Release {
         build_cmd.arg("--release");
     }
@@ -86,7 +95,11 @@ pub fn build_kernel(root: &Path, mode: Mode) -> Result<BuildInfo> {
         .wrap_err("Waiting for Cargo failed")?;
 
     if !build_res.success() {
-        return Err(CargoError { crate_name: KERNEL_CRATE, status: build_res }.into());
+        return Err(CargoError {
+            crate_name: KERNEL_CRATE,
+            status: build_res,
+        }
+        .into());
     }
 
     let kernel_elf = kernel_elf.expect("could not find kernel executable in Cargo output");
@@ -104,7 +117,7 @@ pub fn build_kernel(root: &Path, mode: Mode) -> Result<BuildInfo> {
             copy_cmd.arg("--strip-all");
         }
         copy_cmd.arg(&kernel_binary);
-    
+
         let copy_res = copy_cmd
             .spawn()
             .into_diagnostic()
@@ -112,13 +125,14 @@ pub fn build_kernel(root: &Path, mode: Mode) -> Result<BuildInfo> {
             .wait()
             .into_diagnostic()
             .wrap_err("Waiting for objcopy failed")?;
-        
+
         if !copy_res.success() {
             return Err(ObjcopyError {
                 src: kernel_elf.into_std_path_buf(),
                 dest: kernel_binary.into_std_path_buf(),
-                status: copy_res
-            }.into());
+                status: copy_res,
+            }
+            .into());
         }
     } else {
         println!("Kernel binary up to date.")
@@ -128,7 +142,7 @@ pub fn build_kernel(root: &Path, mode: Mode) -> Result<BuildInfo> {
 
     Ok(BuildInfo {
         kernel_elf: kernel_elf.into_std_path_buf(),
-        kernel_binary: kernel_binary.into_std_path_buf()
+        kernel_binary: kernel_binary.into_std_path_buf(),
     })
 }
 
@@ -142,12 +156,12 @@ fn is_kernel(artifact: &Artifact) -> bool {
 fn more_recent<P1: AsRef<Path>, P2: AsRef<Path>>(a: P1, b: P2) -> bool {
     let a_mtime = match fs::metadata(a).and_then(|m| m.modified()) {
         Ok(mtime) => mtime,
-        Err(_) => return false
+        Err(_) => return false,
     };
 
     let b_mtime = match fs::metadata(b).and_then(|m| m.modified()) {
         Ok(mtime) => mtime,
-        Err(_) => return true
+        Err(_) => return true,
     };
 
     a_mtime > b_mtime

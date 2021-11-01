@@ -1,1 +1,0 @@
-global_asm!(include_str!("riscv/boot.S"));

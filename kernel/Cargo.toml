@@ -9,9 +9,12 @@ edition = "2018"
 [dependencies]
 ansi_rgb = "0.2.0"
 lazy_static = { version = "1.4.0", features = ["spin_no_std"] }
-paste = "1.0.4"
 riscv = { git = "https://github.com/rust-embedded/riscv.git", rev = "be2927e248c11bb3c745f01162ba8828a79ec569" }
-# spinning_top = { version = "0.2.4", features = ["nightly"] }
+arrayvec = { version = "0.7.1", default-features = false }
+lock_api = { version = "0.4.5", features = ["nightly"] }
+log = { version = "0.4.14", features = ["max_level_trace"] }
+owo-colors = "3.0.1"
+tracing = { version = "0.1.29", default-features = false, features = ["attributes", "max_level_trace"] }
 
 [dependencies.fdt-rs]
 version = "0.4"

@@ -1,39 +1,60 @@
 #![no_std]
 #![no_main]
-#![feature(panic_info_message, allocator_api, asm, global_asm, array_chunks, maybe_uninit_slice, nonnull_slice_from_raw_parts, ptr_as_uninit, slice_ptr_get, slice_ptr_len)]
+#![feature(
+    panic_info_message,
+    alloc_error_handler,
+    allocator_api,
+    asm,
+    global_asm,
+    int_roundings,
+    array_chunks,
+    maybe_uninit_slice,
+    nonnull_slice_from_raw_parts,
+    ptr_as_uninit,
+    slice_ptr_get,
+    slice_ptr_len
+)]
 
-use core::fmt::Write;
+use tracing::info;
 
 use driver::uart::Uart;
 use sys::devicetree::DeviceTree;
 
-
 // #[cfg_attr(target_arch="riscv", path="arch/riscv.rs")]
-#[path ="arch/riscv.rs"]
+#[path = "arch/riscv/mod.rs"]
 mod arch;
 
 mod alloc;
+mod diagnostic;
 mod driver;
 mod sys;
 
 #[no_mangle]
 extern "C" fn kmain(hart_id: usize, fdt_addr: *const u8) -> ! {
-    let mut serial = unsafe {
-        let mut uart = Uart::new(0x1000_0000);
-        uart.init();
-        uart
-    };
+    diagnostic::init();
 
-    let _ = writeln!(&mut serial, "Hello, World!");
-    let _ = writeln!(&mut serial, "hart id: {}\nfdt address: {:?}", hart_id, fdt_addr);
+    info!("Welcome to PlatypOS!");
 
-    let device_tree = unsafe { DeviceTree::new(fdt_addr, &mut serial) };
-    let _ = writeln!(&mut serial, "Here!");
-    let _ = device_tree.info(&mut serial);
+    info!(
+        boot_hart = hart_id,
+        fdt_addr = fdt_addr as usize,
+        "Initializing system..."
+    );
+
+    let device_tree = unsafe { DeviceTree::new(fdt_addr) };
+
+    if let Some(serial_port) = device_tree.find_serial_port() {
+        let uart = unsafe { Uart::new(serial_port) };
+        diagnostic::enable_serial(uart);
+    } else {
+        panic!("Serial console unavailable");
+    }
+
+    device_tree.info();
 
     /*
     let devtree = unsafe {
-        
+
         DevTree::from_raw_pointer(fdt_addr).unwrap()
     };
 
@@ -56,7 +77,7 @@ extern "C" fn kmain(hart_id: usize, fdt_addr: *const u8) -> ! {
     }
     */
 
-    abort();
+    arch::abort();
 }
 
 /*
@@ -100,13 +121,6 @@ fn all_strings(mut it: StringPropIter) -> bool {
 
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
-    let mut uart = unsafe { Uart::new(0x1000_0000) };
-    let _ = writeln!(uart, "PANIC: {}", info);
-    abort();
-}
-
-fn abort() -> ! {
-    loop {
-        unsafe { riscv::asm::wfi(); }
-    }
+    log::error!("PANIC: {}", info);
+    arch::abort();
 }

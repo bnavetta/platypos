@@ -1,9 +1,14 @@
-use std::{path::Path, process::Command};
 use std::io::Write;
+use std::path::Path;
+use std::process::Command;
 
-use miette::{Context, IntoDiagnostic, Result, miette};
+use miette::miette;
+use miette::Context;
+use miette::IntoDiagnostic;
+use miette::Result;
 use owo_colors::OwoColorize;
-use tempfile::{NamedTempFile, TempPath};
+use tempfile::NamedTempFile;
+use tempfile::TempPath;
 
 use crate::build::BuildInfo;
 
@@ -13,11 +18,14 @@ pub fn debugger(root: &Path, build_info: &BuildInfo) -> Result<()> {
     let mut gdb_cmd = Command::new("ugdb");
     gdb_cmd
         .args(&["--nh", "--gdb", "riscv64-linux-gnu-gdb"])
-        .arg("--cd").arg(root)
-        .arg("-x").arg(&gdbinit);
+        .arg("--cd")
+        .arg(root)
+        .arg("-x")
+        .arg(&gdbinit);
     println!("Running {:?}", gdb_cmd.green());
 
-    let status = gdb_cmd.status()
+    let status = gdb_cmd
+        .status()
         .into_diagnostic()
         .wrap_err("Running GDB failed")?;
 

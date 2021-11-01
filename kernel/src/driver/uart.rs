@@ -5,6 +5,15 @@ pub struct Uart {
     base_addr: *mut u8,
 }
 
+/// Configuration for a NS16550a UART device
+#[derive(Debug, Clone, Copy)]
+pub struct UartConfig {
+    /// The base address of the UART's MMIO registers
+    pub base_address: usize,
+    /// The frequency in Hz of the baud rate generator's input clock
+    pub clock_frequency: u32,
+}
+
 /// Receive Buffer Register offset
 const RBR_OFFSET: usize = 0;
 /// Transmitter Holding Register offset
@@ -21,18 +30,21 @@ const DLL_OFFSET: usize = 0;
 const DLM_OFFSET: usize = 1;
 
 impl Uart {
-    /// Create a new, uninitialized UART driver with the given base address
-    pub unsafe fn new(base_address: usize) -> Uart {
-        Uart { 
-            base_addr: base_address as *mut u8,
-        }
+    /// Create and initialize new UART driver with the given configuration
+    pub unsafe fn new(config: UartConfig) -> Uart {
+        let mut driver = Uart {
+            base_addr: config.base_address as *mut u8,
+        };
+
+        driver.init(config.clock_frequency);
+        driver
     }
 
     /// Configures the UART device.
-    /// 
+    ///
     /// # Safety
     /// This function must only be called once
-    pub unsafe fn init(&mut self) {
+    unsafe fn init(&mut self, clock_frequency: u32) {
         // Set the word length to 8 bits by setting bits 0 and 1 of the line control register
         let lcr = 0b11;
         self.write(LCR_OFFSET, lcr);
@@ -41,11 +53,13 @@ impl Uart {
         // Enable receiver buffer interrupts by setting bit 0 of the interrupt enable register
         self.write(IER_OFFSET, 0b1);
 
-        // Set the divisor based on a global clock rate of 22.729MHz for a signaling rate of 2400 BAUD.
+        // Set the divisor based on the provided clock rate for a signaling rate of 2400 BAUD.
         // According to the NS16500a specification, the formula is:
         //    divisor = ceil(clock_hz / (baud_sps * 16))
-        // In our case, ceil(22_729_000 / (2400 * 16)) = 592
-        let divisor: u16 = 592;
+        // With QEMU, a safe default for the clock speed if this isn't working is 22.729MHz (22_729_000 Hz), for
+        // a divisor of 592.
+        let divisor = clock_frequency.unstable_div_ceil(2400 * 16);
+
         // The divisor register is two bytes written independently.
         let divisor_low = (divisor & 0xff) as u8;
         let divisor_high = (divisor >> 8) as u8;
@@ -85,3 +99,6 @@ impl fmt::Write for Uart {
         Ok(())
     }
 }
+
+// Safety: the UART driver's raw pointer refers to a MMIO region available from all threads
+unsafe impl Send for Uart {}

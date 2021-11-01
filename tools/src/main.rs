@@ -1,7 +1,8 @@
 use std::path::Path;
 
 use argh::FromArgs;
-use miette::{Result, miette};
+use miette::miette;
+use miette::Result;
 
 mod build;
 mod gdb;
@@ -30,30 +31,22 @@ enum Action {
 /// Build PlatypOS
 #[derive(FromArgs, PartialEq, Debug)]
 #[argh(subcommand, name = "build")]
-struct BuildAction {
-
-}
+struct BuildAction {}
 
 /// Run PlatypOS in QEMU
 #[derive(FromArgs, PartialEq, Debug)]
 #[argh(subcommand, name = "run")]
-struct RunAction {
-
-}
+struct RunAction {}
 
 /// Run PlatypOS in QEMU with a debug server
 #[derive(FromArgs, PartialEq, Debug)]
 #[argh(subcommand, name = "debug")]
-struct DebugAction {
-
-}
+struct DebugAction {}
 
 /// Run GDB attached to an already-running QEMU instance
 #[derive(FromArgs, PartialEq, Debug)]
 #[argh(subcommand, name = "debugger")]
-struct DebuggerAction {
-
-}
+struct DebuggerAction {}
 
 fn main() -> Result<()> {
     let args: Args = argh::from_env();
@@ -71,15 +64,15 @@ fn main() -> Result<()> {
     match args.action {
         Action::Build(_build) => {
             build::build_kernel(root, build_mode)?;
-        },
+        }
         Action::Run(_) => {
             let build_info = build::build_kernel(root, build_mode)?;
             qemu::run(&build_info)?;
-        },
+        }
         Action::Debug(_) => {
             let build_info = build::build_kernel(root, build_mode)?;
             qemu::debug(&build_info)?;
-        },
+        }
         Action::Debugger(_) => {
             let build_info = build::build_kernel(root, build_mode)?;
             gdb::debugger(root, &build_info)?;
