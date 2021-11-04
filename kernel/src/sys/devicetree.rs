@@ -1,20 +1,20 @@
 //! DeviceTree-based topology management
 
-use core::alloc::Allocator;
-use core::alloc::Layout;
+use alloc::vec::Vec;
+use core::alloc::{Allocator, Layout};
 use core::convert::TryInto;
-use core::fmt;
-use core::mem;
 use core::mem::MaybeUninit;
+use core::{fmt, mem};
 
 use fdt_rs::base::*;
 use fdt_rs::index::*;
 use fdt_rs::prelude::*;
-use tracing::debug;
-use tracing::info;
-use tracing::warn;
+use tracing::{debug, info, warn};
 
-use crate::alloc::early;
+use super::memory;
+use crate::allocator::early;
+use crate::arch::address::PhysicalAddress;
+use crate::arch::{kernel_end, kernel_start};
 use crate::driver::uart::UartConfig;
 
 pub struct DeviceTree {
@@ -35,7 +35,8 @@ impl DeviceTree {
 
         let layout = match DevTreeIndex::get_layout(&tree) {
             Ok(layout) => {
-                // DevTreeIndex::get_layout returns a layout that isn't /quite/ big enough in practice, so add some padding
+                // DevTreeIndex::get_layout returns a layout that isn't /quite/ big enough in
+                // practice, so add some padding
                 let (padded, _) = layout.extend(Layout::new::<[u8; 64]>()).unwrap();
                 padded
             }
@@ -46,9 +47,11 @@ impl DeviceTree {
         let buf = early::ALLOC
             .allocate_zeroed(layout)
             .expect("Could not early-alloc for DeviceTree index");
-        // Round-trip through MaybeUninit rather than just using buf.as_mut() in order to correctly preserve Rust's slice layout
-        // The allocator returns a NonNull<[u8]>, which is a raw slice pointer, not just a pointer to the memory.
-        // Since we allocated zeroed memory, it's safe to call slice_assume_init_mut.
+        // Round-trip through MaybeUninit rather than just using buf.as_mut() in order
+        // to correctly preserve Rust's slice layout The allocator returns a
+        // NonNull<[u8]>, which is a raw slice pointer, not just a pointer to the
+        // memory. Since we allocated zeroed memory, it's safe to call
+        // slice_assume_init_mut.
         let raw_slice = MaybeUninit::slice_assume_init_mut(buf.as_uninit_slice_mut());
 
         let index = DevTreeIndex::new(tree, raw_slice).expect("Could not build DeviceTree index");
@@ -64,9 +67,10 @@ impl DeviceTree {
         }
     }
 
-    /// Finds the first UART serial port in the device tree and returns its configuration.
+    /// Finds the first UART serial port in the device tree and returns its
+    /// configuration.
     pub fn find_serial_port(&self) -> Option<UartConfig> {
-        for node in self.index.compatible_nodes("ns16550a") {
+        if let Some(node) = self.index.compatible_nodes("ns16550a").next() {
             let (address_cells, size_cells) = get_addressing_cells(&node.parent().unwrap());
             let clock_frequency = get_prop(&node, "clock-frequency")
                 .expect("clock-frequency property is required")
@@ -97,10 +101,114 @@ impl DeviceTree {
             return Some(UartConfig {
                 base_address: register_start,
                 clock_frequency,
-            })
+            });
         }
 
         None
+    }
+
+    pub fn memory_map(&self) -> memory::MemoryMap {
+        let mut regions = Vec::new();
+
+        let memory_nodes = self.index.nodes().filter(|node| {
+            match node.name() {
+                // Memory nodes have a `memory` unit name component
+                Ok(name) => name.starts_with("memory@"),
+                Err(_) => false,
+            }
+        });
+
+        for memory_node in memory_nodes {
+            let parent = memory_node
+                .parent()
+                .expect("memory nodes cannot be the root");
+            let (address_cells, size_cells) = get_addressing_cells(&parent);
+            assert_eq!(
+                address_cells, 2,
+                "#address-cells should be 2 on 64-bit RISC-V"
+            );
+            assert_eq!(size_cells, 2, "#size-cells should be 2 on 64-bit RISC-V");
+
+            let reg_prop =
+                get_prop(&memory_node, "reg").expect("memory node must have a reg property");
+            let ranges = read_range_array(reg_prop.propbuf(), address_cells, size_cells).unwrap();
+
+            info!(
+                "Kernel starts at {} and ends at {}",
+                kernel_start(),
+                kernel_end()
+            );
+
+            regions.push(memory::Region {
+                start: kernel_start(),
+                end: kernel_end(),
+                kind: memory::Kind::Ram,
+                flags: memory::Flags::KERNEL,
+            });
+
+            for (start_raw, length) in ranges {
+                let start = PhysicalAddress::new(start_raw);
+                let end = start + length;
+
+                // Overlap cases:
+                //   rrrrrrrrrrr
+                //     kkkkkkk
+                //
+                //  rrrrr
+                //    kkkkkk
+                //
+                //       rrrrrrrr
+                // kkkkkkkk
+                //
+                // No overlap cases:
+                //  rrrrrr
+                //           kkkkk
+                //
+                //        rrrrrrrr
+                // kkkkk
+
+                if kernel_start() < end && kernel_end() > start {
+                    // 1. Find parts of this region _before_ the kernel
+                    if start < kernel_start() {
+                        debug!(
+                            "Adding RAM from {} to {} (splitting to avoid kernel)",
+                            start,
+                            kernel_start()
+                        );
+                        regions.push(memory::Region {
+                            start,
+                            end: kernel_start(),
+                            kind: memory::Kind::Ram,
+                            flags: memory::Flags::empty(),
+                        });
+                    }
+                    // 2. Find parts of this region _after_ the kernel
+                    if end > kernel_end() {
+                        debug!(
+                            "Adding RAM from {} to {} (splitting to avoid kernel)",
+                            kernel_end(),
+                            end
+                        );
+                        regions.push(memory::Region {
+                            start: kernel_end(),
+                            end,
+                            kind: memory::Kind::Ram,
+                            flags: memory::Flags::empty(),
+                        })
+                    }
+                } else {
+                    debug!("Adding RAM from {} to {}", start, end);
+                    regions.push(memory::Region {
+                        start,
+                        end,
+                        kind: memory::Kind::Ram,
+                        flags: memory::Flags::empty(),
+                    });
+                }
+            }
+        }
+
+        memory::MemoryMap::new(regions)
     }
 }
 
@@ -157,9 +265,11 @@ fn get_prop<'a, 'i, 'dt>(
     node.props().find(|p| p.name() == Ok(name))
 }
 
-/// Get the addressing information for children of `node`, based on its `#address-cells` and `#size-cells` properties.
+/// Get the addressing information for children of `node`, based on its
+/// `#address-cells` and `#size-cells` properties.
 fn get_addressing_cells(node: &DevTreeIndexNode<'_, '_, '_>) -> (u32, u32) {
-    // Per section 2.3.5 of the DeviceTree spec, #address-cells defaults to 2 and #size-cells defaults to 1
+    // Per section 2.3.5 of the DeviceTree spec, #address-cells defaults to 2 and
+    // #size-cells defaults to 1
     let address_cells = get_prop(node, "#address-cells")
         .and_then(|prop| prop.u32(0).ok())
         .unwrap_or(2);
@@ -169,14 +279,12 @@ fn get_addressing_cells(node: &DevTreeIndexNode<'_, '_, '_>) -> (u32, u32) {
     (address_cells, size_cells)
 }
 
-/// Decodes an array of `(address, length)` pairs. This format is commonly used in DeviceTree properties, such as `reg` and
-/// `ranges`.
+/// Decodes an array of `(address, length)` pairs. This format is commonly used
+/// in DeviceTree properties, such as `reg` and `ranges`.
 ///
 /// # Parameters
 /// * `address_cells` - the number of `u32` cells making up each address
 /// * `size_cells` - the number of `u32` cells making up each length
-///
-///
 fn read_range_array(
     buf: &[u8],
     address_cells: u32,

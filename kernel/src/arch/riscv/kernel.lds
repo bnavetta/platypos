@@ -24,6 +24,8 @@ SECTIONS
 {
     . = BASE_ADDRESS;
 
+    PROVIDE(_kernel_start = .);
+
     /*
      * The .text section contains kernel code. We also include some symbols to find the start and end of the section.
      */
@@ -80,6 +82,8 @@ SECTIONS
     /* PROVIDE(_stack_start = _bss_end); */
     /* PROVIDE(_stack_end = _stack_start + 0x10000); */
     PROVIDE(_stack_end = _bss_end + 0x10000);
+
+    PROVIDE(_kernel_end = _stack_end);
 
     /* Not using a static heap, gonna be fancier */
 }

@@ -1,15 +1,12 @@
 //! Early-boot memory allocator.
 //!
-//! This module provides a fixed-size, single-threaded bump allocator for the earliest stages of booting, such as parsing the memory map.
-//! As soon as the system is initialized, this allocator becomes read-only.
+//! This module provides a fixed-size, single-threaded bump allocator for the
+//! earliest stages of booting, such as parsing the memory map. As soon as the
+//! system is initialized, this allocator becomes read-only.
 
-use core::alloc::AllocError;
-use core::alloc::Allocator;
-use core::alloc::Layout;
+use core::alloc::{AllocError, Allocator, Layout};
 use core::ptr::NonNull;
-use core::sync::atomic::AtomicBool;
-use core::sync::atomic::AtomicUsize;
-use core::sync::atomic::Ordering;
+use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 static mut DATA: [u8; 8 * 1024] = [0u8; 8 * 1024];
 static OFFSET: AtomicUsize = AtomicUsize::new(0);

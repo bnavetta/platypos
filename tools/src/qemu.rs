@@ -1,9 +1,6 @@
 use std::process::Command;
 
-use miette::miette;
-use miette::Context;
-use miette::IntoDiagnostic;
-use miette::Result;
+use miette::{miette, Context, IntoDiagnostic, Result};
 use owo_colors::OwoColorize;
 
 use crate::build::BuildInfo;

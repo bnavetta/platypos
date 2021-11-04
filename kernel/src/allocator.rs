@@ -1,14 +1,14 @@
 //! Memory allocators
 
-use core::alloc::Allocator;
-use core::alloc::GlobalAlloc;
-use core::alloc::Layout;
-use core::ptr::NonNull;
-use core::ptr::{self};
+use core::alloc::{Allocator, GlobalAlloc, Layout};
+use core::ptr::{
+    NonNull, {self},
+};
 
-use crate::println;
+use log::error;
 
 pub mod early;
+pub mod physical;
 
 pub struct KernelAllocator;
 
@@ -31,6 +31,6 @@ unsafe impl GlobalAlloc for KernelAllocator {
 
 #[alloc_error_handler]
 fn allocation_error(layout: Layout) -> ! {
-    println!("Allocation failure for {:?}", layout);
+    error!("Allocation failure for {:?}", layout);
     crate::arch::abort()
 }

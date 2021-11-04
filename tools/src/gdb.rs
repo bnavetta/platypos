@@ -2,13 +2,9 @@ use std::io::Write;
 use std::path::Path;
 use std::process::Command;
 
-use miette::miette;
-use miette::Context;
-use miette::IntoDiagnostic;
-use miette::Result;
+use miette::{miette, Context, IntoDiagnostic, Result};
 use owo_colors::OwoColorize;
-use tempfile::NamedTempFile;
-use tempfile::TempPath;
+use tempfile::{NamedTempFile, TempPath};
 
 use crate::build::BuildInfo;
 

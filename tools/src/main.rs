@@ -1,8 +1,7 @@
 use std::path::Path;
 
 use argh::FromArgs;
-use miette::miette;
-use miette::Result;
+use miette::{miette, Result};
 
 mod build;
 mod gdb;

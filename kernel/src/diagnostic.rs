@@ -1,22 +1,19 @@
 //! Kernel diagnostics
 //!
-//! This module supports both the `tracing` and `log` ecosystems. Tracing provides richer functionality, and so it's
-//! preferred in almost all cases. However, particularly low-level parts of the kernel (especially the memory allocator)
-//! may be called from within the tracing implementation. To avoid recursing between the tracing collector and those systems,
-//! they should use `log` instead.
+//! This module supports both the `tracing` and `log` ecosystems. Tracing
+//! provides richer functionality, and so it's preferred in almost all cases.
+//! However, particularly low-level parts of the kernel (especially the memory
+//! allocator) may be called from within the tracing implementation. To avoid
+//! recursing between the tracing collector and those systems, they should use
+//! `log` instead.
 
-use core::fmt;
 use core::fmt::Write;
-use core::mem;
-use core::sync::atomic::AtomicU64;
-use core::sync::atomic::Ordering;
+use core::sync::atomic::{AtomicU64, Ordering};
+use core::{fmt, mem};
 
 use arrayvec::ArrayString;
-use owo_colors::AnsiColors;
-use owo_colors::OwoColorize;
-use tracing::field;
-use tracing::span;
-use tracing::Subscriber;
+use owo_colors::{AnsiColors, OwoColorize};
+use tracing::{field, span, Subscriber};
 
 use crate::arch::sync::UninterruptibleSpinlock;
 use crate::driver::uart::Uart;
@@ -39,9 +36,19 @@ static OUT: UninterruptibleSpinlock<KernelOutput> =
     UninterruptibleSpinlock::new(KernelOutput::Early);
 
 /// Buffer for logging messages before the serial console is initialized.
-// This is separate from the `KernelLog` structure to avoid making it unnecessarily large.
+// This is separate from the `KernelLog` structure to avoid making it
+// unnecessarily large.
 static EARLY_BUF: UninterruptibleSpinlock<ArrayString<4096>> =
     UninterruptibleSpinlock::new(ArrayString::new_const());
+
+// Since the tracing implementation is allowed to allocate (and the allocator
+// isn't allowed to trace), this can allocate for span data That means HashMap,
+// etc. should be available (and possibly tracing's own default registry?)
+// May want separate early allocators
+// - one for globals that won't ever be freed (Arc for tracing collector,
+//   tracing callsite registry, data for DeviceTree index)
+// - one that will be the regular kernel allocator (supports freeing), which
+//   trace data can go in from the start
 
 static COLLECTOR: KernelCollector = KernelCollector {
     next_span_id: AtomicU64::new(1),
@@ -56,7 +63,8 @@ pub fn init() {
         .expect("Could not install tracing subscriber");
 }
 
-/// Switch diagnostic output to a serial console. This will flush any early-boot messages to the console.
+/// Switch diagnostic output to a serial console. This will flush any early-boot
+/// messages to the console.
 pub fn enable_serial(uart: Uart) {
     let mut log = OUT.lock();
     let prev = mem::replace(&mut *log, KernelOutput::Serial { uart });
@@ -85,7 +93,8 @@ macro_rules! println {
 }
 
 impl KernelOutput {
-    /// Writes out the header for a diagnostic message. Logging and tracing implementations use this for consistency.
+    /// Writes out the header for a diagnostic message. Logging and tracing
+    /// implementations use this for consistency.
     ///
     /// # Parameters
     /// - `level`: the log level

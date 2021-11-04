@@ -2,18 +2,11 @@
 
 use std::fs;
 use std::io::BufReader;
-use std::path::Path;
-use std::path::PathBuf;
-use std::process::Command;
-use std::process::ExitStatus;
-use std::process::Stdio;
+use std::path::{Path, PathBuf};
+use std::process::{Command, ExitStatus, Stdio};
 
-use cargo_metadata::Artifact;
-use cargo_metadata::Message;
-use miette::Context;
-use miette::Diagnostic;
-use miette::IntoDiagnostic;
-use miette::Result;
+use cargo_metadata::{Artifact, Message};
+use miette::{Context, Diagnostic, IntoDiagnostic, Result};
 use owo_colors::OwoColorize;
 use thiserror::Error;
 
