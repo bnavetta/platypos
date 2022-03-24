@@ -118,6 +118,33 @@ impl DeviceTree {
             }
         });
 
+        info!(
+            "Kernel starts at {} and ends at {}",
+            kernel_start(),
+            kernel_end()
+        );
+
+        regions.push(memory::Region {
+            start: kernel_start(),
+            end: kernel_end(),
+            kind: memory::Kind::Ram,
+            flags: memory::Flags::KERNEL,
+        });
+
+        // TODO: add DeviceTree as well, and mark all reserved regions as unusable
+
+        for reserved in self.index.fdt().reserved_entries() {
+            let start = PhysicalAddress::new(u64::from(reserved.address) as usize);
+            let end = start + u64::from(reserved.address) as usize;
+            info!("{} - {} reserved by firmware", start, end);
+            regions.push(memory::Region {
+                start,
+                end,
+                kind: memory::Kind::Ram,
+                flags: memory::Flags::FIRMWARE
+            });
+        }
+
         for memory_node in memory_nodes {
             let parent = memory_node
                 .parent()
@@ -132,19 +159,6 @@ impl DeviceTree {
             let reg_prop =
                 get_prop(&memory_node, "reg").expect("memory node must have a reg property");
             let ranges = read_range_array(reg_prop.propbuf(), address_cells, size_cells).unwrap();
-
-            info!(
-                "Kernel starts at {} and ends at {}",
-                kernel_start(),
-                kernel_end()
-            );
-
-            regions.push(memory::Region {
-                start: kernel_start(),
-                end: kernel_end(),
-                kind: memory::Kind::Ram,
-                flags: memory::Flags::KERNEL,
-            });
 
             for (start_raw, length) in ranges {
                 let start = PhysicalAddress::new(start_raw);

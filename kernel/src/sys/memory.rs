@@ -63,6 +63,10 @@ impl MemoryMap {
         MemoryMap { regions }
     }
 
+    pub fn regions(&self) -> &[Region] {
+        &self.regions
+    }
+
     /// Determines the lowest and highest addresses of allocatable RAM. Not
     /// every part of this range is usable, but it bounds the parts of the
     /// physical address space which the memory allocation system must manage.
@@ -73,7 +77,7 @@ impl MemoryMap {
             .regions
             .iter()
             .find_map(|r| {
-                if r.kind == Kind::Ram && Flags::ALLOCATABLE.contains(r.flags) {
+                if r.allocatable() {
                     Some(r.start)
                 } else {
                     None
@@ -86,7 +90,7 @@ impl MemoryMap {
             .iter()
             .rev()
             .find_map(|r| {
-                if r.kind == Kind::Ram && Flags::ALLOCATABLE.contains(r.flags) {
+                if r.allocatable() {
                     Some(r.end)
                 } else {
                     None
@@ -111,6 +115,11 @@ impl Region {
     /// The size of this region, in bytes
     pub fn size_bytes(&self) -> usize {
         self.end - self.start
+    }
+
+    /// Whether or not this memory region can be allocated out
+    pub fn allocatable(&self) -> bool {
+        self.kind == Kind::Ram && Flags::ALLOCATABLE.contains(self.flags)
     }
 }
 

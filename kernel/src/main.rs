@@ -59,6 +59,8 @@ extern "C" fn kmain(hart_id: usize, fdt_addr: *const u8) -> ! {
     let (alloc_start, alloc_end) = memory_map.allocatable_ram_range();
     info!("Allocatable RAM: {} - {}", alloc_start, alloc_end);
 
+    let phys_allocator = allocator::physical::initialize_allocator(&memory_map);
+
     arch::abort();
 }
 

@@ -3,10 +3,13 @@
 //!
 //! The allocator is based on [Linux's buddy allocator](https://www.kernel.org/doc/gorman/html/understand/understand009.html).
 
+use core::{mem::{self, MaybeUninit}, slice};
+
 use bitvec::prelude::*;
 use intrusive_collections::{intrusive_adapter, LinkedList, LinkedListLink};
+use log::debug;
 
-use crate::arch::address::{PhysicalAddress, PhysicalPage};
+use crate::{arch::address::{PhysicalAddress, PhysicalPage}, sys::memory::MemoryMap};
 
 pub struct Allocator {
     free_areas: [FreeArea; Order::NUM_ORDERS],
@@ -25,7 +28,7 @@ struct FreeArea {
     /// other is allocated.
     buddy_map: &'static mut BitSlice,
 
-    ///
+    /// List of free blocks for this area
     free_list: LinkedList<FreePageAdapter>,
 }
 
@@ -200,6 +203,61 @@ impl FreePage {
         (*page_ptr).link = LinkedListLink::new();
         (*page_ptr).page = page;
         page_ptr.as_ref().unwrap()
+    }
+}
+
+pub fn initialize_allocator(map: &MemoryMap) -> Allocator {
+    let (usable_low, usable_high) = map.allocatable_ram_range();
+    let pages_needed = (usable_high - usable_low) / PhysicalPage::PAGE_SIZE;
+    debug!("Configuring physical memory allocator for {} pages", pages_needed);
+    let bitmaps_size = (0..Order::NUM_ORDERS).map(|o| {
+        let entries = pages_needed / Order(o as u8).pages();
+        entries / u8::BITS as usize
+    }).sum();
+    debug!("Need {} bytes for bitmaps", bitmaps_size);
+
+    let bitmap_start = map.regions()
+        .iter()
+        .find(|r| r.allocatable() && r.size_bytes() >= bitmaps_size)
+        .expect("No suitable region for allocator bitmaps")
+        .start;
+    let bitmap_end = bitmap_start + bitmaps_size;
+
+    let allocator = unsafe { build_allocator(bitmap_start, pages_needed) };
+
+    allocator
+}
+
+/// Sets up an empty allocator given a location to store bitmaps in
+unsafe fn build_allocator(bitmap_region: PhysicalAddress, pages_needed: usize) -> Allocator {
+    // See https://doc.rust-lang.org/stable/std/mem/union.MaybeUninit.html#initializing-an-array-element-by-element
+    // This pattern for element-by-element initialization is safe because individual MaybeUninits do not require initialization
+    let mut areas: [MaybeUninit<FreeArea>; Order::NUM_ORDERS] = MaybeUninit::uninit().assume_init();
+
+    let mut bitmap_offset = bitmap_region;
+
+    for (ord, area ) in areas.iter_mut().enumerate() {
+        debug!("Placing bitmap for order {} at {}", ord, bitmap_offset);
+        let order = Order(ord as u8);
+        let entries = pages_needed / order.pages();
+        let bitmap_size = entries / u8::BITS as usize;
+        // Safety: we were given this area as free to allocate bitmaps into
+        let bitmap_slice: &'static mut [usize] =
+            slice::from_raw_parts_mut(physical_to_mut_ptr(bitmap_offset).cast::<usize>(), bitmap_size / mem::size_of::<usize>());
+        let bitmap = bitmap_slice.view_bits_mut();
+        bitmap.set_all(true); // All true -> all buddies are allocated
+        debug_assert!(bitmap.len() == entries);
+        area.write(FreeArea {
+            order,
+            buddy_map: bitmap,
+            free_list: LinkedList::new(FreePageAdapter::new()),
+        });
+        bitmap_offset += bitmap_size;
+    }
+
+    Allocator {
+        // Safety: all areas are initialized at this point
+        free_areas: mem::transmute(areas)
     }
 }
 
