@@ -1,15 +1,13 @@
+cargo-features = ["profile-rustflags"]
+
 [workspace]
-members = [
-    "boot_info",
-    "kernel",
-    "loader"
-]
+members = ["platform", "platform_common", "kernel", "kernel_x86_64", "xtask"]
 
-[profile.dev]
-panic = "abort"
+# [profile.dev]
+# # For backtraces
+# rustflags = ["-Cforce-frame-pointers"]
 
-[profile.release]
-panic = "abort"
-lto = "thin"
-debug = true
-split-debuginfo = "packed"
+# [profile.release]
+# lto = "thin"
+# debug = true
+# split-debuginfo = "packed"

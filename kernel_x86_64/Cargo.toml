@@ -1,0 +1,13 @@
+[package]
+name = "platypos_kernel_x86_64"
+version = "0.1.0"
+edition = "2021"
+description = "PlatypOS kernel for the x86-64 platform"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+bootloader = "0.10.12"
+platypos_kernel = { path = "../kernel" }
+platypos_platform = { path = "../platform" }
+platypos_platform_common = { path = "../platform_common" }
