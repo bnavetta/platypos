@@ -8,6 +8,7 @@ description = "PlatypOS kernel for the x86-64 platform"
 
 [dependencies]
 bootloader = "0.10.12"
+embedded-graphics = "0.7.1"
 platypos_kernel = { path = "../kernel" }
 platypos_platform = { path = "../platform" }
 platypos_platform_common = { path = "../platform_common" }
