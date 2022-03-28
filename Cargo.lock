@@ -380,6 +380,8 @@ checksum = "e280fbe77cc62c91527259e9442153f4688736748d24660126286329742b4c6c"
 name = "platypos_kernel"
 version = "0.1.0"
 dependencies = [
+ "az",
+ "embedded-graphics",
  "platypos_platform",
 ]
 
@@ -397,6 +399,9 @@ dependencies = [
 [[package]]
 name = "platypos_platform"
 version = "0.1.0"
+dependencies = [
+ "embedded-graphics-core",
+]
 
 [[package]]
 name = "platypos_platform_common"

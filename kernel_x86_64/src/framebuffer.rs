@@ -1,8 +1,10 @@
 use core::convert::Infallible;
 
 use bootloader::boot_info::{FrameBuffer, PixelFormat};
+use embedded_graphics::draw_target::DrawTarget;
+use embedded_graphics::pixelcolor::Bgr888;
 use embedded_graphics::prelude::*;
-use embedded_graphics::{draw_target::DrawTarget, pixelcolor::Rgb888, Pixel};
+use embedded_graphics::Pixel;
 
 pub struct FrameBufferTarget<'a> {
     inner: &'a mut FrameBuffer,
@@ -15,8 +17,9 @@ impl<'a> FrameBufferTarget<'a> {
 }
 
 impl<'a> DrawTarget for FrameBufferTarget<'a> {
-    // TODO: this assumes RGB byte support as the default and converts on the fly if not
-    type Color = Rgb888;
+    // TODO: this assumes RGB byte support as the default and converts on the fly if
+    // not
+    type Color = Bgr888;
 
     type Error = Infallible;
 
@@ -33,7 +36,8 @@ impl<'a> DrawTarget for FrameBufferTarget<'a> {
             let byte_offset = pixel_offset as usize * info.bytes_per_pixel;
             match info.pixel_format {
                 PixelFormat::RGB => {
-                    // Could avoid some work by casting the frame buffer to a u32 array, but that seems... sketchy
+                    // Could avoid some work by casting the frame buffer to a u32 array, but that
+                    // seems... sketchy
                     buffer[byte_offset] = color.r();
                     buffer[byte_offset + 1] = color.g();
                     buffer[byte_offset + 2] = color.b();
