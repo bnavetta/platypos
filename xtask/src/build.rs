@@ -1,15 +1,16 @@
-use std::{fs, process::Command};
+use std::fs;
+use std::process::Command;
 
 use camino::Utf8PathBuf;
 use cargo_metadata::MetadataCommand;
 use clap::Args;
-use color_eyre::{
-    eyre::{bail, eyre, Context},
-    Result,
-};
+use color_eyre::eyre::{bail, eyre, Context};
+use color_eyre::Result;
 use owo_colors::{OwoColorize, Stream};
 
-use crate::{cargo::Cargo, output::Output, platform::Platform};
+use crate::cargo::Cargo;
+use crate::output::Output;
+use crate::platform::Platform;
 
 #[derive(Debug, Args)]
 pub struct BuildOpts {
@@ -61,7 +62,8 @@ fn build_x86_64(output: &Output, cargo: &Cargo) -> Result<BuiltKernel> {
     let bootloader_manifest = locate_x86_64_bootloader_manifest(output)?;
 
     let kernel_manifest_path = fs::canonicalize(Platform::X86_64.kernel_manifest())?;
-    let target_dir = kernel_bin.parent().unwrap().parent().unwrap(); // To get to the target directory, go up two levels (kernel binary is in `target/$mode/$target/`)
+    let target_dir = kernel_bin.parent().unwrap().parent().unwrap(); // To get to the target directory, go up two levels (kernel binary is in
+                                                                     // `target/$mode/$target/`)
     let mut img_command = Command::new(&cargo.cargo_bin);
     img_command
         .current_dir(bootloader_manifest.parent().unwrap())

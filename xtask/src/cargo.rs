@@ -1,16 +1,13 @@
 use std::collections::HashMap;
-use std::env;
-use std::fmt;
 use std::io::BufReader;
 use std::process::{Command, Stdio};
+use std::{env, fmt};
 
-use camino::Utf8Path;
-use camino::Utf8PathBuf;
+use camino::{Utf8Path, Utf8PathBuf};
 use cargo_metadata::Message;
 use color_eyre::eyre::{bail, eyre, Context};
 use color_eyre::Result;
-use owo_colors::OwoColorize;
-use owo_colors::Stream;
+use owo_colors::{OwoColorize, Stream};
 
 use crate::output::Output;
 use crate::platform::Platform;

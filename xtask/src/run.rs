@@ -1,16 +1,12 @@
 use std::process::{Command, ExitStatus};
 
 use clap::Args;
-use color_eyre::{
-    eyre::{bail, Context},
-    Result,
-};
+use color_eyre::eyre::{bail, Context};
+use color_eyre::Result;
 
-use crate::{
-    build::{build, BuiltKernel},
-    output::Output,
-    platform::Platform,
-};
+use crate::build::{build, BuiltKernel};
+use crate::output::Output;
+use crate::platform::Platform;
 
 static UEFI_FIRMWARE_FILES: &[&str] = &[
     "/usr/share/ovmf/x64/OVMF_CODE.fd",
