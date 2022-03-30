@@ -1,30 +1,35 @@
 #![no_std]
+#![no_main]
+#![feature(negative_impls)]
 
 use core::fmt::Write;
 
 use console::Console;
-use platypos_platform::{Platform, Processor};
+
+use crate::arch::display::Display;
+use crate::arch::interrupts;
+
+mod arch;
 
 mod console;
 mod logging;
 mod panic;
+mod prelude;
 mod sync;
-
-pub use logging::KernelLog;
 
 /// Arguments passed from the platform-specific initialization code to
 /// [`kmain`].
-pub struct BootArgs<P: Platform> {
+pub struct BootArgs {
     /// Display handle, if available
-    pub display: Option<P::Display>,
+    pub display: Option<Display>,
 }
 
 /// The shared kernel entry point.
-pub fn kmain<P: Platform>(args: BootArgs<P>) -> ! {
+pub fn kmain(args: BootArgs) -> ! {
     log::info!(foo = 1; "Hello, world!");
 
     let display = args.display.unwrap();
-    let mut console: Console<P> = Console::new(display);
+    let mut console = Console::new(display);
     console.clear().unwrap();
 
     console.write("Hello!\n").unwrap();
@@ -40,6 +45,6 @@ pub fn kmain<P: Platform>(args: BootArgs<P>) -> ! {
     // }
 
     loop {
-        P::Processor::halt_until_interrupted();
+        interrupts::halt_until_interrupted();
     }
 }

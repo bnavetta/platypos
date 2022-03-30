@@ -7,26 +7,30 @@ use embedded_graphics::mono_font::{ascii, MonoTextStyle};
 use embedded_graphics::prelude::*;
 use embedded_graphics::text::renderer::TextRenderer;
 use embedded_graphics::text::{Alignment, Text, TextStyle};
-use platypos_platform::Platform;
 
-pub struct Console<P: Platform> {
+use crate::arch::display::{Color, Display, Error};
+
+pub struct Console {
     text_style: TextStyle,
-    character_style: MonoTextStyle<'static, P::DisplayColor>,
+    character_style: MonoTextStyle<'static, Color>,
     cursor: Point,
     origin: Point,
-    display: P::Display,
+    display: Display,
 }
 
 /// Console margin, in pixels
 const MARGIN: i32 = 5;
 
+const FG_COLOR: Color = Color::GREEN;
+const BG_COLOR: Color = Color::BLACK;
+
 // TODO: consider the embedded-text crate, although it doesn't support appending
 // + reflowing text
 
-impl<P: Platform> Console<P> {
-    pub fn new(display: P::Display) -> Self {
+impl Console {
+    pub fn new(display: Display) -> Self {
         let text_style = TextStyle::with_alignment(Alignment::Left);
-        let character_style = MonoTextStyle::new(&ascii::FONT_10X20, P::DisplayColor::GREEN);
+        let character_style = MonoTextStyle::new(&ascii::FONT_10X20, FG_COLOR);
 
         let origin = Point::new(MARGIN, MARGIN + line_height(&text_style, &character_style));
 
@@ -39,7 +43,7 @@ impl<P: Platform> Console<P> {
         }
     }
 
-    pub fn write(&mut self, s: &str) -> Result<(), P::DisplayError> {
+    pub fn write(&mut self, s: &str) -> Result<(), Error> {
         // The overall algorithm is to loop through characters until we find a newline
         // or exceed the screen width, then go to the next line and keep going
 
@@ -95,13 +99,13 @@ impl<P: Platform> Console<P> {
         Ok(())
     }
 
-    pub fn clear(&mut self) -> Result<(), P::DisplayError> {
-        self.display.clear(P::DisplayColor::BLACK)?;
+    pub fn clear(&mut self) -> Result<(), Error> {
+        self.display.clear(BG_COLOR)?;
         self.cursor = self.origin;
         Ok(())
     }
 
-    pub fn newline(&mut self) -> Result<(), P::DisplayError> {
+    pub fn newline(&mut self) -> Result<(), Error> {
         let new_y = self.cursor.y + line_height(&self.text_style, &self.character_style);
         if new_y > self.display.size().height.saturating_cast() {
             self.clear()
@@ -114,12 +118,12 @@ impl<P: Platform> Console<P> {
     /// Gets the underlying display
     #[inline(always)]
     #[allow(dead_code)]
-    pub fn into_display(self) -> P::Display {
+    pub fn into_display(self) -> Display {
         self.display
     }
 }
 
-impl<P: Platform> fmt::Write for Console<P> {
+impl fmt::Write for Console {
     fn write_str(&mut self, s: &str) -> fmt::Result {
         self.write(s).map_err(|_| fmt::Error)
     }

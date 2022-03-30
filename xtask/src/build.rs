@@ -44,14 +44,16 @@ pub fn build(output: &Output, platform: Platform) -> Result<BuiltKernel> {
     }
 }
 
+const KERNEL_CRATE: &str = "platypos_kernel";
+const KERNEL_MANIFEST: &str = "kernel/Cargo.toml";
+
 /// Build for the x86-64 platform, using the `bootloader` crate
 fn build_x86_64(output: &Output, cargo: &Cargo) -> Result<BuiltKernel> {
-    let kernel_crate = Platform::X86_64.kernel_crate();
     let kernel_outputs = cargo
-        .build(output, Platform::X86_64, kernel_crate)
+        .build(output, Platform::X86_64, KERNEL_CRATE)
         .wrap_err("Could not build kernel")?;
     let kernel_bin =
-        Utf8PathBuf::try_from(fs::canonicalize(kernel_outputs.executable(kernel_crate)?)?)?;
+        Utf8PathBuf::try_from(fs::canonicalize(kernel_outputs.executable(KERNEL_CRATE)?)?)?;
     if output.verbose {
         println!(
             "Built kernel to {}",
@@ -61,7 +63,7 @@ fn build_x86_64(output: &Output, cargo: &Cargo) -> Result<BuiltKernel> {
 
     let bootloader_manifest = locate_x86_64_bootloader_manifest(output)?;
 
-    let kernel_manifest_path = fs::canonicalize(Platform::X86_64.kernel_manifest())?;
+    let kernel_manifest_path = fs::canonicalize(KERNEL_MANIFEST)?;
     let target_dir = kernel_bin.parent().unwrap().parent().unwrap(); // To get to the target directory, go up two levels (kernel binary is in
                                                                      // `target/$mode/$target/`)
     let mut img_command = Command::new(&cargo.cargo_bin);
@@ -109,7 +111,7 @@ fn locate_x86_64_bootloader_manifest(output: &Output) -> Result<Utf8PathBuf> {
     // Matches the behavior of https://github.com/phil-opp/bootloader-locator, but using the specific kernel crate's metadata
 
     let metadata = MetadataCommand::new()
-        .manifest_path(Platform::X86_64.kernel_manifest())
+        .manifest_path(KERNEL_MANIFEST)
         .exec()
         .wrap_err("could not read kernel Cargo metadata")?;
     let resolve = metadata

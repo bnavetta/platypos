@@ -1,6 +1,6 @@
 use std::fmt;
 
-use camino::Utf8Path;
+use camino::Utf8PathBuf;
 use clap::ArgEnum;
 
 #[derive(Debug, Clone, Copy, ArgEnum)]
@@ -14,18 +14,15 @@ static COMMON_BUILD_FLAGS: &[&str] = &[
 ];
 
 impl Platform {
-    pub fn kernel_crate(self) -> &'static str {
+    pub fn name(self) -> &'static str {
         match self {
-            Platform::X86_64 => "platypos_kernel_x86_64",
+            Platform::X86_64 => "x86_64",
         }
     }
 
-    pub fn target(self) -> &'static Utf8Path {
-        Utf8Path::new("kernel_x86_64/x86_64-kernel.json")
-    }
-
-    pub fn kernel_manifest(self) -> &'static Utf8Path {
-        Utf8Path::new("kernel_x86_64/Cargo.toml")
+    pub fn target(self) -> Utf8PathBuf {
+        let name = self.name();
+        Utf8PathBuf::from(format!("kernel/src/arch/{name}/{name}-kernel.json"))
     }
 
     pub fn build_flags(self) -> &'static [&'static str] {
@@ -36,7 +33,7 @@ impl Platform {
 impl fmt::Display for Platform {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Platform::X86_64 => f.write_str("x86-64"),
+            Platform::X86_64 => f.write_str(self.name()),
         }
     }
 }

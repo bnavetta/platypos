@@ -1,6 +1,10 @@
 use core::panic::PanicInfo;
 
+use crate::arch::interrupts;
+
 #[panic_handler]
 fn panic(_info: &PanicInfo) -> ! {
-    loop {}
+    loop {
+        interrupts::halt_until_interrupted()
+    }
 }

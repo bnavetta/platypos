@@ -417,39 +417,12 @@ name = "platypos_kernel"
 version = "0.1.0"
 dependencies = [
  "az",
- "embedded-graphics",
- "log",
- "platypos_platform",
- "spin",
-]
-
-[[package]]
-name = "platypos_kernel_x86_64"
-version = "0.1.0"
-dependencies = [
  "bootloader",
  "embedded-graphics",
  "log",
- "platypos_kernel",
- "platypos_platform",
- "platypos_platform_common",
  "spin",
  "uart_16550",
  "x86_64",
-]
-
-[[package]]
-name = "platypos_platform"
-version = "0.1.0"
-dependencies = [
- "embedded-graphics-core",
-]
-
-[[package]]
-name = "platypos_platform_common"
-version = "0.1.0"
-dependencies = [
- "platypos_platform",
 ]
 
 [[package]]

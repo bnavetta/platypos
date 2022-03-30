@@ -4,23 +4,32 @@ use core::fmt::Write;
 
 use log::kv::Visitor;
 use log::Log;
-use platypos_platform::Platform;
+use spin::Once;
 
+use crate::arch::SerialPort;
 use crate::sync::InterruptSafeMutex;
 
-pub struct KernelLog<P: Platform> {
-    inner: InterruptSafeMutex<P, P::Serial>,
+static LOG: Once<KernelLog> = Once::INIT;
+
+pub struct KernelLog {
+    inner: InterruptSafeMutex<SerialPort>,
 }
 
-impl<P: Platform> KernelLog<P> {
-    pub const fn new(serial: P::Serial) -> Self {
+/// Initialize lthe ogging system.
+pub fn init(serial: SerialPort) {
+    log::set_logger(LOG.call_once(|| KernelLog::new(serial))).expect("logger already initialized!");
+    log::set_max_level(log::LevelFilter::Trace);
+}
+
+impl KernelLog {
+    pub const fn new(serial: SerialPort) -> Self {
         KernelLog {
             inner: InterruptSafeMutex::new(serial),
         }
     }
 }
 
-impl<P: Platform> Log for KernelLog<P> {
+impl Log for KernelLog {
     fn enabled(&self, _metadata: &log::Metadata) -> bool {
         // TODO: configurable logging
         true
@@ -42,12 +51,12 @@ impl<P: Platform> Log for KernelLog<P> {
 
         let kvs = record.key_values();
         if kvs.count() > 0 {
-            struct FormatVisitor<'a, P: Platform> {
-                serial: &'a mut P::Serial,
+            struct FormatVisitor<'a> {
+                serial: &'a mut SerialPort,
                 first: bool,
             }
 
-            impl<'a, 'kvs, P: Platform> Visitor<'kvs> for FormatVisitor<'a, P> {
+            impl<'a, 'kvs> Visitor<'kvs> for FormatVisitor<'a> {
                 fn visit_pair(
                     &mut self,
                     key: log::kv::Key<'kvs>,
@@ -62,7 +71,7 @@ impl<P: Platform> Log for KernelLog<P> {
                 }
             }
 
-            let mut visitor: FormatVisitor<'_, P> = FormatVisitor {
+            let mut visitor: FormatVisitor<'_> = FormatVisitor {
                 serial: &mut *inner,
                 first: false,
             };
@@ -75,10 +84,3 @@ impl<P: Platform> Log for KernelLog<P> {
         // no-op
     }
 }
-
-// This is an interesting dilemma: we can't create global variables in the core
-// kernel crate that are parameterized by a Platform type, because globals can't
-// be generic. This means that all global state has to be instantiated in
-// platform-specific crates, which is possibly OK because it limits truly-global
-// variables. If that's not workable, probably have to go with conditional
-// compilation instead of generics.
