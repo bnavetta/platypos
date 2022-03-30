@@ -112,6 +112,8 @@ impl<P: Platform> Console<P> {
     }
 
     /// Gets the underlying display
+    #[inline(always)]
+    #[allow(dead_code)]
     pub fn into_display(self) -> P::Display {
         self.display
     }

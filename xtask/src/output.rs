@@ -53,6 +53,7 @@ impl OutputOpts {
 }
 
 impl Output {
+    #[allow(dead_code)]
     pub fn should_colorize(&self, stream: Stream) -> bool {
         match self.color {
             Color::Always => true,

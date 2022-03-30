@@ -46,6 +46,7 @@ fn run(_output: &Output, kernel: &BuiltKernel, qemu_options: &[&str]) -> Result<
         .arg("-drive")
         .arg(format!("format=raw,file={}", kernel.boot_image))
         .arg("--no-reboot")
+        .args(["-serial", "stdio"])
         .args(qemu_options);
 
     if matches!(kernel.platform, Platform::X86_64) {
