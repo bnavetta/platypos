@@ -13,6 +13,7 @@ mod arch;
 
 mod console;
 mod logging;
+mod mm;
 mod panic;
 mod prelude;
 mod sync;
