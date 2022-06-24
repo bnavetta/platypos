@@ -2,4 +2,5 @@
 
 pub use core::fmt::Write;
 
-pub use crate::arch::{PhysicalAddress, VirtualAddress};
+pub use crate::error::{Error, ErrorKind};
+pub use crate::mm::{ByteSizeExt, PhysicalAddress};

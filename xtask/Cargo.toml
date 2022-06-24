@@ -9,7 +9,7 @@ description = "Tools for building PlatypOS"
 [dependencies]
 bootloader-locator = "0.0.4"
 camino = "1.0.7"
-cargo_metadata = "0.14.2"
+cargo_metadata = "0.15"
 clap = { version = "3.0.13", features = ["derive"] }
 color-eyre = "0.6.1"
 enable-ansi-support = "0.1.2"

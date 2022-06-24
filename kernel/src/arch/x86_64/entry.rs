@@ -53,7 +53,8 @@ fn start(info: &'static mut BootInfo) -> ! {
 
     log::info!("Allocator regions:");
     let mut ab = crate::mm::physical::Builder;
-    ab.parse_memory_map(info.memory_regions.iter().map(Region::from));
+    ab.parse_memory_map(info.memory_regions.iter().map(Region::from))
+        .unwrap();
 
     let args = BootArgs {
         display: info.framebuffer.as_mut().map(FrameBufferTarget::new),

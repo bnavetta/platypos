@@ -1,6 +1,6 @@
 #![no_std]
 #![no_main]
-#![feature(negative_impls)]
+#![feature(negative_impls, int_roundings)]
 
 use core::fmt::Write;
 
@@ -12,6 +12,7 @@ use crate::arch::interrupts;
 mod arch;
 
 mod console;
+mod error;
 mod logging;
 mod mm;
 mod panic;
