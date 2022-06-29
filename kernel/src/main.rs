@@ -28,7 +28,7 @@ pub struct BootArgs {
 
 /// The shared kernel entry point.
 pub fn kmain(args: BootArgs) -> ! {
-    log::info!(foo = 1; "Hello, world!");
+    log::info!("Hello, world!");
 
     let display = args.display.unwrap();
     let mut console = Console::new(display);
@@ -45,6 +45,8 @@ pub fn kmain(args: BootArgs) -> ! {
     // for _ in 0..1000 {
     //     console.write("text ").unwrap();
     // }
+
+    panic!("Testing");
 
     loop {
         interrupts::halt_until_interrupted();

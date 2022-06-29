@@ -3,7 +3,7 @@
 use itertools::Itertools;
 
 use crate::arch::mm::PhysicalMemoryAccess;
-use crate::arch::{PAGE_SIZE, PhysicalPageNumber};
+use crate::arch::{PhysicalPageNumber, PAGE_SIZE};
 use crate::prelude::*;
 
 use super::map::Region;
@@ -59,29 +59,35 @@ impl Builder {
         log::info!("Using {} for bitmap", bitmap_region);
 
         let bitmap = unsafe {
-            // Safety: all usable memory is unallocated at this point, so there is not an existing mapping to alias
-            // TODO: better PPN type
+            // Safety: all usable memory is unallocated at this point, so there is not an
+            // existing mapping to alias TODO: better PPN type
             let addr = access.map_permanent(todo!("PPN API"), bitmap_size.div_ceil(PAGE_SIZE))?;
-            // TODO: make sure we have a whole-usize allocation - may need to round up bitmap_size for that
-        }
+            // TODO: make sure we have a whole-usize allocation - may need to
+            // round up bitmap_size for that
+        };
 
         Ok(())
 
         // TODOs:
-        // - macro to implement all the arithmetic+formatting for PhysicalAddress, VirtualAddress, PPN, Page
-        // - API for ranges of addresses/pages/PPNs - could make them all implement a trait (instead of macro), and make the range type generic
-        // - API for temporarily accessing physical memory (could return a &'a [MaybeUninit<u8>] to ensure reference doesn't escape)
-        // - alternative construction algorithm to handle unusable memory like kernel:
-        //     1. Find a usable page frame (in list from bootloader, doesn't overlap w/ reserved regions)
-        //     2. Use that to create a scratch allocator
-        //     3. Put memory into a Vec in scratch allocator - then can sort, coalesce, split out reserved regions
+        // - macro to implement all the arithmetic+formatting for
+        //   PhysicalAddress, VirtualAddress, PPN, Page
+        // - API for ranges of addresses/pages/PPNs - could make them all
+        //   implement a trait (instead of macro), and make the range type
+        //   generic
+        // - API for temporarily accessing physical memory (could return a &'a
+        //   [MaybeUninit<u8>] to ensure reference doesn't escape)
+        // - alternative construction algorithm to handle unusable memory like
+        //   kernel: 1. Find a usable page frame (in list from bootloader,
+        //   doesn't overlap w/ reserved regions) 2. Use that to create a
+        //   scratch allocator 3. Put memory into a Vec in scratch allocator -
+        //   then can sort, coalesce, split out reserved regions
         // - clean up xtasks:
         //     - support building multiple platforms at once
         //     - more composable abstractions:
         //         - build crate X for platform Y, producing the binary artifact
-        //         - run kernel-like artifact (platform-appropriate) on platform Y (platform knows which qemu to use, can pass generic settings like memory+CPUs)
+        //         - run kernel-like artifact (platform-appropriate) on platform
+        //           Y (platform knows which qemu to use, can pass generic
+        //           settings like memory+CPUs)
         //     - generally, hide platform-specific bootloader stuff better
-
-
     }
 }

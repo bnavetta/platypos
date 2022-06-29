@@ -45,6 +45,12 @@ impl Cargo {
                 platform.target().as_str(),
             ])
             .args(platform.build_flags())
+            // Needed by mini-backtrace
+            .env(
+                "RUSTFLAGS",
+                "-Cforce-unwind-tables -Clink-arg=-T./link/eh_frame.ld",
+            )
+            .env("CXXFLAGS", "-fno-stack-protector")
             .stdout(Stdio::piped());
 
         if output.verbose {

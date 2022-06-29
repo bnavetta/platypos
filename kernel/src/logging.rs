@@ -2,7 +2,7 @@
 
 use core::fmt::Write;
 
-use log::kv::Visitor;
+// use log::kv::Visitor;
 use log::Log;
 use spin::Once;
 
@@ -15,11 +15,13 @@ pub struct KernelLog {
     inner: InterruptSafeMutex<SerialPort>,
 }
 
-/// Initialize lthe ogging system.
+/// Initialize the logging system.
 pub fn init(serial: SerialPort) {
     log::set_logger(LOG.call_once(|| KernelLog::new(serial))).expect("logger already initialized!");
     log::set_max_level(log::LevelFilter::Trace);
 }
+
+// Warning: The logger _must not_ panic, as it's used to print panic messages
 
 impl KernelLog {
     pub const fn new(serial: SerialPort) -> Self {
@@ -49,6 +51,7 @@ impl Log for KernelLog {
             record.args()
         );
 
+        /*
         let kvs = record.key_values();
         if kvs.count() > 0 {
             struct FormatVisitor<'a> {
@@ -77,6 +80,7 @@ impl Log for KernelLog {
             };
             let _ = kvs.visit(&mut visitor);
         }
+        */
         let _ = writeln!(&mut inner);
     }
 

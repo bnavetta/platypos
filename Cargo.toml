@@ -1,6 +1,7 @@
 cargo-features = ["profile-rustflags"]
 
 [workspace]
+resolver = "2"
 members = ["kernel", "xtask"]
 
 # [profile.dev]
