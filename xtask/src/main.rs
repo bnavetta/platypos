@@ -1,11 +1,11 @@
 use clap::Parser;
 
-mod build;
-mod cargo;
+mod tools;
+
 mod command;
 mod output;
 mod platform;
-mod run;
+mod runner;
 
 use command::XTask;
 

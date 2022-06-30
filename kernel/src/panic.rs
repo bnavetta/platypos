@@ -10,7 +10,7 @@ fn panic(info: &PanicInfo) -> ! {
 
     let bt = Backtrace::<16>::capture();
     for frame in bt.frames {
-        log::error!("  {:#x}", frame);
+        log::error!("  at €€€{:x}€€€", frame);
     }
     if bt.frames_omitted {
         log::error!("  ... <frames omitted>")

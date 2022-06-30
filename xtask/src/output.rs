@@ -1,6 +1,8 @@
 use clap::{ArgEnum, Args};
 use color_eyre::eyre::eyre;
 use color_eyre::Result;
+use log::Log;
+use owo_colors::OwoColorize;
 use supports_color::Stream;
 
 #[derive(Debug, Args)]
@@ -19,13 +21,13 @@ enum Color {
     Never,
 }
 
-pub struct Output {
-    pub verbose: bool,
-    color: Color,
+/// Very simple logger to respect command-line color/verbosity preferences
+struct OutputLog {
+    verbose: bool,
 }
 
 impl OutputOpts {
-    pub(crate) fn init(self) -> Result<Output> {
+    pub(crate) fn init(self) -> Result<()> {
         color_eyre::install()?;
 
         match self.color {
@@ -45,22 +47,40 @@ impl OutputOpts {
                 .map_err(|e| eyre!("could not enable ANSI colors: code {e}"))?;
         }
 
-        Ok(Output {
+        log::set_boxed_logger(Box::new(OutputLog {
             verbose: self.verbose,
-            color: self.color,
-        })
+        }))?;
+
+        Ok(())
     }
 }
 
-impl Output {
-    #[allow(dead_code)]
-    pub fn should_colorize(&self, stream: Stream) -> bool {
-        match self.color {
-            Color::Always => true,
-            Color::Auto => supports_color::on_cached(stream)
-                .map(|l| l.has_basic)
-                .unwrap_or(false),
-            Color::Never => false,
+impl Log for OutputLog {
+    fn enabled(&self, metadata: &log::Metadata) -> bool {
+        let threshold = if self.verbose {
+            log::LevelFilter::Trace
+        } else {
+            log::LevelFilter::Info
+        };
+
+        metadata.level() > threshold
+    }
+
+    fn log(&self, record: &log::Record) {
+        if self.enabled(record.metadata()) {
+            match record.level() {
+                log::Level::Error => {
+                    print!("{} ", "🚨".if_supports_color(Stream::Stdout, |c| c.red()))
+                }
+                log::Level::Warn => {
+                    print!("{}", "⚠️".if_supports_color(Stream::Stdout, |c| c.yellow()))
+                }
+                _ => (),
+            }
+
+            println!("{}", record.args())
         }
     }
+
+    fn flush(&self) {}
 }
