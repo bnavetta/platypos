@@ -8,12 +8,11 @@ description = "Core PlatypOS kernel"
 
 [dependencies]
 az = "1.2.0"
+ansi_rgb = "0.2"
 bitvec = { version = "1.0.0", features = ["atomic"], default-features = false }
 embedded-graphics = "0.7.1"
 itertools = { version = "0.10.3", default-features = false }
 log = { version = "0.4.16", features = [
-    # "kv_unstable",
-    # "kv_unstable_sval",
     "max_level_trace",
     "release_max_level_debug",
 ], default-features = false }

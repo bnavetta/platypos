@@ -2,7 +2,7 @@
 
 use core::fmt::Write;
 
-// use log::kv::Visitor;
+use ansi_rgb::Foreground;
 use log::Log;
 use spin::Once;
 
@@ -42,45 +42,23 @@ impl Log for KernelLog {
             return;
         }
 
+        let level_color = match record.level() {
+            log::Level::Error => ansi_rgb::red(),
+            log::Level::Warn => ansi_rgb::yellow(),
+            log::Level::Info => ansi_rgb::green(),
+            log::Level::Debug => ansi_rgb::cyan(),
+            log::Level::Trace => ansi_rgb::magenta(),
+        };
+
         let mut inner = self.inner.lock();
         let _ = write!(
             &mut inner,
-            "{} {}: {}",
-            record.level(),
-            record.target(),
+            "{}{} {}",
+            record.target().fg(level_color),
+            ":".fg(level_color),
             record.args()
         );
 
-        /*
-        let kvs = record.key_values();
-        if kvs.count() > 0 {
-            struct FormatVisitor<'a> {
-                serial: &'a mut SerialPort,
-                first: bool,
-            }
-
-            impl<'a, 'kvs> Visitor<'kvs> for FormatVisitor<'a> {
-                fn visit_pair(
-                    &mut self,
-                    key: log::kv::Key<'kvs>,
-                    value: log::kv::Value<'kvs>,
-                ) -> Result<(), log::kv::Error> {
-                    if !self.first {
-                        write!(self.serial, " ")?;
-                    }
-
-                    write!(self.serial, "{} = {}", key, value)?;
-                    Ok(())
-                }
-            }
-
-            let mut visitor: FormatVisitor<'_> = FormatVisitor {
-                serial: &mut *inner,
-                first: false,
-            };
-            let _ = kvs.visit(&mut visitor);
-        }
-        */
         let _ = writeln!(&mut inner);
     }
 
