@@ -66,6 +66,10 @@ impl Region {
     pub fn size(&self) -> usize {
         (self.end - self.start) as usize
     }
+
+    pub fn range(&self) -> PhysicalAddressRange {
+        PhysicalAddressRange::new(self.start, self.end)
+    }
 }
 
 impl fmt::Display for Region {

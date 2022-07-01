@@ -1,7 +1,7 @@
 use clap::{ArgEnum, Args};
 use color_eyre::eyre::eyre;
 use color_eyre::Result;
-use log::Log;
+use log::{LevelFilter, Log};
 use owo_colors::OwoColorize;
 use supports_color::Stream;
 
@@ -23,7 +23,7 @@ enum Color {
 
 /// Very simple logger to respect command-line color/verbosity preferences
 struct OutputLog {
-    verbose: bool,
+    filter: LevelFilter,
 }
 
 impl OutputOpts {
@@ -47,9 +47,15 @@ impl OutputOpts {
                 .map_err(|e| eyre!("could not enable ANSI colors: code {e}"))?;
         }
 
+        let level_filter = if self.verbose {
+            log::LevelFilter::Trace
+        } else {
+            log::LevelFilter::Info
+        };
         log::set_boxed_logger(Box::new(OutputLog {
-            verbose: self.verbose,
+            filter: level_filter,
         }))?;
+        log::set_max_level(level_filter);
 
         Ok(())
     }
@@ -57,13 +63,7 @@ impl OutputOpts {
 
 impl Log for OutputLog {
     fn enabled(&self, metadata: &log::Metadata) -> bool {
-        let threshold = if self.verbose {
-            log::LevelFilter::Trace
-        } else {
-            log::LevelFilter::Info
-        };
-
-        metadata.level() > threshold
+        metadata.level() <= self.filter
     }
 
     fn log(&self, record: &log::Record) {

@@ -1,46 +1,13 @@
-//! Support for running built binaries. This handles platform-specific packaging
-//! on top of QEMU
+//! Platform-specific QEMU setup code for x86-64
 
-use std::process::ExitStatus;
-
-use camino::{Utf8Path, Utf8PathBuf};
 use cargo_metadata::MetadataCommand;
-use color_eyre::eyre::{bail, eyre, Result, WrapErr};
-use owo_colors::{OwoColorize, Stream};
 
-use crate::platform::Platform;
+use crate::prelude::*;
 use crate::tools::cargo::{self, Cargo};
-use crate::tools::qemu;
 
-/// Runs a kernel-like crate.
-pub fn run(
-    crate_name: &str,
-    binary: &Utf8Path,
-    cargo: &Cargo,
-    platform: Platform,
-) -> Result<ExitStatus> {
-    let boot_image = match platform {
-        Platform::X86_64 => build_x86_64_boot_image(crate_name, binary, cargo)?,
-    };
-
-    let spec = qemu::Spec {
-        binary,
-        boot_image: &boot_image,
-        platform,
-        memory: "1G",
-        cpus: 1,
-    };
-
-    qemu::run(spec)
-}
-
-fn build_x86_64_boot_image(
-    crate_name: &str,
-    binary: &Utf8Path,
-    cargo: &Cargo,
-) -> Result<Utf8PathBuf> {
+pub fn build_boot_image(crate_name: &str, binary: &Utf8Path, cargo: &Cargo) -> Result<Utf8PathBuf> {
     let crate_manifest = cargo::manifest_path(crate_name);
-    let bootloader_manifest = locate_x86_64_bootloader_manifest(&crate_manifest)?;
+    let bootloader_manifest = locate_bootloader_manifest(&crate_manifest)?;
 
     let target_dir = binary.parent().unwrap().parent().unwrap(); // To get to the target directory, go up two levels (kernel binary is in
                                                                  // `target/$mode/$target/`)
@@ -71,14 +38,14 @@ fn build_x86_64_boot_image(
 
     log::info!(
         "Built boot image to {}",
-        disk_image.if_supports_color(Stream::Stdout, |k| k.green())
+        disk_image.if_supports_color(Stream::Stdout, |k| k.magenta())
     );
 
     Ok(disk_image)
 }
 
-/// For x86_64, locate the Cargo.toml file for the bootloader
-fn locate_x86_64_bootloader_manifest(crate_manifest: &Utf8Path) -> Result<Utf8PathBuf> {
+/// Locate the Cargo.toml file for the bootloader
+fn locate_bootloader_manifest(crate_manifest: &Utf8Path) -> Result<Utf8PathBuf> {
     // Matches the behavior of https://github.com/phil-opp/bootloader-locator, but using the specific kernel crate's metadata
 
     let metadata = MetadataCommand::new()

@@ -1,11 +1,14 @@
 //! Entry point for x86_64 systems
 
 use core::fmt;
+use core::mem::MaybeUninit;
 
 use bootloader::boot_info::{MemoryRegion, MemoryRegionKind};
 use bootloader::{entry_point, BootInfo};
 
+use crate::arch::mm::MemoryAccess;
 use crate::mm::map::Region;
+use crate::prelude::*;
 use crate::BootArgs;
 
 use super::display::FrameBufferTarget;
@@ -51,13 +54,27 @@ fn start(info: &'static mut BootInfo) -> ! {
         log_region(last);
     }
 
-    // log::info!("Allocator regions:");
-    // let mut ab = crate::mm::physical::Builder;
-    // ab.parse_memory_map(info.memory_regions.iter().map(Region::from))
-    //     .unwrap();
+    log::info!("Allocator regions:");
+    let mut access = unsafe {
+        MemoryAccess::new(
+            info.physical_memory_offset.into_option().unwrap() as usize as *mut MaybeUninit<u8>
+        )
+    };
+
+    // TODO: add kernel?
+    let reserved = &[];
+
+    let mut ab = crate::mm::root_allocator::Builder;
+    ab.parse_memory_map(
+        &mut access,
+        info.memory_regions.iter().map(Region::from),
+        reserved,
+    )
+    .unwrap();
 
     let args = BootArgs {
         display: info.framebuffer.as_mut().map(FrameBufferTarget::new),
+        memory_access: access,
     };
 
     crate::kmain(args);

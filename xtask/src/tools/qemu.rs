@@ -4,22 +4,29 @@ use std::fmt::Write as _;
 use std::fs;
 use std::io::{self, BufRead, BufReader, Write};
 use std::process::{Command, ExitStatus, Stdio};
+use std::rc::Rc;
 
 use addr2line::fallible_iterator::FallibleIterator;
 use addr2line::{gimli, object, Context};
-use camino::Utf8Path;
-use color_eyre::eyre::WrapErr;
-use color_eyre::Result;
 use lazy_static::lazy_static;
 use regex::{Captures, Regex};
 
-use crate::platform::Platform;
+use crate::prelude::*;
+
+use super::cargo::Cargo;
+
+mod x86_64;
 
 pub struct Spec<'a> {
+    /// Name of the crate that `binary` was built from
+    pub crate_name: &'a str,
+    /// Binary to run. Must have been built for `platform`
     pub binary: &'a Utf8Path,
-    pub boot_image: &'a Utf8Path,
+    /// Platform to run QEMU for
     pub platform: Platform,
+    /// Memory specification for the VM
     pub memory: &'a str,
+    /// Number of CPUs for the VM
     pub cpus: usize,
 }
 
@@ -30,10 +37,12 @@ fn command_for(platform: Platform) -> Command {
         Platform::X86_64 => {
             let mut command = Command::new("qemu-system-x86_64");
             command.args([
+                // UEFI firmware
                 "-drive",
                 "if=pflash,format=raw,readonly=on,file=/usr/share/ovmf/x64/OVMF_CODE.fd",
                 "-drive",
                 "if=pflash,format=raw,readonly=on,file=/usr/share/ovmf/x64/OVMF_VARS.fd",
+                // CPU type
                 "-machine",
                 "q35,accel=kvm",
             ]);
@@ -42,23 +51,45 @@ fn command_for(platform: Platform) -> Command {
     }
 }
 
-pub fn run(spec: Spec) -> Result<ExitStatus> {
-    let mut cmd = command_for(spec.platform);
-    cmd.arg("-drive")
-        .arg(format!("format=raw,file={}", spec.boot_image));
-    // TODO: fifo for serial console so monitor can use stdio
-    cmd.args(["--no-reboot", "-m", spec.memory, "-serial", "stdio"]);
-    cmd.arg("-smp").arg(format!("cpus={}", spec.cpus));
-    cmd.stdout(Stdio::piped());
-    log::debug!("QEMU command: {cmd:?}");
+pub struct Qemu {
+    /// Cargo wrapper, used for platforms that require additional bootloader
+    /// compilation
+    cargo: Rc<Cargo>,
+}
 
-    let mut proc = cmd.spawn().wrap_err("could not start qemu")?;
+impl Qemu {
+    pub fn new(cargo: Rc<Cargo>) -> Qemu {
+        Qemu { cargo }
+    }
 
-    let filter = SymbolizeFilter::new(spec.binary)?;
-    let stdout = io::stdout().lock();
-    filter.drain(BufReader::new(proc.stdout.take().unwrap()), stdout)?;
+    pub fn run(&self, spec: Spec) -> Result<ExitStatus> {
+        let mut cmd = command_for(spec.platform);
+        // TODO: fifo for serial console so monitor can use stdio
+        cmd.args(["--no-reboot", "-serial", "stdio"]);
+        cmd.args(["-m", spec.memory]);
+        cmd.arg("-smp").arg(format!("cpus={}", spec.cpus));
+        self.add_binary(&mut cmd, &spec)?;
 
-    proc.wait().wrap_err("could not run qemu")
+        cmd.stdout(Stdio::piped());
+        log::debug!("QEMU command: {cmd:?}");
+
+        let mut proc = cmd.spawn().wrap_err("could not start qemu")?;
+
+        let filter = SymbolizeFilter::new(spec.binary)?;
+        let stdout = io::stdout().lock();
+        filter.drain(BufReader::new(proc.stdout.take().unwrap()), stdout)?;
+
+        proc.wait().wrap_err("could not run qemu")
+    }
+
+    /// Configure QEMU to boot `spec.binary` via the platform-appropriate
+    /// bootloader
+    fn add_binary(&self, cmd: &mut Command, spec: &Spec) -> Result<()> {
+        let boot_image = x86_64::build_boot_image(spec.crate_name, spec.binary, &self.cargo)?;
+        cmd.arg("-drive")
+            .arg(format!("format=raw,file={boot_image}"));
+        Ok(())
+    }
 }
 
 /// Filters the QEMU output to symbolize backtraces
@@ -90,7 +121,7 @@ impl SymbolizeFilter {
 
         while let Some((i, frame)) = frames.next()? {
             if i != 0 {
-                write!(buf, "  (inlined by) ")?;
+                write!(buf, " (inlined by) ")?;
             }
 
             match frame.function {

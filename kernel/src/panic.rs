@@ -1,3 +1,4 @@
+use core::alloc::Layout;
 use core::panic::PanicInfo;
 
 use ansi_rgb::{red, Foreground};
@@ -12,7 +13,7 @@ fn panic(info: &PanicInfo) -> ! {
     let bt = Backtrace::<16>::capture();
     for frame in bt.frames {
         // The wrapper tool knows to look for this format and symbolize it
-        log::error!("  at €€€{:x}€€€", frame);
+        log::error!("  called by €€€{:x}€€€", frame);
     }
     if bt.frames_omitted {
         log::error!("  ... <frames omitted>")
@@ -21,4 +22,9 @@ fn panic(info: &PanicInfo) -> ! {
     loop {
         interrupts::halt_until_interrupted()
     }
+}
+
+#[alloc_error_handler]
+fn alloc_error_handler(layout: Layout) -> ! {
+    panic!("memory allocation of {} bytes failed", layout.size());
 }

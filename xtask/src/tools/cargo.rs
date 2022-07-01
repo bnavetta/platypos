@@ -4,12 +4,9 @@ use std::collections::HashMap;
 use std::io::BufReader;
 use std::process::{Command, Stdio};
 
-use camino::{Utf8Path, Utf8PathBuf};
 use cargo_metadata::Message;
-use color_eyre::eyre::{bail, eyre, Context};
-use color_eyre::Result;
 
-use crate::platform::Platform;
+use crate::prelude::*;
 
 pub struct Cargo {
     cargo: Utf8PathBuf,
@@ -60,7 +57,13 @@ impl Cargo {
     }
 
     pub fn build(&self, spec: &BuildSpec) -> Result<BuildOutput> {
-        log::info!("Building {} for {}", spec.crate_name, spec.platform);
+        log::info!(
+            "Building {} for {}",
+            spec.crate_name
+                .if_supports_color(Stream::Stdout, |c| c.green()),
+            spec.platform
+                .if_supports_color(Stream::Stdout, |c| c.blue())
+        );
         let flags = self.flags_for(spec.platform);
 
         let mut cmd = Command::new(&self.cargo);

@@ -1,55 +1,11 @@
 use core::fmt;
-use core::ops::Sub;
 
+mod address;
+mod heap_allocator;
 pub mod map;
-pub mod physical;
+pub mod root_allocator;
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[repr(transparent)]
-pub struct PhysicalAddress(usize);
-
-impl PhysicalAddress {
-    pub const fn new(address: usize) -> Self {
-        Self(address)
-    }
-
-    pub const fn as_usize(self) -> usize {
-        self.0
-    }
-}
-
-impl fmt::Display for PhysicalAddress {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        // TODO: should the padding depend on the architecture?
-        write!(f, "{:#012x}", self.0)
-    }
-}
-
-impl fmt::Debug for PhysicalAddress {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "PhysicalAddress({})", self)
-    }
-}
-
-impl From<usize> for PhysicalAddress {
-    fn from(address: usize) -> Self {
-        Self::new(address)
-    }
-}
-
-impl From<PhysicalAddress> for usize {
-    fn from(addr: PhysicalAddress) -> Self {
-        addr.as_usize()
-    }
-}
-
-impl Sub<PhysicalAddress> for PhysicalAddress {
-    type Output = usize;
-
-    fn sub(self, rhs: PhysicalAddress) -> Self::Output {
-        self.0 - rhs.0
-    }
-}
+pub use self::address::*;
 
 /// Wrapper for human-readable byte sizes
 #[repr(transparent)]
