@@ -39,7 +39,7 @@ enum Status {
     /// Memory used for internal bookkeeping
     Tracking,
     /// This is an unused but available run
-    Unknown,
+    Unused,
 }
 
 /// A run of usable memory
@@ -184,6 +184,16 @@ impl Builder {
                     allocator.display_state()
                 );
 
+                let small_allocation = allocator.allocate(4).unwrap();
+                let big_allocation = allocator.allocate(1000).unwrap();
+                log::info!(
+                    "Small allocation: {small_allocation}\nBig allocation: {big_allocation}"
+                );
+                log::info!(
+                    "Allocator state after allocations:\n{}",
+                    allocator.display_state()
+                );
+
                 /*
 
 
@@ -294,9 +304,19 @@ impl Builder {
 }
 
 struct AllocatorInner {
+    // Often, an allocator method has a cursor into the runs list, and want to call some other
+    // method with that cursor. Unfortunately, the cursor has a mutable reference to the runst
+    // list, so we can't call other mutable methods - the borrow checker doesn't know that those
+    // methods won't _also_ use runs. Something like view types (https://smallcultfollowing.com/babysteps/blog/2021/11/05/view-types/)
+    // would solve the problem. For now, put all the non-runs fields in a separate struct, and use
+    // associated functions instead of methods.
     runs: LinkedList<RunAdapter>,
-    free: LinkedList<FreeRunAdapter>,
+    tracking: AllocatorTracking,
+}
 
+struct AllocatorTracking {
+    /// List of runs identifying free RAM
+    free: LinkedList<FreeRunAdapter>,
     /// List of allocated-but-unused [`Run`] structures
     unused_runs: LinkedList<RunAdapter>,
 }
@@ -309,17 +329,93 @@ impl AllocatorInner {
     fn new() -> Self {
         AllocatorInner {
             runs: LinkedList::new(RunAdapter::new()),
-            free: LinkedList::new(FreeRunAdapter::new()),
-            unused_runs: LinkedList::new(RunAdapter::new()),
+            tracking: AllocatorTracking {
+                free: LinkedList::new(FreeRunAdapter::new()),
+                unused_runs: LinkedList::new(RunAdapter::new()),
+            },
         }
     }
 
+    fn allocate(&mut self, count: usize) -> Result<PageFrameRange, Error> {
+        // TODO: ensure runs available
+
+        // First-fit algorithm, could add other conditions (e.g. must allocate below a
+        // certain address for hardware reasons)
+        // let allocatable_run = self
+        //     .tracking
+        //     .free
+        //     .iter()
+        //     .find(|r| r.size() >= count)
+        //     .ok_or_else(|| Error::new(ErrorKind::InsufficientMemory))?;
+        let mut free_cursor = {
+            let mut free_cursor = self.tracking.free.front_mut();
+            loop {
+                match free_cursor.get() {
+                    Some(free_run) => {
+                        if free_run.size() >= count {
+                            break free_cursor;
+                        } else {
+                            free_cursor.move_next();
+                        }
+                    }
+                    None => return Err(Error::new(ErrorKind::InsufficientMemory)),
+                }
+            }
+        };
+        let allocatable_run = free_cursor.get().unwrap();
+
+        if allocatable_run.size() == count {
+            // If we're using the whole run, just mark it directly instead of trying to
+            // split it up and do a no-op coalesce
+            let range = {
+                let mut run_state = allocatable_run.inner.borrow_mut();
+                run_state.status = Status::Allocated;
+                run_state.range
+            };
+            free_cursor.remove();
+            Ok(range)
+        } else {
+            // Split the allocation off the start of the run, so that we can reuse it as the
+            // cursor for adding the allocated run
+            let range = {
+                let mut allocatable_inner = allocatable_run.inner.borrow_mut();
+                let range = PageFrameRange::from_start_size(allocatable_inner.range.start(), count);
+                allocatable_inner.range.shrink_left(count);
+                range
+            };
+
+            let allocated_run = self
+                .tracking
+                .unused_runs
+                .pop_front()
+                .expect("TODO: add new tracking runs as needed");
+            allocated_run.initialize(range, Status::Allocated);
+
+            // Safety: `allocatable_run` came from the free list, which means it's an in-use
+            // run and therefore part of `runs`, not `unused_runs`.
+            let cursor = unsafe { self.runs.cursor_mut_from_ptr(allocatable_run) };
+            drop(allocatable_run);
+            drop(free_cursor);
+
+            Self::add_run(allocated_run, cursor, &mut self.tracking);
+
+            Ok(range)
+        }
+    }
+
+    /// Return an object that implements [`Display`] to render the allocator's
+    /// internal state.
     fn display_state(&self) -> impl fmt::Display + '_ {
         DisplayAllocatorState { allocator: self }
     }
 
-    fn add_allocatable_range(&mut self, range: PageFrameRange) {
-        let run = match self.unused_runs.pop_front() {
+    /// Adds `range` to the allocator as usable memory
+    ///
+    /// # Safety
+    /// The caller must ensure that `range` is usable RAM and not already in use
+    /// for another purpose.
+    unsafe fn add_allocatable_range(&mut self, range: PageFrameRange) {
+        let run = match self.tracking.unused_runs.pop_front() {
             Some(run) => run,
             None => todo!("allocate a new set of tracking pages"), /* will need to pass in a
                                                                     * MemoryAccess for this */
@@ -330,62 +426,60 @@ impl AllocatorInner {
         state.status = Status::Free;
         drop(state);
 
-        self.add_run(run);
+        let cursor = Self::find_next(&mut self.runs, &run);
+        Self::add_run(run, cursor, &mut self.tracking);
     }
 
-    /// Inserts a newly-created [`Run`] into the allocation lists
-    fn add_run(&mut self, run: UnsafeRef<Run>) {
+    /// Search through the ordered list `list` for the next run after `run`
+    fn find_next<'a>(list: &'a mut LinkedList<RunAdapter>, run: &Run) -> CursorMut<'a, RunAdapter> {
+        let mut cursor = list.front_mut();
+        while matches!(cursor.get(), Some(r) if r.start() < run.start()) {
+            cursor.move_next();
+        }
+        cursor
+    }
+
+    /// Inserts a newly-created [`Run`] into the allocation lists. `cursor` must
+    /// point to the next run in the list after `run`. Use `find_next` if that
+    /// location is not already known.
+    fn add_run(
+        run: UnsafeRef<Run>,
+        mut cursor: CursorMut<'_, RunAdapter>,
+        tracking: &mut AllocatorTracking,
+    ) {
         assert!(!run.link.is_linked());
         assert!(!run.free_link.is_linked());
-        let run_state = run.inner.borrow();
 
-        if run_state.status == Status::Free {
-            self.free.push_back(run.clone());
+        if run.status() == Status::Free {
+            tracking.free.push_back(run.clone());
         }
-
-        // Find the sport where `run` should be inserted
-        let mut cur = self.runs.front_mut();
-        while matches!(cur.get(), Some(r) if r.inner.borrow().range.start() < run_state.range.start())
-        {
-            cur.move_next();
-        }
-
-        // `cur` points to the first run _after_ `run`
 
         // Runs cannot overlap
-        if let Some(next) = cur.get() {
-            assert!(
-                next.start() >= run_state.range.end(),
-                "{} and {} overlap",
-                next,
-                run_state
-            );
+        if let Some(next) = cursor.get() {
+            assert!(next.start() >= run.end(), "{} and {} overlap", next, &*run);
+        } else {
+            // If the cursor is "null", then the current run must be going at
+            // the end of the list
+            let last_cursor = cursor.peek_prev();
+            if let Some(last) = last_cursor.get() {
+                assert!(last.end() <= run.start(), "{} and {} overlap", last, &*run);
+            }
         }
-        if let Some(prev) = cur.peek_prev().get() {
-            assert!(
-                prev.end() <= run_state.range.start(),
-                "{} and {} overlap",
-                prev,
-                run_state
-            );
+        if let Some(prev) = cursor.peek_prev().get() {
+            assert!(prev.end() <= run.start(), "{} and {} overlap", prev, &*run);
         }
 
-        drop(run_state);
-        cur.insert_before(run);
+        cursor.insert_before(run);
         // Coalesce the just-inserted node
-        cur.move_prev();
-        Self::coalesce(cur, &mut self.free, &mut self.unused_runs);
+        cursor.move_prev();
+        // TODO: should probably only coalesce tracking+free runs? Otherwise freeing
+        // allocations could get hairy? Although... coalescing allocated runs saves
+        // bookkeeping memory
+        Self::coalesce(cursor, tracking);
     }
 
     /// Coalesce the run pointed to by `cursor` with its neighbors, if possible.
-    ///
-    /// This is an associated function taking specific fields to avoid double
-    /// mutable borrows of self.
-    fn coalesce(
-        mut cursor: CursorMut<'_, RunAdapter>,
-        free_list: &mut LinkedList<FreeRunAdapter>,
-        unused_runs: &mut LinkedList<RunAdapter>,
-    ) {
+    fn coalesce(mut cursor: CursorMut<'_, RunAdapter>, tracking: &mut AllocatorTracking) {
         if let Some(current) = cursor.get() {
             let can_coalesce_next = match cursor.peek_next().get() {
                 Some(next) => next.status() == current.status() && next.start() == current.end(),
@@ -400,7 +494,7 @@ impl AllocatorInner {
                     // Safety: if current is free, it must be in the free list (and we
                     // double-check above)
                     unsafe {
-                        free_list.cursor_mut_from_ptr(current).remove();
+                        tracking.free.cursor_mut_from_ptr(current).remove();
                     }
                 }
 
@@ -409,7 +503,7 @@ impl AllocatorInner {
                 // Cursor now points to next
                 cursor.get().unwrap().extend_left(size);
 
-                unused_runs.push_back(ptr);
+                tracking.unused_runs.push_back(ptr);
             }
         }
 
@@ -428,7 +522,7 @@ impl AllocatorInner {
                     // Safety: if current is free, it must be in the free list (and we
                     // double-check above)
                     unsafe {
-                        free_list.cursor_mut_from_ptr(current).remove();
+                        tracking.free.cursor_mut_from_ptr(current).remove();
                     }
                 }
 
@@ -439,7 +533,7 @@ impl AllocatorInner {
                 cursor.move_prev();
                 cursor.get().unwrap().extend_right(size);
 
-                unused_runs.push_back(ptr);
+                tracking.unused_runs.push_back(ptr);
             }
         }
     }
@@ -462,7 +556,6 @@ impl AllocatorInner {
         // put padding between array elements, but if that changes, then the calculation
         // above will be wrong. So, validate that against the array size Rust thinks we
         // should need.
-        // TODO: also verify alignment
         assert!(
             Layout::array::<Run>(run_count)
                 .map_err(|_| Error::new(ErrorKind::AddressOutOfBounds))?
@@ -471,10 +564,6 @@ impl AllocatorInner {
         );
 
         let mut ptr = access.map_permanent(range)?.cast::<MaybeUninit<Run>>();
-        // let mut runs = slice::from_raw_parts_mut(ptr, run_count);
-        // for run in &mut runs[..] {
-
-        // }
 
         for _ in 0..run_count {
             (*ptr).write(Run {
@@ -482,7 +571,7 @@ impl AllocatorInner {
                 link: LinkedListLink::new(),
                 inner: RefCell::new(RunState {
                     range: PageFrameRange::empty(),
-                    status: Status::Unknown,
+                    status: Status::Unused,
                 }),
             });
 
@@ -490,16 +579,14 @@ impl AllocatorInner {
             // - this memory is permanantly allocated and marked as tracking
             // - it will only ever be accessed via the list it's inserted into
             let entry = UnsafeRef::from_raw((*ptr).as_ptr());
-            self.unused_runs.push_back(entry);
+            self.tracking.unused_runs.push_back(entry);
             ptr = ptr.add(1);
         }
 
-        let tracking_run = self.unused_runs.pop_front().unwrap(); // We just added a bunch of unused runs
-        let mut state = tracking_run.inner.borrow_mut();
-        state.range = range;
-        state.status = Status::Tracking;
-        drop(state);
-        self.add_run(tracking_run);
+        let tracking_run = self.tracking.unused_runs.pop_front().unwrap(); // We just added a bunch of unused runs
+        tracking_run.initialize(range, Status::Tracking);
+        let cursor = Self::find_next(&mut self.runs, &tracking_run);
+        Self::add_run(tracking_run, cursor, &mut self.tracking);
 
         Ok(())
     }
@@ -528,6 +615,17 @@ impl Run {
 
     fn extend_right(&self, amount: usize) {
         self.inner.borrow_mut().range.extend_right(amount);
+    }
+
+    fn initialize(&self, range: PageFrameRange, status: Status) {
+        let mut inner = self.inner.borrow_mut();
+        debug_assert!(
+            inner.status == Status::Unused,
+            "Tried to reinitialize in-use run {}",
+            inner
+        );
+        inner.status = status;
+        inner.range = range;
     }
 }
 
@@ -559,7 +657,8 @@ impl<'a> fmt::Display for DisplayAllocatorState<'a> {
             writeln!(f, "* {}", run)?;
             if run.status() == Status::Free {
                 // Safety: free nodes are always in the free list
-                let cursor = unsafe { self.allocator.free.cursor_from_ptr(run) };
+                debug_assert!(run.free_link.is_linked());
+                let cursor = unsafe { self.allocator.tracking.free.cursor_from_ptr(run) };
                 write!(f, "    previous free: ")?;
                 match cursor.peek_prev().get() {
                     Some(r) => writeln!(f, "{} - {}", r.start(), r.end())?,
@@ -575,7 +674,7 @@ impl<'a> fmt::Display for DisplayAllocatorState<'a> {
         writeln!(
             f,
             "{} unused runs",
-            self.allocator.unused_runs.iter().count()
+            self.allocator.tracking.unused_runs.iter().count()
         )?;
 
         Ok(())
