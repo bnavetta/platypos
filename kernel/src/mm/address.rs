@@ -28,8 +28,12 @@ pub trait Address:
     + Ord
     + Add<usize, Output = Self>
     + Sub<Self, Output = usize>
+    + AddAssign<usize>
+    + SubAssign<usize>
 {
     const LABEL: &'static str;
+
+    const ZERO: Self;
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
@@ -45,7 +49,8 @@ pub type VirtualAddressRange = AddressRange<VirtualAddress>;
 pub type PageFrameRange = AddressRange<PageFrame>;
 pub type PageRange = AddressRange<Page>;
 
-macro_rules! address_like_ops {
+/// Behavior for address types (PhysicalAddress and VirtualAddress)
+macro_rules! address_ops {
     ($name:ident) => {
         impl fmt::Display for $name {
             fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -53,14 +58,12 @@ macro_rules! address_like_ops {
                 write!(f, "{:#012x}", self.as_usize())
             }
         }
+    };
+}
 
-        impl fmt::Debug for $name {
-            fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                let name = stringify!($name);
-                write!(f, "{}({})", name, self)
-            }
-        }
-
+/// Behavior for address-like types, including Page and PageFrame
+macro_rules! address_like_ops {
+    ($name:ident) => {
         impl From<$name> for usize {
             fn from(a: $name) -> Self {
                 a.as_usize()
@@ -70,6 +73,13 @@ macro_rules! address_like_ops {
         impl From<usize> for $name {
             fn from(v: usize) -> Self {
                 Self::new(v)
+            }
+        }
+
+        impl fmt::Debug for $name {
+            fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                let name = stringify!($name);
+                write!(f, "{}({})", name, self)
             }
         }
 
@@ -114,17 +124,14 @@ macro_rules! address_like_ops {
 
         impl Address for $name {
             const LABEL: &'static str = stringify!($name);
+
+            const ZERO: Self = Self::new(0);
         }
     };
 }
 
-address_like_ops!(PhysicalAddress);
-address_like_ops!(VirtualAddress);
-address_like_ops!(PageFrame);
-address_like_ops!(Page);
-
-macro_rules! page_like_ops {
-    ($page:ident, $addr:ident) => {
+macro_rules! page_ops {
+    ($page:ident, $addr:ident, $desc:literal) => {
         impl $page {
             // TODO: does this translation between pages and addresses hold for all
             // platforms? TODO: is the base size for virtual and physical pages always
@@ -153,6 +160,13 @@ macro_rules! page_like_ops {
             }
         }
 
+        impl fmt::Display for $page {
+            fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                // TODO: should the padding depend on the architecture?
+                write!(f, "{} {:#012x}", $desc, self.as_usize())
+            }
+        }
+
         impl AddressRange<$page> {
             /// The size of this range, in bytes
             pub fn size_bytes(&self) -> usize {
@@ -174,8 +188,15 @@ macro_rules! page_like_ops {
     };
 }
 
-page_like_ops!(PageFrame, PhysicalAddress);
-page_like_ops!(Page, VirtualAddress);
+address_like_ops!(PhysicalAddress);
+address_like_ops!(VirtualAddress);
+address_ops!(PhysicalAddress);
+address_ops!(VirtualAddress);
+
+address_like_ops!(PageFrame);
+address_like_ops!(Page);
+page_ops!(PageFrame, PhysicalAddress, "PF");
+page_ops!(Page, VirtualAddress, "Page");
 
 impl PhysicalAddress {
     pub const fn new(address: usize) -> Self {
@@ -225,10 +246,17 @@ impl<A: Address> AddressRange<A> {
     }
 
     pub fn new(start: A, end: A) -> Self {
-        assert!(end > start);
+        assert!(end >= start);
         Self {
             start,
             size: end - start,
+        }
+    }
+
+    pub const fn empty() -> Self {
+        Self {
+            start: A::ZERO,
+            size: 0,
         }
     }
 
@@ -249,6 +277,32 @@ impl<A: Address> AddressRange<A> {
 
     pub fn set_size(&mut self, size: usize) {
         self.size = size;
+    }
+
+    /// Shrink this range by removing `amount` units from the left (and thus
+    /// adding `amount` units to the start address)
+    pub fn shrink_left(&mut self, amount: usize) {
+        self.size -= amount;
+        self.start += amount;
+    }
+
+    /// Shrink this range by removing `amount` units from the right (reducing
+    /// the size but not changing the start address)
+    pub fn shrink_right(&mut self, amount: usize) {
+        self.size -= amount;
+    }
+
+    /// Extend this range by adding `amount` units to the left (and thus
+    /// subtracting `amount` units from the start address)
+    pub fn extend_left(&mut self, amount: usize) {
+        self.size += amount;
+        self.start -= amount;
+    }
+
+    /// Extend this range by adding `amount` units to the right (increasing the
+    /// size but not changing the start address)
+    pub fn extend_right(&mut self, amount: usize) {
+        self.size += amount;
     }
 
     /// Tests if this range completely contains `other`

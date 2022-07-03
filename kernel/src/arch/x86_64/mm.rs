@@ -39,7 +39,8 @@ impl MemoryAccess {
 
     /// Temporarily maps `range` into the kernel's address space. The given
     /// function is provided a reference to the mapped region as a mutable
-    /// slice.
+    /// slice. It is also given the [`MemoryAccess`], since `with_memory`
+    /// mutably borrows it.
     ///
     /// # Safety
     /// The caller is responsible for not aliasing memory by mapping the same
@@ -50,12 +51,12 @@ impl MemoryAccess {
     /// behavior.
     pub unsafe fn with_memory<F, T>(&mut self, range: PageFrameRange, f: F) -> Result<T, Error>
     where
-        F: FnOnce(&mut [MaybeUninit<u8>]) -> T,
+        F: FnOnce(&mut Self, &mut [MaybeUninit<u8>]) -> T,
     {
         let base = self.map_permanent(range)?;
         let length = range.size() * PAGE_SIZE;
         let slice = slice::from_raw_parts_mut(base, length);
-        Ok(f(slice))
+        Ok(f(self, slice))
     }
 
     /// Permanently map `range`

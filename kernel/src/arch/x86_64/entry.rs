@@ -8,7 +8,6 @@ use bootloader::{entry_point, BootInfo};
 
 use crate::arch::mm::MemoryAccess;
 use crate::mm::map::Region;
-use crate::prelude::*;
 use crate::BootArgs;
 
 use super::display::FrameBufferTarget;
@@ -54,7 +53,6 @@ fn start(info: &'static mut BootInfo) -> ! {
         log_region(last);
     }
 
-    log::info!("Allocator regions:");
     let mut access = unsafe {
         MemoryAccess::new(
             info.physical_memory_offset.into_option().unwrap() as usize as *mut MaybeUninit<u8>
