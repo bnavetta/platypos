@@ -33,7 +33,19 @@ struct ToolOpts {
 #[derive(Debug, Subcommand)]
 enum Command {
     Build,
-    Run,
+    Run(QemuOpts),
+    Test(QemuOpts),
+}
+
+#[derive(Debug, Args)]
+struct QemuOpts {
+    /// Number of CPUs for the QEMU VM
+    #[clap(long, default_value = "1")]
+    cpus: u8,
+
+    /// Memory for the QEMU VM
+    #[clap(long, default_value = "1G")]
+    memory: String,
 }
 
 struct Context {
@@ -52,7 +64,8 @@ impl XTask {
 
         match self.command {
             Command::Build => do_build(&context),
-            Command::Run => do_run(&context),
+            Command::Run(opts) => do_run(&context, opts),
+            Command::Test(opts) => do_test(&context, opts),
         }
     }
 }
@@ -72,6 +85,7 @@ impl Context {
         let output = self.cargo.build(&cargo::BuildSpec {
             crate_name,
             platform: self.platform,
+            test: false,
         })?;
         let binary = output.executable(crate_name)?;
         log::info!(
@@ -90,6 +104,7 @@ impl Context {
             platform: self.platform,
             memory,
             cpus,
+            debug_exit: false,
         })
     }
 }
@@ -99,12 +114,43 @@ fn do_build(context: &Context) -> Result<()> {
     Ok(())
 }
 
-fn do_run(context: &Context) -> Result<()> {
-    let status = context.run(KERNEL_CRATE, "1G", 1)?;
+fn do_run(context: &Context, opts: QemuOpts) -> Result<()> {
+    let status = context.run(KERNEL_CRATE, &opts.memory, opts.cpus.into())?;
 
     if !status.success() {
         Err(eyre!("QEMU failed: {status}"))
     } else {
         Ok(())
     }
+}
+
+fn do_test(context: &Context, opts: QemuOpts) -> Result<()> {
+    let output = context.cargo.build(&cargo::BuildSpec {
+        crate_name: KERNEL_CRATE,
+        platform: context.platform,
+        test: true,
+    })?;
+    let test_kernel = output.executable(KERNEL_CRATE)?;
+
+    let status = context.qemu.run(qemu::Spec {
+        crate_name: KERNEL_CRATE,
+        binary: &test_kernel,
+        platform: context.platform,
+        memory: &opts.memory,
+        cpus: opts.cpus.into(),
+        debug_exit: true,
+    })?;
+
+    match status.code() {
+        Some(code) => {
+            // Match the success code set in ktest/src/lib.rs - QEMU's debug exit device
+            // can't exit with 0
+            if code != 3 {
+                bail!("Tests failed")
+            }
+        }
+        None => bail!("QEMU killed by signal: {status}"),
+    }
+
+    Ok(())
 }

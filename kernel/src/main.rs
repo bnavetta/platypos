@@ -37,13 +37,9 @@ pub struct BootArgs {
 
 /// The shared kernel entry point.
 pub fn kmain(args: BootArgs) -> ! {
-    log::info!("Hello, world!");
-
     let display = args.display.unwrap();
     let mut console = Console::new(display);
     console.clear().unwrap();
-
-    console.write("Hello!\n").unwrap();
 
     let _ = writeln!(
         &mut console,
@@ -51,18 +47,7 @@ pub fn kmain(args: BootArgs) -> ! {
         env!("CARGO_PKG_VERSION")
     );
 
-    // for _ in 0..1000 {
-    //     console.write("text ").unwrap();
-    // }
-
-    do_stuff();
-
     loop {
         interrupts::halt_until_interrupted();
     }
-}
-
-#[inline(always)]
-fn do_stuff() {
-    panic!("is this stuff?")
 }

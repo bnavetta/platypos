@@ -17,6 +17,8 @@ pub struct BuildSpec<'a> {
     pub crate_name: &'a str,
     /// Platform to build for
     pub platform: Platform,
+    /// Build as a test binary
+    pub test: bool,
 }
 
 pub struct BuildOutput {
@@ -77,6 +79,10 @@ impl Cargo {
         ])
         .args(flags.build_flags)
         .stdout(Stdio::piped());
+
+        if spec.test {
+            cmd.arg("--tests");
+        }
 
         if !flags.rust_flags.is_empty() {
             let f = flags.rust_flags.join(" ");

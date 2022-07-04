@@ -28,6 +28,8 @@ pub struct Spec<'a> {
     pub memory: &'a str,
     /// Number of CPUs for the VM
     pub cpus: usize,
+    /// Include a debug exit device (per https://docs.rs/qemu-exit/latest/qemu_exit/)
+    pub debug_exit: bool,
 }
 
 /// Creates a new QEMU command for `platform`, including any
@@ -69,6 +71,14 @@ impl Qemu {
         cmd.args(["-m", spec.memory]);
         cmd.arg("-smp").arg(format!("cpus={}", spec.cpus));
         self.add_binary(&mut cmd, &spec)?;
+
+        if spec.debug_exit {
+            match spec.platform {
+                Platform::X86_64 => {
+                    cmd.args(["-device", "isa-debug-exit,iobase=0xf4,iosize=0x04"]);
+                }
+            }
+        }
 
         cmd.stdout(Stdio::piped());
         log::debug!("QEMU command: {cmd:?}");

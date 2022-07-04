@@ -1,0 +1,13 @@
+[package]
+name = "ktest"
+version = "0.1.0"
+edition = "2021"
+description = "Kernel unit test harness"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+ansi_rgb = "0.2"
+linkme = "0.3"
+qemu-exit = "3.0"
+spin = { version = "0.9.2", features = ["mutex"] }
