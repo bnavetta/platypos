@@ -4,7 +4,8 @@ use proc_macro_error::abort;
 use quote::quote;
 use syn::parse_macro_input;
 
-use crate::{construct, function_like::log};
+use crate::construct;
+use crate::function_like::log;
 
 use self::args::Args;
 
@@ -18,7 +19,7 @@ pub(crate) fn expand(args: TokenStream) -> TokenStream {
     } = parse_macro_input!(args as Args);
 
     let format_string = log_args.format_string.value();
-    let fragments = match defmt_parser::parse(&format_string, ParserMode::Strict) {
+    let fragments = match defmt_parser::parse(&format_string, ParserMode::ForwardsCompatible) {
         Ok(args) => args,
         Err(e) => abort!(log_args.format_string, "{}", e),
     };

@@ -5,23 +5,34 @@ use mini_backtrace::Backtrace;
 
 use crate::arch::interrupts;
 
+const BACKTRACE_DEPTH: usize = 16;
+
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
-    // defmt::println!("{} {}", "KERNEL PANIC:".fg(red()), info);
-    defmt::println!("KERNEL PANIC: {}", defmt::Display2Format(info));
+    let bt = Backtrace::<BACKTRACE_DEPTH>::capture();
 
-    let bt = Backtrace::<16>::capture();
-    for frame in bt.frames {
-        // The wrapper tool knows to look for this format and symbolize it
-        // TODO: custom defmt display hint instead
-        defmt::println!("  called by €€€{:x}€€€", frame);
-    }
-    if bt.frames_omitted {
-        defmt::println!("  ... <frames omitted>")
-    }
+    defmt::println!(
+        "KERNEL PANIC: {}{}",
+        defmt::Display2Format(info),
+        BacktraceFormat(bt)
+    );
 
     loop {
         interrupts::halt_until_interrupted()
+    }
+}
+
+struct BacktraceFormat(Backtrace<BACKTRACE_DEPTH>);
+
+impl defmt::Format for BacktraceFormat {
+    fn format(&self, fmt: defmt::Formatter) {
+        for frame in self.0.frames.iter() {
+            defmt::write!(fmt, "  called by {=usize:address}\n", frame);
+        }
+
+        if self.0.frames_omitted {
+            defmt::write!(fmt, "  ... <frames omitted>\n");
+        }
     }
 }
 

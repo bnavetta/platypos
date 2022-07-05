@@ -3,7 +3,8 @@
 //! NOTE: The decoder always runs on the host!
 //!
 //! This is an implementation detail of [`probe-run`](https://github.com/knurling-rs/probe-run) and
-//! not meant to be consumed by other tools at the moment so all the API is unstable.
+//! not meant to be consumed by other tools at the moment so all the API is
+//! unstable.
 
 #![cfg(feature = "unstable")]
 #![cfg_attr(docsrs, feature(doc_cfg))]
@@ -18,12 +19,10 @@ mod frame;
 pub mod log;
 mod stream;
 
-use std::{
-    collections::{BTreeMap, HashMap},
-    error::Error,
-    fmt, io,
-    str::FromStr,
-};
+use std::collections::{BTreeMap, HashMap};
+use std::error::Error;
+use std::str::FromStr;
+use std::{fmt, io};
 
 use byteorder::{ReadBytesExt, LE};
 use decoder::Decoder;
@@ -158,14 +157,17 @@ pub struct Table {
 impl Table {
     /// Parses an ELF file and returns the decoded `defmt` table.
     ///
-    /// This function returns `None` if the ELF file contains no `.defmt` section.
+    /// This function returns `None` if the ELF file contains no `.defmt`
+    /// section.
     pub fn parse(elf: &[u8]) -> Result<Option<Table>, anyhow::Error> {
         parse_impl(elf, true)
     }
 
-    /// Like `parse`, but does not verify that the defmt version in the firmware matches the host.
+    /// Like `parse`, but does not verify that the defmt version in the firmware
+    /// matches the host.
     ///
-    /// CAUTION: This is meant for defmt/probe-run development only and can result in reading garbage data.
+    /// CAUTION: This is meant for defmt/probe-run development only and can
+    /// result in reading garbage data.
     pub fn parse_ignore_version(elf: &[u8]) -> Result<Option<Table>, anyhow::Error> {
         parse_impl(elf, false)
     }
@@ -271,7 +273,7 @@ impl Table {
 
 // NOTE follows `parser::Type`
 #[derive(Debug, Clone, PartialEq)]
-enum Arg<'t> {
+pub enum Arg<'t> {
     /// Bool
     Bool(bool),
     F32(f32),
@@ -305,11 +307,11 @@ enum Arg<'t> {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-struct FormatSliceElement<'t> {
+pub struct FormatSliceElement<'t> {
     // this will usually be the same format string for all elements; except when the format string
     // is an enum -- in that case `format` will be the variant
-    format: &'t str,
-    args: Vec<Arg<'t>>,
+    pub format: &'t str,
+    pub args: Vec<Arg<'t>>,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -369,7 +371,8 @@ mod tests {
         }
     }
 
-    // helper function to initiate decoding and assert that the result is as expected.
+    // helper function to initiate decoding and assert that the result is as
+    // expected.
     //
     // format:       format string to be expanded
     // bytes:        arguments + metadata
@@ -668,7 +671,8 @@ mod tests {
 
     #[test]
     fn display_i16_with_hex_hint() {
-        // defmt::info!("x: {=i16:#x},y: {=i16:#x},z: {=i16:#x}", -1_i16, -100_i16, -1000_i16);
+        // defmt::info!("x: {=i16:#x},y: {=i16:#x},z: {=i16:#x}", -1_i16, -100_i16,
+        // -1000_i16);
         let bytes = [
             0,
             0,           // index

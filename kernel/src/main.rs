@@ -47,9 +47,14 @@ pub fn kmain(args: BootArgs) -> ! {
         env!("CARGO_PKG_VERSION")
     );
 
-    defmt::error!("THIS IS AN ERROR");
+    test_inline();
 
     loop {
         interrupts::halt_until_interrupted();
     }
+}
+
+#[inline(always)]
+fn test_inline() {
+    panic!("This is inline");
 }

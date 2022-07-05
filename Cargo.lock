@@ -149,6 +149,8 @@ dependencies = [
 [[package]]
 name = "bootloader"
 version = "0.10.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f2d9b14b92a825ecc3b24e4c163a578af473fbba5f190bfaf48092b29b604504"
 
 [[package]]
 name = "bootloader-locator"
@@ -365,8 +367,6 @@ checksum = "b365fabc795046672053e29c954733ec3b05e4be654ab130fe8f1f94d7051f35"
 [[package]]
 name = "defmt"
 version = "0.3.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d3a0ae7494d9bff013d7b89471f4c424356a71e9752e0c78abe7e6c608a16bb3"
 dependencies = [
  "bitflags",
  "defmt-macros",
@@ -381,7 +381,7 @@ dependencies = [
  "chrono",
  "colored",
  "defmt-json-schema",
- "defmt-parser 0.3.1",
+ "defmt-parser",
  "difference",
  "gimli",
  "log",
@@ -402,10 +402,8 @@ dependencies = [
 [[package]]
 name = "defmt-macros"
 version = "0.3.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6d944432e281084511691b36e5e9c794c19c33675822c9019e3b64f5b89e10da"
 dependencies = [
- "defmt-parser 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "defmt-parser",
  "proc-macro-error",
  "proc-macro2",
  "quote",
@@ -415,12 +413,6 @@ dependencies = [
 [[package]]
 name = "defmt-parser"
 version = "0.3.1"
-
-[[package]]
-name = "defmt-parser"
-version = "0.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0db23d29972d99baa3de2ee2ae3f104c10564a6d05a346eb3f4c4f2c0525a06e"
 
 [[package]]
 name = "difference"
@@ -857,7 +849,6 @@ checksum = "e0a7ae3ac2f1173085d398531c705756c94a4c56843785df85a60c1a0afac116"
 name = "platypos_kernel"
 version = "0.1.0"
 dependencies = [
- "ansi_rgb",
  "az",
  "bitvec",
  "bootloader",
@@ -1338,12 +1329,12 @@ dependencies = [
  "clap 3.2.6",
  "color-eyre",
  "defmt-decoder",
+ "defmt-parser",
  "duct",
  "enable-ansi-support",
  "lazy_static",
  "log",
  "memchr",
  "owo-colors",
- "regex",
  "supports-color",
 ]

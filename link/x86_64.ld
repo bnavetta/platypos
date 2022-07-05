@@ -53,8 +53,41 @@ SECTIONS {
         KEEP (*(.eh_frame)) *(.eh_frame.*)
     }
 
+    /* DWARF debug sections */
+    /* Adapted from /usr/lib/ldscripts/elf_x86_64.x */
+    .debug 0 : { *(.debug) }
+    .line 0 : { *(.line) }
+    .debug_aranges 0 : { *(.debug_aranges) }
+    .debug_pubnames 0 : { *(.debug_pubnames) }
+    .debug_info 0 : { *(.debug_info) }
+    .debug_abbrev 0 : { *(.debug_abbrev) }
+    .debug_line 0 : { *(.debug_line .debug_line.* .debug_line_end) }
+      .debug_frame    0 : { *(.debug_frame) }
+  .debug_str      0 : { *(.debug_str) }
+  .debug_loc      0 : { *(.debug_loc) }
+  .debug_macinfo  0 : { *(.debug_macinfo) }
+  /* SGI/MIPS DWARF 2 extensions.  */
+  .debug_weaknames 0 : { *(.debug_weaknames) }
+  .debug_funcnames 0 : { *(.debug_funcnames) }
+  .debug_typenames 0 : { *(.debug_typenames) }
+  .debug_varnames  0 : { *(.debug_varnames) }
+  /* DWARF 3.  */
+  .debug_pubtypes 0 : { *(.debug_pubtypes) }
+  .debug_ranges   0 : { *(.debug_ranges) }
+  /* DWARF 5.  */
+  .debug_addr     0 : { *(.debug_addr) }
+  .debug_line_str 0 : { *(.debug_line_str) }
+  .debug_loclists 0 : { *(.debug_loclists) }
+  .debug_macro    0 : { *(.debug_macro) }
+  .debug_names    0 : { *(.debug_names) }
+  .debug_rnglists 0 : { *(.debug_rnglists) }
+  .debug_str_offsets 0 : { *(.debug_str_offsets) }
+  .debug_sup      0 : { *(.debug_sup) }
+
     /* Adapted from https://github.com/knurling-rs/defmt/blob/7886fa030b133234db39aba5ce976e97155eb8f0/defmt/defmt.x.in */
-    .defmt (INFO) : ALIGN(4K) {
+    .defmt 1 (INFO) : ALIGN(4K) {
+        . = 1;
+
         /* Format implementations for primitives like u8 */
         *(.defmt.prim.*);
 

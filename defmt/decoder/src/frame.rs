@@ -1,8 +1,6 @@
-use std::{
-    convert::TryFrom,
-    fmt::{self, Write as _},
-    mem,
-};
+use std::convert::TryFrom;
+use std::fmt::{self, Write as _};
+use std::mem;
 
 use crate::{Arg, BitflagsKey, Table};
 use chrono::TimeZone;
@@ -72,8 +70,8 @@ impl<'t> Frame<'t> {
         }
     }
 
-    /// Returns a struct that will format this log frame (including message, timestamp, level,
-    /// etc.).
+    /// Returns a struct that will format this log frame (including message,
+    /// timestamp, level, etc.).
     pub fn display(&'t self, colored: bool) -> DisplayFrame<'t> {
         DisplayFrame {
             frame: self,
@@ -86,7 +84,8 @@ impl<'t> Frame<'t> {
             .map(|_| DisplayTimestamp { frame: self })
     }
 
-    /// Returns a struct that will format the message contained in this log frame.
+    /// Returns a struct that will format the message contained in this log
+    /// frame.
     pub fn display_message(&'t self) -> DisplayMessage<'t> {
         DisplayMessage { frame: self }
     }
@@ -97,6 +96,14 @@ impl<'t> Frame<'t> {
 
     pub fn index(&self) -> u64 {
         self.index
+    }
+
+    pub fn format(&self) -> &'t str {
+        self.format
+    }
+
+    pub fn args(&self) -> &[Arg<'t>] {
+        &self.args
     }
 
     fn format_args(&self, format: &str, args: &[Arg], parent_hint: Option<&DisplayHint>) -> String {
@@ -215,7 +222,7 @@ impl<'t> Frame<'t> {
         Ok(buf)
     }
 
-    fn format_u128(
+    pub fn format_u128(
         &self,
         x: u128,
         hint: Option<&DisplayHint>,
@@ -287,7 +294,7 @@ impl<'t> Frame<'t> {
         Ok(())
     }
 
-    fn format_i128(
+    pub fn format_i128(
         &self,
         x: i128,
         ty: Type,
@@ -321,7 +328,7 @@ impl<'t> Frame<'t> {
         Ok(())
     }
 
-    fn format_bytes(
+    pub fn format_bytes(
         &self,
         bytes: &[u8],
         hint: Option<&DisplayHint>,
@@ -355,7 +362,8 @@ impl<'t> Frame<'t> {
             Some(DisplayHint::Hexadecimal { .. }) | Some(DisplayHint::Binary { .. }) => {
                 // `core::write!` doesn't quite produce the output we want, for example
                 // `write!("{:#04x?}", bytes)` produces a multi-line output
-                // `write!("{:02x?}", bytes)` is single-line but each byte doesn't include the "0x" prefix
+                // `write!("{:02x?}", bytes)` is single-line but each byte doesn't include the
+                // "0x" prefix
                 buf.push('[');
                 let mut is_first = true;
                 for byte in bytes {
@@ -372,7 +380,7 @@ impl<'t> Frame<'t> {
         Ok(())
     }
 
-    fn format_str(
+    pub fn format_str(
         &self,
         s: &str,
         hint: Option<&DisplayHint>,
@@ -386,7 +394,7 @@ impl<'t> Frame<'t> {
         Ok(())
     }
 
-    fn format_iso8601(
+    pub fn format_iso8601(
         &self,
         timestamp: u64,
         precision: &TimePrecision,
@@ -432,8 +440,8 @@ impl fmt::Display for DisplayMessage<'_> {
     }
 }
 
-/// Prints a `Frame` when formatted via `fmt::Display`, including all included metadata (level,
-/// timestamp, ...).
+/// Prints a `Frame` when formatted via `fmt::Display`, including all included
+/// metadata (level, timestamp, ...).
 pub struct DisplayFrame<'t> {
     frame: &'t Frame<'t>,
     colored: bool,

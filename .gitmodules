@@ -4,3 +4,6 @@
 [submodule "defmt"]
 	path = defmt
 	url = https://github.com/knurling-rs/defmt.git
+[submodule "addr2line"]
+	path = addr2line
+	url = https://github.com/gimli-rs/addr2line.git
