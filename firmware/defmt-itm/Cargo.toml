@@ -1,0 +1,15 @@
+[package]
+authors = ["The Knurling-rs developers"]
+categories = ["embedded", "no-std"]
+description = "Transmit defmt log messages over the ITM (Instrumentation Trace Macrocell) stimulus port"
+edition = "2021"
+keywords = ["knurling", "logging", "formatting"]
+license = "MIT OR Apache-2.0"
+name = "defmt-itm"
+readme = "README.md"
+repository = "https://github.com/knurling-rs/defmt"
+version = "0.3.0"
+
+[dependencies]
+cortex-m = "0.7"
+defmt = { version = "0.3", path = "../../defmt" }
