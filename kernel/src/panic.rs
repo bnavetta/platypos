@@ -1,22 +1,23 @@
 use core::alloc::Layout;
 use core::panic::PanicInfo;
 
-use ansi_rgb::{red, Foreground};
 use mini_backtrace::Backtrace;
 
 use crate::arch::interrupts;
 
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
-    log::error!("{} {info}", "KERNEL PANIC:".fg(red()));
+    // defmt::println!("{} {}", "KERNEL PANIC:".fg(red()), info);
+    defmt::println!("KERNEL PANIC: {}", defmt::Display2Format(info));
 
     let bt = Backtrace::<16>::capture();
     for frame in bt.frames {
         // The wrapper tool knows to look for this format and symbolize it
-        log::error!("  called by €€€{:x}€€€", frame);
+        // TODO: custom defmt display hint instead
+        defmt::println!("  called by €€€{:x}€€€", frame);
     }
     if bt.frames_omitted {
-        log::error!("  ... <frames omitted>")
+        defmt::println!("  ... <frames omitted>")
     }
 
     loop {

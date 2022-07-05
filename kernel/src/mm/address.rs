@@ -22,6 +22,7 @@ pub struct Page(usize);
 /// Address-like type, which can be used with `AddressRange`
 pub trait Address:
     fmt::Display
+    + defmt::Format
     + Clone
     + Copy
     + PartialOrd
@@ -56,6 +57,12 @@ macro_rules! address_ops {
             fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
                 // TODO: should the padding depend on the architecture?
                 write!(f, "{:#012x}", self.as_usize())
+            }
+        }
+
+        impl defmt::Format for $name {
+            fn format(&self, f: defmt::Formatter) {
+                defmt::write!(f, "{=usize:#012x}", self.as_usize())
             }
         }
     };
@@ -164,6 +171,13 @@ macro_rules! page_ops {
             fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
                 // TODO: should the padding depend on the architecture?
                 write!(f, "{} {:#012x}", $desc, self.as_usize())
+            }
+        }
+
+        impl defmt::Format for $page {
+            fn format(&self, f: defmt::Formatter) {
+                let label: defmt::Str = defmt::intern!($desc);
+                defmt::write!(f, "{=istr} {=usize:#012x}", label, self.as_usize());
             }
         }
 
@@ -327,5 +341,11 @@ impl<A: Address> fmt::Display for AddressRange<A> {
 impl<A: Address> fmt::Debug for AddressRange<A> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}Range({} - {})", A::LABEL, self.start, self.end())
+    }
+}
+
+impl<A: Address> defmt::Format for AddressRange<A> {
+    fn format(&self, f: defmt::Formatter) {
+        defmt::write!(f, "{=str}Range({} - {})", A::LABEL, self.start, self.end());
     }
 }

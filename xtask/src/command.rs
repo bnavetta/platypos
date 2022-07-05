@@ -28,6 +28,10 @@ struct ToolOpts {
 
     #[clap(long, arg_enum, default_value_t = Platform::X86_64)]
     platform: Platform,
+
+    /// defmt logging filter
+    #[clap(long, default_value = "trace")]
+    defmt: String,
 }
 
 #[derive(Debug, Subcommand)]
@@ -52,6 +56,7 @@ struct Context {
     platform: Platform,
     cargo: Rc<Cargo>,
     qemu: Qemu,
+    defmt_filter: String,
 }
 
 const KERNEL_CRATE: &str = "platypos_kernel";
@@ -60,7 +65,7 @@ impl XTask {
     pub fn exec(self) -> Result<()> {
         self.output.init()?;
 
-        let context = Context::new(self.tools.platform, self.tools.cargo);
+        let context = Context::new(self.tools.platform, self.tools.cargo, self.tools.defmt);
 
         match self.command {
             Command::Build => do_build(&context),
@@ -71,13 +76,18 @@ impl XTask {
 }
 
 impl Context {
-    fn new(platform: Platform, cargo_override: Option<Utf8PathBuf>) -> Context {
+    fn new(
+        platform: Platform,
+        cargo_override: Option<Utf8PathBuf>,
+        defmt_filter: String,
+    ) -> Context {
         let cargo = Rc::new(Cargo::new(cargo_override));
         let qemu = Qemu::new(cargo.clone());
         Context {
             platform,
             cargo,
             qemu,
+            defmt_filter,
         }
     }
 
@@ -86,6 +96,7 @@ impl Context {
             crate_name,
             platform: self.platform,
             test: false,
+            defmt_filter: &self.defmt_filter,
         })?;
         let binary = output.executable(crate_name)?;
         log::info!(
@@ -129,12 +140,13 @@ fn do_test(context: &Context, opts: QemuOpts) -> Result<()> {
         crate_name: KERNEL_CRATE,
         platform: context.platform,
         test: true,
+        defmt_filter: &context.defmt_filter,
     })?;
     let test_kernel = output.executable(KERNEL_CRATE)?;
 
     let status = context.qemu.run(qemu::Spec {
         crate_name: KERNEL_CRATE,
-        binary: &test_kernel,
+        binary: test_kernel,
         platform: context.platform,
         memory: &opts.memory,
         cpus: opts.cpus.into(),

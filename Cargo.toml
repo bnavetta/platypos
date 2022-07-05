@@ -3,6 +3,7 @@ cargo-features = ["profile-rustflags"]
 [workspace]
 resolver = "2"
 members = ["kernel", "ktest", "ktest/macros", "xtask"]
+exclude = ["defmt"]
 
 # [profile.dev]
 # # For backtraces

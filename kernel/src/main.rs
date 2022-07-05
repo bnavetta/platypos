@@ -47,6 +47,8 @@ pub fn kmain(args: BootArgs) -> ! {
         env!("CARGO_PKG_VERSION")
     );
 
+    defmt::error!("THIS IS AN ERROR");
+
     loop {
         interrupts::halt_until_interrupted();
     }

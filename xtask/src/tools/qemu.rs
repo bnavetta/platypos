@@ -1,9 +1,10 @@
 //! Wrapper around QEMU
 
+use std::ffi::OsString;
 use std::fmt::Write as _;
 use std::fs;
 use std::io::{self, BufRead, BufReader, Write};
-use std::process::{Command, ExitStatus, Stdio};
+use std::process::ExitStatus;
 use std::rc::Rc;
 
 use addr2line::fallible_iterator::FallibleIterator;
@@ -12,9 +13,11 @@ use lazy_static::lazy_static;
 use regex::{Captures, Regex};
 
 use crate::prelude::*;
+use crate::tools::qemu::decoder::Decoder;
 
 use super::cargo::Cargo;
 
+mod decoder;
 mod x86_64;
 
 pub struct Spec<'a> {
@@ -34,11 +37,10 @@ pub struct Spec<'a> {
 
 /// Creates a new QEMU command for `platform`, including any
 /// platform-specific arguments.
-fn command_for(platform: Platform) -> Command {
+fn command_for(platform: Platform) -> (&'static str, Vec<OsString>) {
     match platform {
         Platform::X86_64 => {
-            let mut command = Command::new("qemu-system-x86_64");
-            command.args([
+            let args: Vec<OsString> = [
                 // UEFI firmware
                 "-drive",
                 "if=pflash,format=raw,readonly=on,file=/usr/share/ovmf/x64/OVMF_CODE.fd",
@@ -47,8 +49,10 @@ fn command_for(platform: Platform) -> Command {
                 // CPU type
                 "-machine",
                 "q35,accel=kvm",
-            ]);
-            command
+            ]
+            .map(Into::into)
+            .into();
+            ("qemu-system-x86_64", args)
         }
     }
 }
@@ -65,39 +69,46 @@ impl Qemu {
     }
 
     pub fn run(&self, spec: Spec) -> Result<ExitStatus> {
-        let mut cmd = command_for(spec.platform);
+        let (exe, mut args) = command_for(spec.platform);
         // TODO: fifo for serial console so monitor can use stdio
-        cmd.args(["--no-reboot", "-serial", "stdio"]);
-        cmd.args(["-m", spec.memory]);
-        cmd.arg("-smp").arg(format!("cpus={}", spec.cpus));
-        self.add_binary(&mut cmd, &spec)?;
+        args.extend(["--no-reboot", "-serial", "stdio", "-m", spec.memory].map(Into::into));
+        args.push("-smp".into());
+        args.push(format!("cpus={}", spec.cpus).into());
+        self.add_binary(&mut args, &spec)?;
 
         if spec.debug_exit {
             match spec.platform {
                 Platform::X86_64 => {
-                    cmd.args(["-device", "isa-debug-exit,iobase=0xf4,iosize=0x04"]);
+                    args.extend(
+                        ["-device", "isa-debug-exit,iobase=0xf4,iosize=0x04"].map(Into::into),
+                    );
                 }
             }
         }
 
-        cmd.stdout(Stdio::piped());
+        let cmd = duct::cmd(exe, args).unchecked();
+
         log::debug!("QEMU command: {cmd:?}");
 
-        let mut proc = cmd.spawn().wrap_err("could not start qemu")?;
+        // ReaderHandle will kill QEMU if it's dropped due to an error
+        let mut output = cmd.reader().wrap_err("could not start qemu")?;
 
-        let filter = SymbolizeFilter::new(spec.binary)?;
+        // let filter = SymbolizeFilter::new(spec.binary)?;
         let stdout = io::stdout().lock();
-        filter.drain(BufReader::new(proc.stdout.take().unwrap()), stdout)?;
+        let decoder = Decoder::new(spec.binary)?;
+        decoder.decode(BufReader::new(&mut output), stdout)?;
+        // filter.drain(BufReader::new(proc.stdout.take().unwrap()), stdout)?;
 
-        proc.wait().wrap_err("could not run qemu")
+        // Guaranteed that if the reader completed, this will return Ok(Some(_))
+        Ok(output.try_wait().unwrap().unwrap().status)
     }
 
     /// Configure QEMU to boot `spec.binary` via the platform-appropriate
     /// bootloader
-    fn add_binary(&self, cmd: &mut Command, spec: &Spec) -> Result<()> {
+    fn add_binary(&self, args: &mut Vec<OsString>, spec: &Spec) -> Result<()> {
         let boot_image = x86_64::build_boot_image(spec.crate_name, spec.binary, &self.cargo)?;
-        cmd.arg("-drive")
-            .arg(format!("format=raw,file={boot_image}"));
+        args.push("-drive".into());
+        args.push(format!("format=raw,file={boot_image}").into());
         Ok(())
     }
 }

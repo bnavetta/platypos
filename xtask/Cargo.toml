@@ -12,6 +12,9 @@ bootloader-locator = "0.0.4"
 camino = "1.0.7"
 cargo_metadata = "0.15"
 clap = { version = "3.0.13", features = ["derive", "env"] }
+defmt-decoder = { version = "0.3", features = [
+    "unstable",
+], path = "../defmt/decoder" }
 color-eyre = "0.6.1"
 enable-ansi-support = "0.1.2"
 lazy_static = "1.4"
@@ -19,3 +22,5 @@ log = { version = "0.4", features = ["std"] }
 owo-colors = { version = "3.3.0", features = ["supports-colors"] }
 regex = "1.5"
 supports-color = "1.3.0"
+duct = "0.13.5"
+memchr = "2.5.0"

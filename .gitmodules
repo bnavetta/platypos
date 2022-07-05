@@ -1,0 +1,6 @@
+[submodule "bootloader"]
+	path = bootloader
+	url = https://github.com/rust-osdev/bootloader.git
+[submodule "defmt"]
+	path = defmt
+	url = https://github.com/knurling-rs/defmt.git

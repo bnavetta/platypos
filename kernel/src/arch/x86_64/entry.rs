@@ -18,8 +18,8 @@ fn start(info: &'static mut BootInfo) -> ! {
     serial.init();
     crate::logging::init(serial);
 
-    log::info!(
-        "Booting from bootloader v{}.{}.{}{}",
+    defmt::info!(
+        "Booting from bootloader v{=u16}.{=u16}.{=u16}{=str}",
         info.version_major,
         info.version_minor,
         info.version_patch,
@@ -30,7 +30,7 @@ fn start(info: &'static mut BootInfo) -> ! {
         }
     );
 
-    log::info!("Memory Regions:");
+    defmt::info!("Memory Regions:");
     // The bootloader doesn't combine adjacent functionally-equivalent regions, so
     // do it here
     // It also marks UEFI runtime service memory as usable...
@@ -80,11 +80,11 @@ fn start(info: &'static mut BootInfo) -> ! {
 
 fn log_region(region: MemoryRegion) {
     let size = region.end - region.start;
-    log::info!(
+    defmt::info!(
         " - {:#012x} - {:#012x} {} ({} bytes =~ {} KiB =~ {} MiB)",
         region.start,
         region.end,
-        DisplayRegion(region.kind),
+        defmt::Display2Format(&DisplayRegion(region.kind)),
         size,
         size / 1024,
         size / 1024 / 1024

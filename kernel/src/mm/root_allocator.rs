@@ -85,7 +85,7 @@ impl Builder {
     where
         I: Iterator<Item = Region> + Clone,
     {
-        log::info!("Initializing physical memory allocator");
+        defmt::info!("Initializing physical memory allocator");
 
         // First, find a scratch region:
         let (scratch, initial_tracking) = memory_map
@@ -111,8 +111,8 @@ impl Builder {
             })
             .ok_or(Error::new(ErrorKind::InsufficientMemory))?;
 
-        log::debug!("Scratch space: {}", scratch.address_range());
-        log::debug!(
+        defmt::debug!("Scratch space: {}", scratch.address_range());
+        defmt::debug!(
             "Initial tracking pages: {}",
             initial_tracking.address_range()
         );
@@ -129,7 +129,7 @@ impl Builder {
                     if region.usable() {
                         let start = PageFrame::from_start(region.start())
                             .expect("Memory region is not page-aligned!");
-                        assert!(
+                        defmt::assert!(
                             region.size() % PAGE_SIZE == 0,
                             "Region size is not a whole number of pages!"
                         );
@@ -168,9 +168,9 @@ impl Builder {
 
                 // TODO: remove reserved ranges
 
-                log::debug!("Usable memory:");
+                defmt::debug!("Usable memory:");
                 for range in &ranges {
-                    log::debug!(" - {}", range.address_range());
+                    defmt::debug!(" - {}", range.address_range());
                 }
 
                 let mut allocator = AllocatorInner::new();
@@ -179,19 +179,22 @@ impl Builder {
                     allocator.add_allocatable_range(*range);
                 }
 
-                log::info!(
+                defmt::info!(
                     "Post-initialization allocator state:\n{}",
-                    allocator.display_state()
+                    // TODO: migrate to defmt
+                    defmt::Display2Format(&allocator.display_state())
                 );
 
                 let small_allocation = allocator.allocate(4).unwrap();
                 let big_allocation = allocator.allocate(1000).unwrap();
-                log::info!(
-                    "Small allocation: {small_allocation}\nBig allocation: {big_allocation}"
+                defmt::info!(
+                    "Small allocation: {}\nBig allocation: {}",
+                    small_allocation,
+                    big_allocation
                 );
-                log::info!(
+                defmt::info!(
                     "Allocator state after allocations:\n{}",
-                    allocator.display_state()
+                    defmt::Display2Format(&allocator.display_state())
                 );
 
                 /*
@@ -550,7 +553,7 @@ impl AllocatorInner {
         range: PageFrameRange,
     ) -> Result<(), Error> {
         let run_count = range.size_bytes() / mem::size_of::<Run>();
-        log::debug!("Allocating {} runs in {}", run_count, range);
+        defmt::debug!("Allocating {} runs in {}", run_count, range);
 
         // Ensure that changes to padding don't cause issues - currently, Rust doesn't
         // put padding between array elements, but if that changes, then the calculation
