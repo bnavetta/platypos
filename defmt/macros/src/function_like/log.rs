@@ -7,8 +7,9 @@ use syn::parse_macro_input;
 
 use crate::construct;
 
+pub(crate) use self::args::Args;
+pub(crate) use self::codegen::Codegen;
 use self::env_filter::EnvFilter;
-pub(crate) use self::{args::Args, codegen::Codegen};
 
 mod args;
 mod codegen;
@@ -20,7 +21,7 @@ pub(crate) fn expand(level: Level, args: TokenStream) -> TokenStream {
 
 pub(crate) fn expand_parsed(level: Level, args: Args) -> TokenStream2 {
     let format_string = args.format_string.value();
-    let fragments = match defmt_parser::parse(&format_string, ParserMode::Strict) {
+    let fragments = match defmt_parser::parse(&format_string, ParserMode::ForwardsCompatible) {
         Ok(args) => args,
         Err(e) => abort!(args.format_string, "{}", e),
     };

@@ -36,6 +36,14 @@ fn core_test() -> Outcome {
 pub fn run_tests() -> ! {
     defmt::info!("HERE!");
 
+    let test_addr = &TESTS as *const _ as usize;
+    defmt::info!(
+        "Tests at: {=usize} = {=usize:address}",
+        test_addr,
+        // test_addr + 0xffffffff00000000,
+        test_addr,
+    );
+
     defmt::info!("Running {=usize} kernel tests", TESTS.len());
     let mut failures = 0;
 

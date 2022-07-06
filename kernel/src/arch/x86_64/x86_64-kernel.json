@@ -12,6 +12,11 @@
     "panic-strategy": "abort",
     "disable-redzone": true,
     "code-model": "kernel",
-    "relocation-model": "static",
+    "post-link-args": {
+        "ld.lld": [
+            "-z",
+            "nostart-stop-gc"
+        ]
+    },
     "features": "-mmx,-sse,+soft-float"
 }

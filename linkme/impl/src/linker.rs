@@ -2,7 +2,7 @@ pub mod linux {
     use syn::Ident;
 
     pub fn section(ident: &Ident) -> String {
-        format!("linkme_{},no_dead_strip,__attribute__((retain))", ident)
+        format!("linkme_{},__attribute__((retain))", ident)
     }
 
     pub fn section_start(ident: &Ident) -> String {
