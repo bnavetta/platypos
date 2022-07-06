@@ -1,22 +1,22 @@
-use core::fmt::{Arguments, Write};
+use core::fmt::Arguments;
 
-use spin::Mutex;
-
-pub(crate) static ASSERTION_OUTPUT: Mutex<Option<&'static mut (dyn Write + Send + Sync)>> =
-    Mutex::new(None);
-
+#[macro_export]
 macro_rules! ktassert {
-    ($cond:expr $(,)?) => {
-        $crate::ktassert!($cond, stringify!($cond));
+    ($cond:expr) => {
+        if !$cond {
+            $crate::assertions::report_failure(file!(), line!(), column!(), format_args!("{}", stringify!($cond)));
+            return $crate::Outcome::Fail;
+        }
     };
     ($cond:expr, $(arg:tt)+) => {
-        if !cond {
-            $crate::report_failure(file!(), line!(), column!(), format_args!($(arg)+));
+        if !$cond {
+            $crate::assertions::report_failure(file!(), line!(), column!(), format_args!($(arg)+));
             return $crate::Outcome::Fail;
         }
     };
 }
 
+#[macro_export]
 macro_rules! ktassert_eq {
     ($left:expr, $right:expr $(,)?) => {
         $crate::ktassert!($left != $right);
@@ -28,16 +28,12 @@ macro_rules! ktassert_eq {
 
 /// Called to report an assertion failure
 #[doc(hidden)]
-pub fn report_failure(file: &str, line: usize, column: usize, args: Arguments) {
-    let mut out = ASSERTION_OUTPUT.lock();
-    if let Some(out) = &mut *out {
-        write!(
-            out,
-            "Assertion failed: '{}' at {}:{}:{}",
-            args, file, line, column
-        )
-        .unwrap();
-    } else {
-        panic!("ASSERTION_OUTPUT not set");
-    }
+pub fn report_failure(file: &str, line: u32, column: u32, args: Arguments) {
+    defmt::println!(
+        "Assertion failed: '{}' at {=str}:{=u32}:{=u32}",
+        defmt::Display2Format(&args),
+        file,
+        line,
+        column
+    );
 }

@@ -349,3 +349,19 @@ impl<A: Address> defmt::Format for AddressRange<A> {
         defmt::write!(f, "{=str}Range({} - {})", A::LABEL, self.start, self.end());
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use ktest::TESTS;
+    use linkme::distributed_slice;
+
+    #[distributed_slice(TESTS)]
+    static TEST_ADDRESS_ARITHMETIC: ktest::Test =
+        ktest::Test::new("test_address_arithmetic", test_address_arithmetic);
+
+    fn test_address_arithmetic() -> ktest::Outcome {
+        ktest::ktassert!(1 + 1 == 2);
+
+        ktest::Outcome::Fail
+    }
+}

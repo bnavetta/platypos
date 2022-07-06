@@ -1,15 +1,9 @@
 #![no_std]
 
-use core::fmt::Write;
-
-use ansi_rgb::{green, red, Foreground};
-use assertions::ASSERTION_OUTPUT;
 use linkme::distributed_slice;
 use qemu_exit::QEMUExit;
 
-mod assertions;
-
-pub use assertions::*;
+pub mod assertions;
 
 pub struct Test {
     name: &'static str,
@@ -23,62 +17,59 @@ pub enum Outcome {
     Fail,
 }
 
-#[distributed_slice]
 #[doc(hidden)]
+#[distributed_slice]
 pub static TESTS: [Test] = [..];
+
+// ::core::arch::global_asm!(r#".section linkme_TESTS,"aR",@progbits"#);
+
+#[distributed_slice(TESTS)]
+static CORE: Test = Test::new("core_test", core_test);
+
+fn core_test() -> Outcome {
+    Outcome::Pass
+}
+
+extern "C" {
+    #[link_name = "__start_linkme_TESTS"]
+    static TEST_START: *const u8;
+}
 
 /// Test framework entry point. The kernel calls this when running in test mode,
 /// after performing the bare minimum platform setup (for example, initializing
 /// logging and memory allocation).
-pub fn run_tests<W: Write + Send + Sync + 'static>(out: &'static mut W) -> ! {
-    writeln!(out, "Running {} kernel tests", TESTS.len()).unwrap();
+pub fn run_tests() -> ! {
+    defmt::info!("Running {=usize} kernel tests", TESTS.len());
+    defmt::info!("Tests start at {}", unsafe { TEST_START } as usize);
     let mut failures = 0;
 
-    {
-        *ASSERTION_OUTPUT.lock() = Some(out);
-    }
-
     for test in TESTS {
-        {
-            write!(
-                ASSERTION_OUTPUT.lock().as_mut().unwrap(),
-                "{}...",
-                test.name
-            )
-            .unwrap();
-        }
-
         let result = (test.imp)();
         match result {
-            Outcome::Pass => writeln!(
-                ASSERTION_OUTPUT.lock().as_mut().unwrap(),
-                " {}",
-                "OK".fg(green())
-            )
-            .unwrap(),
+            Outcome::Pass => defmt::info!("{=str}... OK", test.name),
             Outcome::Fail => {
                 failures += 1;
-                writeln!(
-                    ASSERTION_OUTPUT.lock().as_mut().unwrap(),
-                    " {}",
-                    "FAIL".fg(red())
-                )
-                .unwrap();
+                defmt::error!("{=str}... FAIL", test.name);
             }
         }
     }
-    writeln!(
-        ASSERTION_OUTPUT.lock().as_mut().unwrap(),
-        "Done! {} passed and {} failed",
+    defmt::info!(
+        "Done! {=usize} passed and {=usize} failed",
         TESTS.len() - failures,
         failures
-    )
-    .unwrap();
+    );
 
     exit(failures == 0);
 }
 
-fn exit(success: bool) -> ! {
+impl Test {
+    pub const fn new(name: &'static str, imp: fn() -> Outcome) -> Self {
+        Test { name, imp }
+    }
+}
+
+/// Exits the VM
+pub fn exit(success: bool) -> ! {
     #[cfg(target_arch = "x86_64")]
     let handle = qemu_exit::X86::new(0xf4, 3);
     #[cfg(not(target_arch = "x86_64"))]

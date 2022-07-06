@@ -6,6 +6,7 @@
 #![feature(allocator_api)]
 
 extern crate alloc;
+extern crate ktest;
 
 use core::fmt::Write;
 
@@ -37,6 +38,13 @@ pub struct BootArgs {
 
 /// The shared kernel entry point.
 pub fn kmain(args: BootArgs) -> ! {
+    defmt::println!("There are {=usize} tests", ktest::TESTS.len());
+
+    #[cfg(test)]
+    {
+        ktest::run_tests();
+    };
+
     let display = args.display.unwrap();
     let mut console = Console::new(display);
     console.clear().unwrap();

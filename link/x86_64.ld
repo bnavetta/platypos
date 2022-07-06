@@ -40,6 +40,10 @@ SECTIONS {
         *(.data .data.*)
     }
 
+    .linkme_TESTS : ALIGN(4K) {
+        KEEP(*(linkme_TESTS))
+    }
+
     .bss : ALIGN(4K) {
         *(.bss .bss.*)
     }
