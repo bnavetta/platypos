@@ -38,7 +38,7 @@ pub struct BootArgs {
 
 /// The shared kernel entry point.
 pub fn kmain(args: BootArgs) -> ! {
-    defmt::println!("There are {=usize} tests", ktest::TESTS.len());
+    defmt::info!("IN KMAIN");
 
     #[cfg(test)]
     {

@@ -8,5 +8,5 @@ description = "Kernel unit test harness"
 
 [dependencies]
 defmt = { version = "0.3", path = "../defmt/defmt" }
-linkme = "0.3"
+linkme = { version = "0.3", path = "../linkme" }
 qemu-exit = "3.0"

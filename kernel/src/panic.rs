@@ -9,6 +9,7 @@ const BACKTRACE_DEPTH: usize = 16;
 
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
+    defmt::println!("ASDF");
     let bt = Backtrace::<BACKTRACE_DEPTH>::capture();
 
     defmt::println!(

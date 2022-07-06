@@ -3,7 +3,7 @@ cargo-features = ["profile-rustflags"]
 [workspace]
 resolver = "2"
 members = ["kernel", "ktest", "ktest/macros", "xtask"]
-exclude = ["defmt", "addr2line"]
+exclude = ["defmt", "addr2line", "linkme"]
 
 [profile.dev]
 lto = "thin"

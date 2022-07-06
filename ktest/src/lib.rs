@@ -30,17 +30,13 @@ fn core_test() -> Outcome {
     Outcome::Pass
 }
 
-extern "C" {
-    #[link_name = "__start_linkme_TESTS"]
-    static TEST_START: *const u8;
-}
-
 /// Test framework entry point. The kernel calls this when running in test mode,
 /// after performing the bare minimum platform setup (for example, initializing
 /// logging and memory allocation).
 pub fn run_tests() -> ! {
+    defmt::info!("HERE!");
+
     defmt::info!("Running {=usize} kernel tests", TESTS.len());
-    defmt::info!("Tests start at {}", unsafe { TEST_START } as usize);
     let mut failures = 0;
 
     for test in TESTS {

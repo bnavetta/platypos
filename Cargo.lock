@@ -653,8 +653,6 @@ dependencies = [
 [[package]]
 name = "linkme"
 version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "84d3281696e1152aa61e900ff5729b0775bd4878a299aa00165d1480e9d3d1ab"
 dependencies = [
  "linkme-impl",
 ]
@@ -662,8 +660,6 @@ dependencies = [
 [[package]]
 name = "linkme-impl"
 version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0289997a403cb54131d93cb2686d5f23981b8d8a11c134cd1607efe891d3d01b"
 dependencies = [
  "proc-macro2",
  "quote",

@@ -67,6 +67,10 @@ impl Qemu {
         args.extend(["--no-reboot", "-serial", "stdio", "-m", spec.memory].map(Into::into));
         args.push("-smp".into());
         args.push(format!("cpus={}", spec.cpus).into());
+
+        args.push("-d".into());
+        args.push("cpu_reset,int,guest_errors".into());
+
         self.add_binary(&mut args, &spec)?;
 
         if spec.debug_exit {

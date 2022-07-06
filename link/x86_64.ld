@@ -40,7 +40,7 @@ SECTIONS {
         *(.data .data.*)
     }
 
-    .linkme_TESTS : ALIGN(4K) {
+    linkme_TESTS : ALIGN(4K) {
         KEEP(*(linkme_TESTS))
     }
 
