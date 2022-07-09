@@ -1,9 +1,11 @@
 #![no_std]
 #![no_main]
 #![feature(alloc_error_handler)]
-#![feature(negative_impls)]
-#![feature(int_roundings)]
 #![feature(allocator_api)]
+#![feature(const_maybe_uninit_uninit_array)]
+#![feature(int_roundings)]
+#![feature(maybe_uninit_uninit_array)]
+#![feature(negative_impls)]
 
 extern crate alloc;
 extern crate ktest;
@@ -20,7 +22,6 @@ mod arch;
 
 mod console;
 mod error;
-mod logging;
 mod mm;
 mod panic;
 mod prelude;
@@ -38,7 +39,12 @@ pub struct BootArgs {
 
 /// The shared kernel entry point.
 pub fn kmain(args: BootArgs) -> ! {
-    defmt::info!("IN KMAIN");
+    let _span = tracing::info_span!("kmain", at = kmain as usize).entered();
+
+    // tracing::info!("IN KMAIN"); // for some reason this doesn't encode - maybe a
+    // CBOR/serialization issue?
+    tracing::info!("asdf");
+    tracing::debug!("a s d f");
 
     #[cfg(test)]
     {

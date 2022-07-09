@@ -1,0 +1,11 @@
+[package]
+name = "platypos_ktrace_proto"
+version = "0.1.0"
+edition = "2021"
+description = "Serialization protocol for PlatypOS KTrace data"
+
+[dependencies]
+postcard = "1.0"
+phf = { version = "0.10", default-features = false, features = ["macros"] }
+serde = { version = "1.0", default-features = false, features = ["derive"] }
+tracing-core = { version = "0.1", default-features = false }

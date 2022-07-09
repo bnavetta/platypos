@@ -7,6 +7,6 @@ description = "Kernel unit test harness"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-defmt = { version = "0.3", path = "../defmt/defmt" }
 linkme = { version = "0.3", path = "../linkme" }
 qemu-exit = "3.0"
+tracing = { version = "0.1", default-features = false }

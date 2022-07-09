@@ -139,15 +139,7 @@ impl Cargo {
                     "-Zbuild-std=core,compiler_builtins,alloc".to_string(),
                     "-Zbuild-std-features=compiler-builtins-mem".to_string(),
                 ],
-                rust_flags: vec![
-                    "-Cforce-unwind-tables".to_string(),
-                    // "-Clink-arg=-T./link/eh_frame.ld".to_string(),
-                    // "-Clink-arg=-T/usr/lib/ldscripts/elf_x86_64.x".to_string(),
-                    // "-Clink-arg=-Tdefmt.x".to_string(),
-                    // "-Clink-arg=-T./link/defmt.ld".to_string(),
-                    // "-Clink-arg=-znostart-stop-gc".to_string(),
-                    // "-Clink-arg=-T./link/x86_64.ld".to_string(),
-                ],
+                rust_flags: vec!["-Cforce-unwind-tables".to_string()],
                 cxx_flags: vec!["-fno-stack-protector".to_string()],
             },
         }

@@ -34,31 +34,27 @@ fn core_test() -> Outcome {
 /// after performing the bare minimum platform setup (for example, initializing
 /// logging and memory allocation).
 pub fn run_tests() -> ! {
-    defmt::info!("HERE!");
+    let _enter = tracing::info_span!("ktest::run_tests");
 
     let test_addr = &TESTS as *const _ as usize;
-    defmt::info!(
-        "Tests at: {=usize} = {=usize:address}",
-        test_addr,
-        // test_addr + 0xffffffff00000000,
-        test_addr,
-    );
 
-    defmt::info!("Running {=usize} kernel tests", TESTS.len());
+    tracing::info!(at = test_addr, "Running tests");
+
+    tracing::info!("Running {} kernel tests", TESTS.len());
     let mut failures = 0;
 
     for test in TESTS {
         let result = (test.imp)();
         match result {
-            Outcome::Pass => defmt::info!("{=str}... OK", test.name),
+            Outcome::Pass => tracing::info!("{}... OK", test.name),
             Outcome::Fail => {
                 failures += 1;
-                defmt::error!("{=str}... FAIL", test.name);
+                tracing::error!("{}... FAIL", test.name);
             }
         }
     }
-    defmt::info!(
-        "Done! {=usize} passed and {=usize} failed",
+    tracing::info!(
+        "Done! {} passed and {} failed",
         TESTS.len() - failures,
         failures
     );

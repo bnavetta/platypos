@@ -29,9 +29,9 @@ macro_rules! ktassert_eq {
 /// Called to report an assertion failure
 #[doc(hidden)]
 pub fn report_failure(file: &str, line: u32, column: u32, args: Arguments) {
-    defmt::println!(
-        "Assertion failed: '{}' at {=str}:{=u32}:{=u32}",
-        defmt::Display2Format(&args),
+    tracing::error!(
+        "Assertion failed: '{}' at {}:{}:{}",
+        args,
         file,
         line,
         column

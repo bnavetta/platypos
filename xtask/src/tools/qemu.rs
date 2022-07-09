@@ -1,16 +1,20 @@
 //! Wrapper around QEMU
 
 use std::ffi::OsString;
-use std::io::{self, BufReader};
+use std::io;
 use std::process::ExitStatus;
 use std::rc::Rc;
 
+use platypos_ktrace_decoder::fmt::Formatter;
+use platypos_ktrace_decoder::Decoder;
+
 use crate::prelude::*;
-use crate::tools::qemu::decoder::Decoder;
+use crate::tools::qemu::symbolizer::GimliSymbolizer;
 
 use super::cargo::Cargo;
+use super::gdb;
 
-mod decoder;
+mod symbolizer;
 mod x86_64;
 
 pub struct Spec<'a> {
@@ -24,8 +28,8 @@ pub struct Spec<'a> {
     pub memory: &'a str,
     /// Number of CPUs for the VM
     pub cpus: usize,
-    /// Include a debug exit device (per https://docs.rs/qemu-exit/latest/qemu_exit/)
-    pub debug_exit: bool,
+    /// Debugger configuration
+    pub debugger: Option<gdb::Server>,
 }
 
 /// Creates a new QEMU command for `platform`, including any
@@ -42,6 +46,9 @@ fn command_for(platform: Platform) -> (&'static str, Vec<OsString>) {
                 // CPU type
                 "-machine",
                 "q35,accel=kvm",
+                // Debug exit device
+                "-device",
+                "isa-debug-exit,iobase=0xf4,iosize=0x04",
             ]
             .map(Into::into)
             .into();
@@ -73,14 +80,8 @@ impl Qemu {
 
         self.add_binary(&mut args, &spec)?;
 
-        if spec.debug_exit {
-            match spec.platform {
-                Platform::X86_64 => {
-                    args.extend(
-                        ["-device", "isa-debug-exit,iobase=0xf4,iosize=0x04"].map(Into::into),
-                    );
-                }
-            }
+        if let Some(ref gdb) = spec.debugger {
+            self.add_gdb(&mut args, gdb);
         }
 
         let cmd = duct::cmd(exe, args).unchecked();
@@ -91,10 +92,15 @@ impl Qemu {
         let mut output = cmd.reader().wrap_err("could not start qemu")?;
 
         // let filter = SymbolizeFilter::new(spec.binary)?;
-        let stdout = io::stdout().lock();
-        let decoder = Decoder::new(spec.platform, spec.binary)?;
-        decoder.decode(BufReader::new(&mut output), stdout)?;
-        // filter.drain(BufReader::new(proc.stdout.take().unwrap()), stdout)?;
+        let mut stdout = io::stdout().lock();
+        let mut decoder = Decoder::new();
+        decoder.read_to_header(&mut output, &mut stdout)?;
+        let symbolizer = GimliSymbolizer::new(spec.binary)?;
+        let mut formatter = Formatter::new(&symbolizer);
+        decoder.decode(&mut output, |msg| {
+            formatter.receive(&msg);
+            Ok(())
+        })?;
 
         // Guaranteed that if the reader completed, this will return Ok(Some(_))
         Ok(output.try_wait().unwrap().unwrap().status)
@@ -107,5 +113,22 @@ impl Qemu {
         args.push("-drive".into());
         args.push(format!("format=raw,file={boot_image}").into());
         Ok(())
+    }
+
+    /// Configure QEMU to run a GDB server
+    fn add_gdb(&self, args: &mut Vec<OsString>, gdb: &gdb::Server) {
+        args.push("-chardev".into());
+        args.push(
+            format!(
+                "socket,path={},server=on,wait=off,id=gdb0",
+                gdb.socket_path()
+            )
+            .into(),
+        );
+        args.extend(["-gdb", "chardev:gdb0"].map(Into::into));
+
+        if gdb.should_wait() {
+            args.push("-S".into());
+        }
     }
 }

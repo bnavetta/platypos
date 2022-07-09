@@ -1,7 +1,7 @@
 use core::fmt;
 
 mod address;
-mod heap_allocator;
+pub mod heap_allocator;
 pub mod map;
 pub mod root_allocator;
 

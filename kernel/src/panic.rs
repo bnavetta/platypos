@@ -9,33 +9,27 @@ const BACKTRACE_DEPTH: usize = 16;
 
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
-    defmt::println!("ASDF");
+    let span = tracing::error_span!("panic").entered();
+
     let bt = Backtrace::<BACKTRACE_DEPTH>::capture();
 
-    defmt::println!(
-        "KERNEL PANIC: {}{}",
-        defmt::Display2Format(info),
-        BacktraceFormat(bt)
-    );
+    tracing::error!("{}", info);
 
+    for frame in bt.frames.iter() {
+        tracing::error!(at = *frame, "backtrace");
+    }
+
+    if bt.frames_omitted {
+        tracing::error!("... <frames omitted>");
+    }
+
+    span.exit(); // Close the span before spin-looping
     loop {
         interrupts::halt_until_interrupted()
     }
 }
 
 struct BacktraceFormat(Backtrace<BACKTRACE_DEPTH>);
-
-impl defmt::Format for BacktraceFormat {
-    fn format(&self, fmt: defmt::Formatter) {
-        for frame in self.0.frames.iter() {
-            defmt::write!(fmt, "  called by {=usize:address}\n", frame);
-        }
-
-        if self.0.frames_omitted {
-            defmt::write!(fmt, "  ... <frames omitted>\n");
-        }
-    }
-}
 
 #[alloc_error_handler]
 fn alloc_error_handler(layout: Layout) -> ! {

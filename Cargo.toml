@@ -2,7 +2,15 @@ cargo-features = ["profile-rustflags"]
 
 [workspace]
 resolver = "2"
-members = ["kernel", "ktest", "ktest/macros", "xtask"]
+members = [
+    "kernel",
+    "ktest",
+    "ktest/macros",
+    "xtask",
+    "ktrace",
+    "ktrace/proto",
+    "ktrace/decoder",
+]
 exclude = ["defmt", "addr2line", "linkme"]
 
 [profile.dev]

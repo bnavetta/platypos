@@ -15,7 +15,8 @@
     "post-link-args": {
         "ld.lld": [
             "-z",
-            "nostart-stop-gc"
+            "nostart-stop-gc",
+            "-T./link/eh_frame.ld"
         ]
     },
     "features": "-mmx,-sse,+soft-float"

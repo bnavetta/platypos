@@ -3,10 +3,14 @@
 use core::fmt;
 use core::mem::MaybeUninit;
 
+use platypos_ktrace as ktrace;
+
 use bootloader::boot_info::{MemoryRegion, MemoryRegionKind};
 use bootloader::{entry_point, BootInfo};
 
 use crate::arch::mm::MemoryAccess;
+use crate::arch::SerialPort;
+use crate::mm::heap_allocator;
 use crate::mm::map::Region;
 use crate::BootArgs;
 
@@ -14,12 +18,14 @@ use super::display::FrameBufferTarget;
 
 /// Entry point called by the bootloader
 fn start(info: &'static mut BootInfo) -> ! {
-    let mut serial = unsafe { uart_16550::SerialPort::new(0x3f8) };
-    serial.init();
-    crate::logging::init(serial);
+    unsafe { heap_allocator::init() };
 
-    defmt::info!(
-        "Booting from bootloader v{=u16}.{=u16}.{=u16}{=str}",
+    ktrace::init(unsafe { SerialPort::new(0x3f8) });
+
+    let _span = tracing::info_span!("start").entered();
+
+    tracing::info!(
+        "Booting from bootloader v{}.{}.{}{}",
         info.version_major,
         info.version_minor,
         info.version_patch,
@@ -30,7 +36,7 @@ fn start(info: &'static mut BootInfo) -> ! {
         }
     );
 
-    defmt::info!("Memory Regions:");
+    tracing::info!("Memory Regions:");
     // The bootloader doesn't combine adjacent functionally-equivalent regions, so
     // do it here
     // It also marks UEFI runtime service memory as usable...
@@ -70,21 +76,25 @@ fn start(info: &'static mut BootInfo) -> ! {
     )
     .unwrap();
 
+    tracing::trace!("About to call kmain");
+
     let args = BootArgs {
         display: info.framebuffer.as_mut().map(FrameBufferTarget::new),
         memory_access: access,
     };
+
+    tracing::trace!("HERE :)");
 
     crate::kmain(args);
 }
 
 fn log_region(region: MemoryRegion) {
     let size = region.end - region.start;
-    defmt::info!(
+    tracing::info!(
         " - {:#012x} - {:#012x} {} ({} bytes =~ {} KiB =~ {} MiB)",
         region.start,
         region.end,
-        defmt::Display2Format(&DisplayRegion(region.kind)),
+        DisplayRegion(region.kind),
         size,
         size / 1024,
         size / 1024 / 1024
