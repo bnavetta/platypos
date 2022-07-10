@@ -121,6 +121,8 @@ impl<'de: 'a, 'a> Deserialize<'de> for DeserializedFields<'a> {
 #[derive(Debug)]
 pub enum Value<'a> {
     KernelAddress(u64),
+    PhysicalAddress(u64),
+    VirtualAddress(u64),
     String(&'a str),
     U64(u64),
 }
@@ -131,11 +133,16 @@ static TYPES: phf::Map<&'static str, FieldType> = phf_map! {
     "at" => FieldType::KernelAddress,
     "message" => FieldType::String,
     "count" => FieldType::U64,
+    "size" => FieldType::U64,
+    "vaddr" => FieldType::VirtualAddress,
+    "paddr" => FieldType::PhysicalAddress,
 };
 
 #[derive(Clone, Copy, Debug)]
 pub enum FieldType {
     KernelAddress,
+    PhysicalAddress,
+    VirtualAddress,
     String,
     U64,
 }
@@ -143,7 +150,10 @@ pub enum FieldType {
 impl FieldType {
     fn write_u64<S: SerializeMap>(self, name: &str, value: u64, s: &mut S) -> Result<(), S::Error> {
         match self {
-            FieldType::KernelAddress | FieldType::U64 => s.serialize_entry(name, &value),
+            FieldType::KernelAddress
+            | FieldType::U64
+            | FieldType::PhysicalAddress
+            | FieldType::VirtualAddress => s.serialize_entry(name, &value),
             other => Err(S::Error::custom(format_args!(
                 "{name} value must be a {other:?}, got u64"
             ))),
@@ -168,6 +178,8 @@ impl FieldType {
         match self {
             FieldType::KernelAddress => Ok(Value::KernelAddress(map.next_value()?)),
             FieldType::U64 => Ok(Value::U64(map.next_value()?)),
+            FieldType::PhysicalAddress => Ok(Value::PhysicalAddress(map.next_value()?)),
+            FieldType::VirtualAddress => Ok(Value::VirtualAddress(map.next_value()?)),
             FieldType::String => Ok(Value::String(map.next_value()?)),
         }
     }

@@ -2,6 +2,7 @@
 
 use std::collections::HashMap;
 use std::fmt;
+use std::fmt::Display;
 
 use owo_colors::{OwoColorize, Stream};
 use platypos_ktrace_proto as proto;
@@ -221,7 +222,14 @@ fn write_value<S: Symbolizer>(
 
             Ok(())
         }
-        proto::Value::U64(x) => write!(f, "{x:#012x}"),
+        proto::Value::U64(x) => write!(f, "{x}"),
+        // Color-code addresses so they can be disambiguated
+        proto::Value::PhysicalAddress(addr) => format_args!("{addr:#012x}")
+            .if_supports_color(Stream::Stdout, |a| a.magenta())
+            .fmt(f),
+        proto::Value::VirtualAddress(addr) => format_args!("{addr:#012x}")
+            .if_supports_color(Stream::Stdout, |a| a.cyan())
+            .fmt(f),
     }
 }
 
