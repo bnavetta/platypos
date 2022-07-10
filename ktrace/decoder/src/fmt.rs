@@ -8,7 +8,6 @@ use platypos_ktrace_proto as proto;
 
 pub struct Formatter<S: Symbolizer> {
     spans: HashMap<u64, SpanState>,
-    span_stack: Vec<u64>,
     symbolizer: S,
 }
 
@@ -21,7 +20,6 @@ impl<S: Symbolizer> Formatter<S> {
     pub fn new(symbolizer: S) -> Self {
         Formatter {
             spans: HashMap::new(),
-            span_stack: Vec::new(),
             symbolizer,
         }
     }
@@ -78,18 +76,6 @@ impl<S: Symbolizer> Formatter<S> {
                         symbolizer: &self.symbolizer,
                     }
                 );
-            }
-            // TODO: enter/exit messages probably aren't necessary
-            proto::Message::EnterSpan { id } => {
-                self.span_stack.push(*id);
-            }
-            proto::Message::ExitSpan { id } => {
-                let popped = self.span_stack.pop();
-                if let Some(popped) = popped {
-                    if popped != *id {
-                        log::warn!("Expected current span to be {id}, was {popped}");
-                    }
-                }
             }
             proto::Message::SpanClosed { id } => {
                 if let Some(span) = self.spans.remove(id) {

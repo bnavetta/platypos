@@ -131,9 +131,6 @@ impl<W: Write<Error = Infallible> + Send + 'static> Subscriber for KTrace<W> {
     fn enter(&self, span: &span::Id) {
         let mut inner = self.inner.lock();
         inner.push_span(span.clone());
-        inner.emit(&proto::Message::EnterSpan {
-            id: span.into_u64(),
-        })
     }
 
     fn exit(&self, span: &span::Id) {
@@ -141,9 +138,6 @@ impl<W: Write<Error = Infallible> + Send + 'static> Subscriber for KTrace<W> {
         let mut inner = self.inner.lock();
         let popped = inner.pop_span();
         assert!(popped == Some(span.clone()), "Popped non-current span");
-        inner.emit(&proto::Message::ExitSpan {
-            id: span.into_u64(),
-        })
     }
 
     fn max_level_hint(&self) -> Option<tracing_core::LevelFilter> {

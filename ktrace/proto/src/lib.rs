@@ -29,16 +29,6 @@ pub enum Message<'a, E, A> {
     SpanCreated(#[serde(borrow)] SpanCreated<'a, A>),
     Event(#[serde(borrow)] Event<'a, E>),
 
-    /// The given span has been entered, and is now the current span
-    EnterSpan {
-        id: u64,
-    },
-
-    /// The given span has been exited, and is no longer the current span
-    ExitSpan {
-        id: u64,
-    },
-
     /// A span has been closed, so it can no longer be entered
     SpanClosed {
         id: u64,
