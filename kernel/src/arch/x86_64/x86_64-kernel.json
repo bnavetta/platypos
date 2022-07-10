@@ -16,8 +16,7 @@
         "ld.lld": [
             "-z",
             "nostart-stop-gc",
-            "-T./link/eh_frame.ld",
-            "-T./link/linkme_tests.ld"
+            "-T./link/eh_frame.ld"
         ]
     },
     "features": "-mmx,-sse,+soft-float"

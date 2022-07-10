@@ -76,7 +76,7 @@ impl Qemu {
         args.push(format!("cpus={}", spec.cpus).into());
 
         args.push("-d".into());
-        args.push("cpu_reset,int,guest_errors".into());
+        args.push("cpu_reset,int".into());
 
         self.add_binary(&mut args, &spec)?;
 

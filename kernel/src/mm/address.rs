@@ -332,16 +332,34 @@ impl<A: Address> fmt::Debug for AddressRange<A> {
 
 #[cfg(test)]
 mod tests {
-    use ktest::TESTS;
-    use linkme::distributed_slice;
+    use super::*;
+    use alloc::format;
+    use ktest::*;
 
-    #[distributed_slice(TESTS)]
-    static TEST_ADDRESS_ARITHMETIC: ktest::Test =
-        ktest::Test::new("test_address_arithmetic", test_address_arithmetic);
+    #[ktest::test]
+    fn test_address_ops() {
+        ktassert_eq!(PhysicalAddress::new(123) + 5, PhysicalAddress::new(128));
+        ktassert_eq!(PhysicalAddress::new(123) - 3, PhysicalAddress::new(120));
+        ktassert_eq!(VirtualAddress::new(1024) - VirtualAddress::new(1000), 24);
 
-    fn test_address_arithmetic() -> ktest::Outcome {
-        ktest::ktassert!(1 + 1 == 2);
+        let mut addr = PhysicalAddress::new(4096);
+        addr += 4096;
+        ktassert_eq!(addr, PhysicalAddress::new(8192));
 
-        ktest::Outcome::Fail
+        addr -= 1024;
+        ktassert_eq!(addr, PhysicalAddress::new(7168));
+    }
+
+    #[ktest::test]
+    fn test_format() {
+        ktassert_eq!(
+            format!("{}", VirtualAddress::new(8192)),
+            "0x0000002000".into()
+        );
+
+        ktassert_eq!(
+            format!("{:?}", VirtualAddress::new(8192)),
+            "VirtualAddress(0x0000002000)".into()
+        );
     }
 }

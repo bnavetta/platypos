@@ -136,6 +136,7 @@ static TYPES: phf::Map<&'static str, FieldType> = phf_map! {
     "size" => FieldType::U64,
     "vaddr" => FieldType::VirtualAddress,
     "paddr" => FieldType::PhysicalAddress,
+    "test_name" => FieldType::String,
 };
 
 #[derive(Clone, Copy, Debug)]

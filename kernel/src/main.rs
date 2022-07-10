@@ -48,9 +48,7 @@ pub fn kmain(args: BootArgs) -> ! {
     tracing::debug!("a s d f");
 
     #[cfg(test)]
-    {
-        ktest::run_tests();
-    };
+    ktest::run_tests();
 
     let display = args.display.unwrap();
     let mut console = Console::new(display);

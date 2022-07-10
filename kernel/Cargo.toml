@@ -13,7 +13,6 @@ ciborium-io = "0.2"
 embedded-graphics = "0.7.1"
 itertools = { version = "0.10.3", default-features = false }
 ktest = { path = "../ktest" }
-linkme = { version = "0.3", path = "../linkme" }
 mini-backtrace = "0.1"
 platypos_ktrace = { path = "../ktrace" }
 spin = { version = "0.9.2", features = ["mutex", "once"] }
