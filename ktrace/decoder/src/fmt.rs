@@ -157,7 +157,7 @@ impl<D: fmt::Display> fmt::Display for LevelColor<D> {
             proto::Level::Trace => write!(
                 f,
                 "{}",
-                "TRACE".if_supports_color(Stream::Stdout, |l| l.dimmed())
+                self.1.if_supports_color(Stream::Stdout, |l| l.dimmed())
             ),
         }
     }
