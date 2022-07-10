@@ -8,3 +8,5 @@ pub use crate::mm::{
     ByteSizeExt, Page, PageFrame, PageFrameRange, PageRange, PhysicalAddress, PhysicalAddressRange,
     VirtualAddress, VirtualAddressRange,
 };
+
+pub use sptr::Strict;

@@ -915,6 +915,7 @@ dependencies = [
  "mini-backtrace",
  "platypos_ktrace",
  "spin",
+ "sptr",
  "static_assertions",
  "tracing",
  "uart_16550",
@@ -1268,6 +1269,12 @@ checksum = "75adad84ee84b521fb2cca2d4fd0f1dab1d8d026bda3c5bea4ca63b5f9f9293c"
 dependencies = [
  "lock_api",
 ]
+
+[[package]]
+name = "sptr"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3b9b39299b249ad65f3b7e96443bad61c02ca5cd3589f46cb6d610a0fd6c0d6a"
 
 [[package]]
 name = "stable_deref_trait"

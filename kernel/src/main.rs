@@ -1,5 +1,6 @@
 #![no_std]
 #![no_main]
+#![allow(unstable_name_collisions)]
 #![feature(alloc_error_handler)]
 #![feature(allocator_api)]
 #![feature(const_maybe_uninit_uninit_array)]
@@ -60,6 +61,11 @@ pub fn kmain(args: BootArgs) -> ! {
         "Hello from PlatypOS v{}",
         env!("CARGO_PKG_VERSION")
     );
+
+    let mut s = ::alloc::string::String::new();
+    s.push_str("Hello, World!");
+    tracing::trace!("Heap-allocated string: {}", s);
+    drop(s);
 
     test_inline();
 

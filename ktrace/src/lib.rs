@@ -2,6 +2,7 @@
 
 use core::convert::Infallible;
 use core::num::NonZeroU64;
+use core::sync::atomic::{AtomicBool, Ordering};
 
 use ciborium_io::Write;
 use platypos_ktrace_proto as proto;
@@ -19,6 +20,13 @@ const MAX_DEPTH: usize = 16;
 
 /// Maximum number of active spans allowed
 const MAX_ACTIVE_SPANS: usize = 128;
+
+// TODO: separate out per-core state (span stack, whether or not in tracing
+// code)
+
+/// Used to track if `ktrace` code is currently running, so that code it might
+/// call (particularly memory allocators) can avoid recursive trace calls.
+static IN_TRACING: AtomicBool = AtomicBool::new(false);
 
 struct Inner<W> {
     next_id: NonZeroU64,
@@ -41,12 +49,31 @@ struct SpanState {
 #[derive(PartialEq, Eq, Debug)]
 struct SpanId(span::Id);
 
+/// Initialize `ktrace` as the `tracing` subscriber.
 pub fn init<W: Write<Error = Infallible> + Send + 'static>(mut writer: W) {
     writer
         .write_all(&proto::START_OF_OUTPUT)
         .expect("Could not write start-of-output");
     let dispatch = Dispatch::new(KTrace::new(writer));
     tracing_core::dispatcher::set_global_default(dispatch).expect("Tracing initialized twice");
+}
+
+/// Tests if this was called from inside the `ktrace` implementation
+pub fn is_tracing() -> bool {
+    IN_TRACING.load(Ordering::Acquire)
+}
+
+/// Evaluates an expression only if _not_ inside the `ktrace` implementation,
+/// wrapping it in an [`Option`].
+#[macro_export]
+macro_rules! if_not_tracing {
+    ($e:expr) => {
+        if $crate::is_tracing() {
+            None
+        } else {
+            Some($e)
+        }
+    };
 }
 
 impl<W: Write<Error = Infallible> + Send> KTrace<W> {
@@ -63,43 +90,57 @@ impl<W: Write<Error = Infallible> + Send> KTrace<W> {
     }
 }
 
+/// Execute `f` with the [`IN_TRACING`] flag set. This must be used for any
+/// non-trivial [`Subscriber`] methods that may call out to other kernel
+/// subsystems. Otherwise, they might call `ktrace` while `ktrace` is calling
+/// them!
+#[inline(always)]
+fn in_tracing<T, F: FnOnce() -> T>(f: F) -> T {
+    IN_TRACING.store(true, Ordering::Release);
+    let result = f();
+    IN_TRACING.store(false, Ordering::Release);
+    result
+}
+
 impl<W: Write<Error = Infallible> + Send + 'static> Subscriber for KTrace<W> {
     fn enabled(&self, _metadata: &tracing_core::Metadata<'_>) -> bool {
         true
     }
 
     fn new_span(&self, span: &span::Attributes<'_>) -> span::Id {
-        let mut inner = self.inner.lock();
-        let id = inner.next_id;
-        inner.next_id = inner.next_id.checked_add(1).expect("span ID overflow");
+        in_tracing(|| {
+            let mut inner = self.inner.lock();
+            let id = inner.next_id;
+            inner.next_id = inner.next_id.checked_add(1).expect("span ID overflow");
 
-        let parent = if span.is_root() {
-            None
-        } else if span.is_contextual() {
-            inner.current().cloned()
-        } else {
-            span.parent().cloned()
-        };
+            let parent = if span.is_root() {
+                None
+            } else if span.is_contextual() {
+                inner.current().cloned()
+            } else {
+                span.parent().cloned()
+            };
 
-        let id = span::Id::from_non_zero_u64(id);
+            let id = span::Id::from_non_zero_u64(id);
 
-        let state = SpanState {
-            metadata: span.metadata(),
-            references: 1,
-        };
-        inner
-            .active_spans
-            .insert(SpanId(id.clone()), state)
-            .expect("too many spans");
+            let state = SpanState {
+                metadata: span.metadata(),
+                references: 1,
+            };
+            inner
+                .active_spans
+                .insert(SpanId(id.clone()), state)
+                .expect("too many spans");
 
-        inner.emit(&proto::Message::SpanCreated(proto::SpanCreated {
-            id: id.into_u64(),
-            parent: parent.map(|s| s.into_u64()),
-            metadata: proto::Metadata::from_tracing(span.metadata()),
-            fields: span.into(),
-        }));
+            inner.emit(&proto::Message::SpanCreated(proto::SpanCreated {
+                id: id.into_u64(),
+                parent: parent.map(|s| s.into_u64()),
+                metadata: proto::Metadata::from_tracing(span.metadata()),
+                fields: span.into(),
+            }));
 
-        id
+            id
+        })
     }
 
     fn record(&self, _span: &span::Id, _values: &span::Record<'_>) {
@@ -111,21 +152,23 @@ impl<W: Write<Error = Infallible> + Send + 'static> Subscriber for KTrace<W> {
     }
 
     fn event(&self, event: &tracing_core::Event<'_>) {
-        let mut inner = self.inner.lock();
-        let span_id = if event.is_contextual() {
-            inner.current()
-        } else if event.is_root() {
-            None
-        } else {
-            event.parent()
-        }
-        .map(|i| i.into_u64());
+        in_tracing(|| {
+            let mut inner = self.inner.lock();
+            let span_id = if event.is_contextual() {
+                inner.current()
+            } else if event.is_root() {
+                None
+            } else {
+                event.parent()
+            }
+            .map(|i| i.into_u64());
 
-        inner.emit(&proto::Message::Event(proto::Event {
-            span_id,
-            metadata: proto::Metadata::from_tracing(event.metadata()),
-            fields: event.into(),
-        }));
+            inner.emit(&proto::Message::Event(proto::Event {
+                span_id,
+                metadata: proto::Metadata::from_tracing(event.metadata()),
+                fields: event.into(),
+            }));
+        })
     }
 
     fn enter(&self, span: &span::Id) {
@@ -134,10 +177,12 @@ impl<W: Write<Error = Infallible> + Send + 'static> Subscriber for KTrace<W> {
     }
 
     fn exit(&self, span: &span::Id) {
-        // TODO: handle duplicates and out-of-order exiting?
-        let mut inner = self.inner.lock();
-        let popped = inner.pop_span();
-        assert!(popped == Some(span.clone()), "Popped non-current span");
+        in_tracing(|| {
+            // TODO: handle duplicates and out-of-order exiting?
+            let mut inner = self.inner.lock();
+            let popped = inner.pop_span();
+            assert!(popped == Some(span.clone()), "Popped non-current span");
+        })
     }
 
     fn max_level_hint(&self) -> Option<tracing_core::LevelFilter> {
@@ -150,40 +195,46 @@ impl<W: Write<Error = Infallible> + Send + 'static> Subscriber for KTrace<W> {
     }
 
     fn clone_span(&self, id: &span::Id) -> span::Id {
-        let mut inner = self.inner.lock();
-        let state = inner
-            .span_state_mut(&id)
-            .expect("Cloning a span with no state");
-        state.references += 1;
-        id.clone()
+        in_tracing(|| {
+            let mut inner = self.inner.lock();
+            let state = inner
+                .span_state_mut(id)
+                .expect("Cloning a span with no state");
+            state.references += 1;
+            id.clone()
+        })
     }
 
     fn try_close(&self, id: span::Id) -> bool {
-        let mut inner = self.inner.lock();
-        let state = inner
-            .span_state_mut(&id)
-            .expect("Cloning a span with no state");
-        state.references -= 1;
+        in_tracing(|| {
+            let mut inner = self.inner.lock();
+            let state = inner
+                .span_state_mut(&id)
+                .expect("Cloning a span with no state");
+            state.references -= 1;
 
-        if state.references == 0 {
-            inner.active_spans.remove(&SpanId(id.clone()));
+            if state.references == 0 {
+                inner.active_spans.remove(&SpanId(id.clone()));
 
-            inner.emit(&proto::Message::SpanClosed { id: id.into_u64() });
+                inner.emit(&proto::Message::SpanClosed { id: id.into_u64() });
 
-            true
-        } else {
-            false
-        }
+                true
+            } else {
+                false
+            }
+        })
     }
 
     fn current_span(&self) -> span::Current {
-        let inner = self.inner.lock();
-        if let Some(id) = inner.current() {
-            let state = inner.span_state(id).expect("current span has no state");
-            span::Current::new(id.clone(), state.metadata)
-        } else {
-            span::Current::none()
-        }
+        in_tracing(|| {
+            let inner = self.inner.lock();
+            if let Some(id) = inner.current() {
+                let state = inner.span_state(id).expect("current span has no state");
+                span::Current::new(id.clone(), state.metadata)
+            } else {
+                span::Current::none()
+            }
+        })
     }
 }
 

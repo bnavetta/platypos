@@ -4,6 +4,9 @@
 use core::alloc::GlobalAlloc;
 use core::mem::MaybeUninit;
 
+use crate::prelude::*;
+use platypos_ktrace::if_not_tracing;
+
 use linked_list_allocator::LockedHeap;
 
 struct KernelHeapAllocator {
@@ -35,10 +38,22 @@ impl KernelHeapAllocator {
 
 unsafe impl GlobalAlloc for KernelHeapAllocator {
     unsafe fn alloc(&self, layout: core::alloc::Layout) -> *mut u8 {
-        self.inner.alloc(layout)
+        let _trace = if_not_tracing!(tracing::trace_span!("alloc", size = layout.size()));
+        let res = self.inner.alloc(layout);
+        if res.is_null() {
+            if_not_tracing!(tracing::warn!("allocation failed"));
+        } else {
+            if_not_tracing!(tracing::trace!(vaddr = res.addr(), "allocation succeeded"));
+        }
+        res
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: core::alloc::Layout) {
+        let _trace = if_not_tracing!(tracing::trace_span!(
+            "dealloc",
+            size = layout.size(),
+            vaddr = ptr.addr()
+        ));
         self.inner.dealloc(ptr, layout)
     }
 }
