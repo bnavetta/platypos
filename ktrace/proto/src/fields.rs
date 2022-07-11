@@ -1,8 +1,7 @@
 //! Serializable adapter for trace attributes
 
-use alloc::string::String;
 use alloc::vec::Vec;
-use core::fmt::{Debug, Formatter, Write};
+use core::fmt::{Debug, Formatter};
 use phf::phf_map;
 use serde::de::{Error as _, MapAccess, Visitor};
 use serde::ser::{Error as _, SerializeMap};
@@ -51,18 +50,13 @@ impl<'a> From<&'a Event<'a>> for SerializeEvent<'a> {
 }
 
 #[inline(always)]
-fn serialize_fields<S: Serializer, F: FnOnce(&mut FieldVisitor<'_, S::SerializeMap>)>(
+fn serialize_fields<S: Serializer, F: FnOnce(&mut FieldVisitor<S::SerializeMap>)>(
     serializer: S,
     len: usize,
     f: F,
 ) -> Result<S::Ok, S::Error> {
-    // Scope the temporary formatting buffer to the duration of serialization.
-    // Hopefully, this gives us some efficiency gains while avoiding synchronization
-    // and the cost of keeping buffers around.
-    let mut buf = String::new();
-
     let map = serializer.serialize_map(Some(len))?;
-    let mut visitor = FieldVisitor::new(&mut buf, map);
+    let mut visitor = FieldVisitor::new(map);
     f(&mut visitor);
     visitor.finish()
 }
@@ -137,7 +131,7 @@ static TYPES: phf::Map<&'static str, FieldType> = phf_map! {
     "size" => FieldType::U64,
     "vaddr" => FieldType::VirtualAddress,
     "paddr" => FieldType::PhysicalAddress,
-    "test_name" => FieldType::String,
+    "range" => FieldType::String,
 };
 
 #[derive(Clone, Copy, Debug)]
@@ -176,6 +170,33 @@ impl FieldType {
         }
     }
 
+    fn write_debug<S: SerializeMap>(
+        self,
+        name: &str,
+        value: &dyn Debug,
+        s: &mut S,
+    ) -> Result<(), S::Error> {
+        match self {
+            FieldType::String => {
+                struct SerializeDebug<'a>(&'a dyn Debug);
+
+                impl<'a> Serialize for SerializeDebug<'a> {
+                    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+                    where
+                        S: Serializer,
+                    {
+                        serializer.collect_str(&format_args!("{:?}", self.0))
+                    }
+                }
+
+                s.serialize_entry(name, &SerializeDebug(value))
+            }
+            other => Err(S::Error::custom(format_args!(
+                "{name} value must be a {other:?}, got str"
+            ))),
+        }
+    }
+
     fn read<'a, M: MapAccess<'a>>(self, map: &mut M) -> Result<Value<'a>, M::Error> {
         match self {
             FieldType::KernelAddress => Ok(Value::KernelAddress(map.next_value()?)),
@@ -187,18 +208,16 @@ impl FieldType {
     }
 }
 
-struct FieldVisitor<'a, S: SerializeMap> {
+struct FieldVisitor<S: SerializeMap> {
     state: Result<(), S::Error>,
     serializer: S,
-    buf: &'a mut String,
 }
 
-impl<'a, S: SerializeMap> FieldVisitor<'a, S> {
-    fn new(buf: &'a mut String, serializer: S) -> Self {
+impl<S: SerializeMap> FieldVisitor<S> {
+    fn new(serializer: S) -> Self {
         Self {
             state: Ok(()),
             serializer,
-            buf,
         }
     }
 
@@ -208,14 +227,12 @@ impl<'a, S: SerializeMap> FieldVisitor<'a, S> {
     }
 }
 
-impl<'a, S: SerializeMap> Visit for FieldVisitor<'a, S> {
+impl<S: SerializeMap> Visit for FieldVisitor<S> {
     fn record_debug(&mut self, field: &Field, value: &dyn Debug) {
         if self.state.is_ok() {
             let name = field.name();
             if let Some(ty) = TYPES.get(name) {
-                write!(&mut self.buf, "{value:?}").unwrap();
-                self.state = ty.write_str(field.name(), self.buf, &mut self.serializer);
-                self.buf.clear();
+                self.state = ty.write_debug(field.name(), value, &mut self.serializer);
             } else {
                 panic!("unknown field: {field}");
             }

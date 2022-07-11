@@ -111,10 +111,13 @@ impl Builder {
             })
             .ok_or(Error::new(ErrorKind::InsufficientMemory))?;
 
-        tracing::debug!("Scratch space: {}", scratch.address_range());
         tracing::debug!(
-            "Initial tracking pages: {}",
-            initial_tracking.address_range()
+            range = %scratch.address_range(),
+            "Scratch space",
+        );
+        tracing::debug!(
+            range = %initial_tracking.address_range(),
+            "Initial tracking pages",
         );
 
         unsafe {
