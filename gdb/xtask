@@ -1,0 +1,3 @@
+# GDB config for debugging xtask
+handle SIGTTOU ignore nostop noprint
+handle SIGTTIN ignore nostop noprint

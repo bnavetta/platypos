@@ -92,12 +92,11 @@ impl Qemu {
         let mut output = cmd.reader().wrap_err("could not start qemu")?;
 
         // let filter = SymbolizeFilter::new(spec.binary)?;
-        let mut stdout = io::stdout().lock();
+        let stdout = io::stdout().lock();
         let mut decoder = Decoder::new();
-        decoder.read_to_header(&mut output, &mut stdout)?;
         let symbolizer = GimliSymbolizer::new(spec.binary)?;
         let mut formatter = Formatter::new(&symbolizer);
-        decoder.decode(&mut output, |msg| {
+        decoder.decode(&mut output, stdout, |msg| {
             formatter.receive(&msg);
             Ok(())
         })?;

@@ -8,4 +8,7 @@ description = "Serialization protocol for PlatypOS KTrace data"
 postcard = "1.0"
 phf = { version = "0.10", default-features = false, features = ["macros"] }
 serde = { version = "1.0", default-features = false, features = ["derive"] }
-tracing-core = { version = "0.1", default-features = false }
+tracing = { version = "0.1", default-features = false }
+
+[features]
+std = []

@@ -31,7 +31,6 @@ static IN_TRACING: AtomicBool = AtomicBool::new(false);
 struct Inner<W> {
     next_id: NonZeroU64,
     writer: W,
-    encode_buf: [u8; proto::MAX_MESSAGE_SIZE],
     // TODO: we can probably afford dynamic allocation here, as long as we handle the
     // logging-from-tracing-code case
     span_stack: heapless::Vec<span::Id, MAX_DEPTH>,
@@ -82,7 +81,6 @@ impl<W: Write<Error = Infallible> + Send> KTrace<W> {
             inner: Mutex::new(Inner {
                 next_id: NonZeroU64::new(1).unwrap(),
                 writer,
-                encode_buf: [0u8; proto::MAX_MESSAGE_SIZE],
                 span_stack: heapless::Vec::new(),
                 active_spans: heapless::FnvIndexMap::new(),
             }),
@@ -248,12 +246,14 @@ impl<W: Write<Error = Infallible> + Send> Inner<W> {
     }
 
     fn emit(&mut self, message: &proto::SenderMessage) {
-        let encoded = postcard::to_slice_cobs(message, &mut self.encode_buf)
-            .expect("Message serialization failed");
-        self.writer
-            .write_all(encoded)
-            .expect("Message sending failed");
-        self.writer.flush().expect("Message flush failed");
+        let storage = StreamOut(&mut self.writer);
+        postcard::serialize_with_flavor(message, storage).expect("Sending failed");
+
+        // TODO: COBS needs to modify data after it's written. Can probably get
+        // streaming working  by just writing the message, and having the host
+        // read more if it gets an unexpected EOF error from postcard
+        // ALSO: look at collect_str method when serializing, can use Display
+        // impl
     }
 
     fn current(&self) -> Option<&span::Id> {
@@ -266,6 +266,28 @@ impl<W: Write<Error = Infallible> + Send> Inner<W> {
 
     fn pop_span(&mut self) -> Option<span::Id> {
         self.span_stack.pop()
+    }
+}
+
+struct StreamOut<'a, W: Write>(&'a mut W);
+
+impl<'a, W: Write> postcard::ser_flavors::Flavor for StreamOut<'a, W> {
+    type Output = ();
+
+    fn try_push(&mut self, data: u8) -> postcard::Result<()> {
+        self.0
+            .write_all(&[data])
+            .map_err(|_| postcard::Error::SerdeSerCustom)
+    }
+
+    fn try_extend(&mut self, data: &[u8]) -> postcard::Result<()> {
+        self.0
+            .write_all(data)
+            .map_err(|_| postcard::Error::SerdeSerCustom)
+    }
+
+    fn finalize(self) -> postcard::Result<Self::Output> {
+        self.0.flush().map_err(|_| postcard::Error::SerdeSerCustom)
     }
 }
 

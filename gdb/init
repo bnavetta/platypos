@@ -1,4 +1,0 @@
-target remote localhost:1234
-tui enable
-source ./gdb/bootloader.py
-source ./gdb/kernel.py

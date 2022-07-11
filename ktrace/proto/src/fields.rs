@@ -7,9 +7,9 @@ use phf::phf_map;
 use serde::de::{Error as _, MapAccess, Visitor};
 use serde::ser::{Error as _, SerializeMap};
 use serde::{Deserialize, Serialize, Serializer};
-use tracing_core::field::Visit;
-use tracing_core::span::Attributes;
-use tracing_core::{Event, Field};
+use tracing::field::{Field, Visit};
+use tracing::span::Attributes;
+use tracing::Event;
 
 #[derive(Debug)]
 pub struct SerializeAttributes<'a>(&'a Attributes<'a>);
@@ -103,7 +103,8 @@ impl<'de: 'a, 'a> Deserialize<'de> for DeserializedFields<'a> {
                 let mut fields = Vec::new();
                 while let Some(field) = map.next_key()? {
                     if let Some(ty) = TYPES.get(field) {
-                        fields.push((field, ty.read(&mut map)?));
+                        let value = ty.read(&mut map)?;
+                        fields.push((field, value));
                     } else {
                         return Err(A::Error::custom(format_args!("unknown field {field}")));
                     }
@@ -118,7 +119,7 @@ impl<'de: 'a, 'a> Deserialize<'de> for DeserializedFields<'a> {
 }
 
 /// Dynamic field value, for use on the materialized side
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum Value<'a> {
     KernelAddress(u64),
     PhysicalAddress(u64),

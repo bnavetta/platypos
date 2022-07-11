@@ -964,7 +964,7 @@ dependencies = [
  "phf",
  "postcard",
  "serde",
- "tracing-core",
+ "tracing",
 ]
 
 [[package]]

@@ -1,4 +1,4 @@
-#![no_std]
+#![cfg_attr(not(feature = "std"), no_std)]
 
 extern crate alloc;
 
@@ -13,9 +13,6 @@ pub use fields::{DeserializedFields, FieldType, Value};
 /// Marker written by the kernel to indicate that it's started writing to the
 /// serial port (and not the bootloader).
 pub const START_OF_OUTPUT: [u8; 4] = [255, 0, 255, 0];
-
-/// The maximum size of a serialized message
-pub const MAX_MESSAGE_SIZE: usize = 512;
 
 pub type SenderMessage<'a> =
     Message<'a, fields::SerializeEvent<'a>, fields::SerializeAttributes<'a>>;
@@ -69,7 +66,7 @@ pub struct Metadata<'a> {
 }
 
 impl<'a> Metadata<'a> {
-    pub fn from_tracing(m: &tracing_core::Metadata<'a>) -> Metadata<'a> {
+    pub fn from_tracing(m: &tracing::Metadata<'a>) -> Metadata<'a> {
         Metadata {
             name: m.name(),
             target: m.target(),
@@ -89,14 +86,14 @@ pub enum Level {
     Trace,
 }
 
-impl From<&tracing_core::Level> for Level {
-    fn from(t: &tracing_core::Level) -> Self {
+impl From<&tracing::Level> for Level {
+    fn from(t: &tracing::Level) -> Self {
         match *t {
-            tracing_core::Level::ERROR => Level::Error,
-            tracing_core::Level::WARN => Level::Warn,
-            tracing_core::Level::INFO => Level::Info,
-            tracing_core::Level::DEBUG => Level::Debug,
-            tracing_core::Level::TRACE => Level::Trace,
+            tracing::Level::ERROR => Level::Error,
+            tracing::Level::WARN => Level::Warn,
+            tracing::Level::INFO => Level::Info,
+            tracing::Level::DEBUG => Level::Debug,
+            tracing::Level::TRACE => Level::Trace,
         }
     }
 }

@@ -26,7 +26,9 @@ impl ciborium_io::Write for SerialPort {
 
     fn write_all(&mut self, data: &[u8]) -> Result<(), Self::Error> {
         for byte in data {
-            self.0.send(*byte)
+            // DO NOT use `.send` - it encodes the values 8 and 0x7F specially, which causes
+            // a whole bunch of problems using it with binary postcard data.
+            self.0.send_raw(*byte)
         }
 
         Ok(())

@@ -42,11 +42,6 @@ pub struct BootArgs {
 pub fn kmain(args: BootArgs) -> ! {
     let _span = tracing::info_span!("kmain", at = kmain as usize).entered();
 
-    // tracing::info!("IN KMAIN"); // for some reason this doesn't encode - maybe a
-    // CBOR/serialization issue?
-    tracing::info!("asdf");
-    tracing::debug!("a s d f");
-
     #[cfg(test)]
     ktest::run_tests();
 
