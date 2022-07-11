@@ -29,8 +29,6 @@ fn panic(info: &PanicInfo) -> ! {
     }
 }
 
-struct BacktraceFormat(Backtrace<BACKTRACE_DEPTH>);
-
 #[alloc_error_handler]
 fn alloc_error_handler(layout: Layout) -> ! {
     panic!("memory allocation of {} bytes failed", layout.size());

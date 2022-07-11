@@ -2,9 +2,11 @@
 build:
   @cargo xtask build
 
-# Update the local copy of vendored crates
-pull-modules:
-  git subtree pull --prefix defmt https://github.com/knurling-rs/defmt.git main --squash
+run:
+  @cargo xtask run
+
+test:
+  @cargo xtask test
 
 fmt:
   cargo fmt --all

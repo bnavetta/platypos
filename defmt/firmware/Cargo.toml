@@ -1,9 +1,0 @@
-[workspace]
-members = [
-  "defmt-itm",
-  "defmt-rtt",
-  "defmt-semihosting",
-  "defmt-test",
-  "panic-probe",
-  "qemu",
-]
