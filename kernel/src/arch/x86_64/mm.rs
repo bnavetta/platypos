@@ -2,6 +2,7 @@ use core::mem::MaybeUninit;
 use core::slice;
 
 use bootloader::boot_info::{MemoryRegion, MemoryRegionKind};
+use spin::Once;
 
 use crate::mm::map::{Kind, Region};
 use crate::prelude::*;
@@ -24,6 +25,10 @@ impl From<&MemoryRegion> for Region {
     }
 }
 
+/// Global handle for physical memory access. Needed because the memory
+/// allocation system must be 'static.
+pub(super) static ACCESS: Once<MemoryAccess> = Once::INIT;
+
 /// Accessor for physical memory. The kernel cannot assume that physical memory
 /// is mapped into its address space. Instead, it uses this type to create
 /// temporary or permanent mappings.
@@ -32,8 +37,15 @@ pub struct MemoryAccess {
     base: *mut MaybeUninit<u8>,
 }
 
+unsafe impl Send for MemoryAccess {}
+unsafe impl Sync for MemoryAccess {}
+
 impl MemoryAccess {
-    pub(super) unsafe fn new(base: *mut MaybeUninit<u8>) -> Self {
+    pub(super) unsafe fn init(base: *mut MaybeUninit<u8>) -> &'static Self {
+        ACCESS.call_once(|| MemoryAccess::new(base))
+    }
+
+    unsafe fn new(base: *mut MaybeUninit<u8>) -> Self {
         Self { base }
     }
 
@@ -49,9 +61,9 @@ impl MemoryAccess {
     /// The mapping is only valid for the duration of `f` (the lifetime of the
     /// slice). Using the mapping outside of that lifetime is undefined
     /// behavior.
-    pub unsafe fn with_memory<F, T>(&mut self, range: PageFrameRange, f: F) -> Result<T, Error>
+    pub unsafe fn with_memory<F, T>(&self, range: PageFrameRange, f: F) -> Result<T, Error>
     where
-        F: FnOnce(&mut Self, &mut [MaybeUninit<u8>]) -> T,
+        F: FnOnce(&Self, &mut [MaybeUninit<u8>]) -> T,
     {
         let base = self.map_permanent(range)?;
         let length = range.size() * PAGE_SIZE;
@@ -67,7 +79,7 @@ impl MemoryAccess {
     /// The caller is responsible for not aliasing memory by mapping the same
     /// (or overlapping) physical region twice.
     pub unsafe fn map_permanent(
-        &mut self,
+        &self,
         range: PageFrameRange,
     ) -> Result<*mut MaybeUninit<u8>, Error> {
         // No-op because all memory is already mapped

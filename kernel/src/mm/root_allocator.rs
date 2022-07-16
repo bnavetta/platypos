@@ -16,19 +16,19 @@ use core::cell::RefCell;
 use core::fmt;
 use core::mem::{self, MaybeUninit};
 
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use intrusive_collections::linked_list::CursorMut;
 use intrusive_collections::{intrusive_adapter, LinkedList, LinkedListLink, UnsafeRef};
 use linked_list_allocator::LockedHeap;
+use platypos_ktrace::if_not_tracing;
 
 use crate::arch::mm::MemoryAccess;
 use crate::prelude::*;
+use crate::sync::InterruptSafeMutex;
 
 use super::map::Region;
-
-/// Builder for the physical memory allocator
-pub struct Builder;
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
 enum Status {
@@ -75,13 +75,19 @@ const SCRATCH_PAGES: usize = 2;
 /// Minimum number of pages to allocate towards tracking memory
 const MIN_TRACKING_PAGES: usize = 2;
 
-impl Builder {
-    pub fn parse_memory_map<I>(
-        &mut self,
-        access: &mut MemoryAccess,
+/// Physical memory allocator
+pub struct Allocator<'a> {
+    access: &'a MemoryAccess,
+    inner: InterruptSafeMutex<AllocatorInner>,
+}
+
+impl<'a> Allocator<'a> {
+    /// Builds the root allocator.
+    pub fn build<I>(
+        access: &'a MemoryAccess,
         memory_map: I,
         reserved: &[PageFrameRange],
-    ) -> Result<(), Error>
+    ) -> Result<Arc<Self>, Error>
     where
         I: Iterator<Item = Region> + Clone,
     {
@@ -120,8 +126,8 @@ impl Builder {
             "Initial tracking pages",
         );
 
-        unsafe {
-            access.with_memory::<_, Result<(), Error>>(scratch, |access, s| {
+        let allocator = unsafe {
+            access.with_memory::<_, Result<_, Error>>(scratch, |access, s| {
                 // LockedHeap expects that the passed-in region is 'static, but the allocator
                 // and allocations made with it don't escape this block, so we should be ok.
                 let alloc = LockedHeap::new(s.as_mut_ptr().cast(), s.len());
@@ -171,145 +177,69 @@ impl Builder {
 
                 // TODO: remove reserved ranges
 
-                tracing::debug!("Usable memory:");
-                for range in &ranges {
-                    tracing::debug!(" - {}", range.address_range());
-                }
-
                 let mut allocator = AllocatorInner::new();
                 allocator.init_tracking_space(access, initial_tracking)?;
                 for range in &ranges {
                     allocator.add_allocatable_range(*range);
                 }
 
-                // TODO: need a way to send large messages
-
-                // tracing::info!(
-                //     "Post-initialization allocator state:\n{}",
-                //     allocator.display_state()
-                // );
-
-                let small_allocation = allocator.allocate(4).unwrap();
-                let big_allocation = allocator.allocate(1000).unwrap();
                 tracing::info!(
-                    "Small allocation: {}\nBig allocation: {}",
-                    small_allocation,
-                    big_allocation
+                    "Post-initialization allocator state:\n{}",
+                    allocator.display_state()
                 );
-                // tracing::info!(
-                //     "Allocator state after allocations:\n{}",
-                //     allocator.display_state()
-                // );
-
-                /*
-
-
-                // Ending page frame number is the number of page frames we have to track
-                let page_frames = ranges.last().unwrap().end().as_usize();
-                let bytes_needed = (page_frames / PAGES_PER_BLOCK).div_ceil(u8::BITS as usize);
-
-                let bitmap_location = ranges
-                    .iter()
-                    .find_map(|r| {
-                        if r.size_bytes() >= bytes_needed {
-                            Some(PageFrameRange::from_start_size(
-                                r.start(),
-                                bytes_needed.div_ceil(PAGE_SIZE),
-                            ))
-                        } else {
-                            None
-                        }
-                    })
-                    .ok_or(Error::new(ErrorKind::InsufficientMemory))?;
-
-                log::debug!("Placing bitmap at {}", bitmap_location.address_range());
-
-                */
-
-                // Block approach has a big fragmentation problem:
-                // - can't use small usable regions < 2MiB
-                // - annoying to use regions that don't start on a 2MiB boundary
-
-                // Solution?
-                // - allocator manages individual pages
-                // - scan bitmap to find big chunks, pull those out, and put them in a separate
-                //   free list
-                // - can always add big chunks back to pool if needed
-                // LK (used in Fuschia) finds contiguous runs as needed: https://github.com/littlekernel/lk/blob/master/kernel/vm/pmm.c#L283
-                // But Fuschia does something more complicated? https://cs.opensource.google/fuchsia/fuchsia/+/main:zircon/kernel/phys/lib/memalloc/pool-test.cc
-                // Linked list of runs of free pages!?
-                // https://cs.opensource.google/fuchsia/fuchsia/+/main:zircon/kernel/phys/lib/memalloc/include/lib/memalloc/pool.h
 
                 drop(ranges);
                 drop(alloc);
 
-                Ok(())
-            })??;
-            // Have outer Allocator hold the MemoryAccess - can create outside
-            // the map_temporary block
-        }
+                Ok(allocator)
+            })??
+        };
 
-        /*
+        Ok(Arc::new(Allocator {
+            access,
+            inner: InterruptSafeMutex::new(allocator),
+        }))
+    }
 
-                // This implicitly assumes that there isn't a large memory hole in low memory.
-                // If there were, we might not want to waste space marking it as unusable.
+    /// Allocate `count` pages of contiguous physical memory.
+    pub fn allocate(&self, count: usize) -> Result<PageFrameRange, Error> {
+        let mut inner = self.inner.lock();
+        inner.allocate(count)
+    }
 
-                // Need one bit per page
-                let page_count = max_usable.as_usize().div_ceil(PAGE_SIZE);
-                let bitmap_size = page_count / u8::BITS as usize;
-                log::info!("Need {} for bitmap", bitmap_size.as_size());
+    /// Deallocate the physical memory allocation `range`.
+    pub fn deallocate(&self, range: PageFrameRange) -> Result<(), Error> {
+        let mut inner = self.inner.lock();
+        inner.deallocate(range)
+    }
 
-                let bitmap_region = memory_map
-                    .filter(|r| r.usable())
-                    .coalesce(|a, b| {
-                        // Combine adjacent usable regions. It's possible that the firmware provided a
-                        // very fragmented memory map, so coalescing makes sure that the first usable
-                        // bitmap space is found.
-                        if b.start() <= a.end() {
-                            Ok(Region::new(a.kind(), a.start(), b.end()))
-                        } else {
-                            Err((a, b))
-                        }
-                    })
-                    .find(|r| r.size() >= bitmap_size)
-                    .ok_or(Error::new(ErrorKind::InsufficientMemory))?;
-
-                log::info!("Using {} for bitmap", bitmap_region);
-
-                let bitmap = unsafe {
-                    // Safety: all usable memory is unallocated at this point, so there
-                    // is not an existing mapping to alias TODO: better PPN
-                    // type
-
-                    //let addr = access.map_permanent(todo!("PPN
-                    // API"), bitmap_size.div_ceil(PAGE_SIZE))?; TODO: make
-                    // sure we have a whole-usize allocation - may need to
-                    // round up bitmap_size for that
-                };
-
-        */
-
-        Ok(())
-
-        // TODOs:
-        // - API for temporarily accessing physical memory (could return a &'a
-        //   [MaybeUninit<u8>] to ensure reference doesn't escape)
-        // - alternative construction algorithm to handle unusable memory like
-        //   kernel: 1. Find a usable page frame (in list from bootloader,
-        //   doesn't overlap w/ reserved regions) 2. Use that to create a
-        //   scratch allocator 3. Put memory into a Vec in scratch allocator -
-        //   then can sort, coalesce, split out reserved regions
-        // - clean up xtasks:
-        //     - support building multiple platforms at once
-        //     - more composable abstractions:
-        //         - build crate X for platform Y, producing the binary artifact
-        //         - run kernel-like artifact (platform-appropriate) on platform
-        //           Y (platform knows which qemu to use, can pass generic
-        //           settings like memory+CPUs)
-        //     - generally, hide platform-specific bootloader stuff better
+    /// Log allocator state
+    pub fn dump_state(&self) {
+        let inner = self.inner.lock();
+        tracing::info!("Allocator state:{}", inner.display_state());
     }
 }
 
+/// Root memory allocator
+///
+/// The allocator algorithm is inspired by [Fuschia's](https://cs.opensource.google/fuchsia/fuchsia/+/main:zircon/kernel/phys/lib/memalloc/include/lib/memalloc/pool.h).
+/// The general approach is to keep a linked list of ranges of memory, where the
+/// linked list itself is stored in memory tracked by the allocator. This allows
+/// reasonably efficient allocation of arbitrary-length ranges of contiguous
+/// memory.
+///
+/// Every contiguous block of usable memory is in one of three states:
+/// * Allocated - this memory is in use
+/// * Deallocated - this memory is unused and can be allocated
+/// * Tracking - this memory contains the allocator's linked list of runs
+///
+/// Unlike Fuschia, ranges are not allowed to overlap. Instead, allocated ranges
+/// are not coalesced together. This simplifies deallocation at the expense of
+/// more tracking memory. It also means the allocator can calculate
+/// per-allocation stats if needed, like the average allocation size.
+///
+/// Also unlike Fuschia, free ranges are tracked in a free list in addition to
+/// the main sorted list of runs.
 struct AllocatorInner {
     // Often, an allocator method has a cursor into the runs list, and want to call some other
     // method with that cursor. Unfortunately, the cursor has a mutable reference to the runst
@@ -343,17 +273,14 @@ impl AllocatorInner {
         }
     }
 
+    /// Allocate `count` pages of contiguous physical memory.
+    #[must_use]
     fn allocate(&mut self, count: usize) -> Result<PageFrameRange, Error> {
+        let _span = if_not_tracing!(tracing::trace_span!("allocate", count));
         // TODO: ensure runs available
 
         // First-fit algorithm, could add other conditions (e.g. must allocate below a
         // certain address for hardware reasons)
-        // let allocatable_run = self
-        //     .tracking
-        //     .free
-        //     .iter()
-        //     .find(|r| r.size() >= count)
-        //     .ok_or_else(|| Error::new(ErrorKind::InsufficientMemory))?;
         let mut free_cursor = {
             let mut free_cursor = self.tracking.free.front_mut();
             loop {
@@ -365,7 +292,10 @@ impl AllocatorInner {
                             free_cursor.move_next();
                         }
                     }
-                    None => return Err(Error::new(ErrorKind::InsufficientMemory)),
+                    None => {
+                        if_not_tracing!(tracing::warn!("Insufficient free memory"));
+                        return Err(Error::new(ErrorKind::InsufficientMemory));
+                    }
                 }
             }
         };
@@ -380,6 +310,7 @@ impl AllocatorInner {
                 run_state.range
             };
             free_cursor.remove();
+            if_not_tracing!(tracing::trace!(%range, "Found allocatable run"));
             Ok(range)
         } else {
             // Split the allocation off the start of the run, so that we can reuse it as the
@@ -406,7 +337,47 @@ impl AllocatorInner {
 
             Self::add_run(allocated_run, cursor, &mut self.tracking);
 
+            if_not_tracing!(tracing::trace!(%range, "Split off allocatable run"));
             Ok(range)
+        }
+    }
+
+    /// Deallocate the physical memory allocation `range`.
+    #[must_use]
+    fn deallocate(&mut self, range: PageFrameRange) -> Result<(), Error> {
+        let _span = if_not_tracing!(tracing::trace_span!("deallocate", %range));
+
+        // TODO: more efficient way to find run?
+        let mut cursor = self.runs.front_mut();
+        loop {
+            if let Some(run) = cursor.get() {
+                let mut inner = run.inner.borrow_mut();
+                if inner.range == range {
+                    if inner.status != Status::Allocated {
+                        if_not_tracing!(tracing::error!(
+                            "Run is not allocated! Has status {:?}",
+                            inner.status
+                        ));
+                        break Err(Error::new(ErrorKind::InvalidAddress));
+                    }
+
+                    inner.status = Status::Free;
+                    drop(inner);
+
+                    // Unwrap: we know the cursor points to an object because of the if-let
+                    let ptr = cursor.as_cursor().clone_pointer().unwrap();
+                    self.tracking.free.push_front(ptr);
+
+                    Self::coalesce(cursor, &mut self.tracking);
+                    break Ok(());
+                } else {
+                    drop(inner);
+                    cursor.move_next();
+                }
+            } else {
+                if_not_tracing!(tracing::error!("Could not find existing run"));
+                break Err(Error::new(ErrorKind::AddressOutOfBounds));
+            }
         }
     }
 
@@ -476,13 +447,16 @@ impl AllocatorInner {
             assert!(prev.end() <= run.start(), "{} and {} overlap", prev, &*run);
         }
 
+        // Don't coalesce `Allocated` runs so that we can later free them without having
+        // to split runs. This also means we can get allocation size stats
+        let should_coalesce = run.status() != Status::Allocated;
+
         cursor.insert_before(run);
         // Coalesce the just-inserted node
-        cursor.move_prev();
-        // TODO: should probably only coalesce tracking+free runs? Otherwise freeing
-        // allocations could get hairy? Although... coalescing allocated runs saves
-        // bookkeeping memory
-        Self::coalesce(cursor, tracking);
+        if should_coalesce {
+            cursor.move_prev();
+            Self::coalesce(cursor, tracking);
+        }
     }
 
     /// Coalesce the run pointed to by `cursor` with its neighbors, if possible.
@@ -551,9 +525,10 @@ impl AllocatorInner {
     /// # Safety
     /// `range` must refer to usable RAM that is not already mapped or in use
     /// for another purpose.
+    #[must_use]
     unsafe fn init_tracking_space(
         &mut self,
-        access: &mut MemoryAccess,
+        access: &MemoryAccess,
         range: PageFrameRange,
     ) -> Result<(), Error> {
         let run_count = range.size_bytes() / mem::size_of::<Run>();

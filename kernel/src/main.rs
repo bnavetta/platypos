@@ -13,8 +13,10 @@ extern crate ktest;
 
 use core::fmt::Write;
 
+use alloc::sync::Arc;
 use arch::mm::MemoryAccess;
 use console::Console;
+use mm::root_allocator::Allocator;
 
 use crate::arch::display::Display;
 use crate::arch::interrupts;
@@ -35,7 +37,10 @@ pub struct BootArgs {
     pub display: Option<Display>,
 
     /// Accessor for physical memory
-    pub memory_access: MemoryAccess,
+    pub memory_access: &'static MemoryAccess,
+
+    /// Root memory allocator
+    pub root_allocator: Arc<Allocator<'static>>,
 }
 
 /// The shared kernel entry point.
@@ -60,6 +65,8 @@ pub fn kmain(args: BootArgs) -> ! {
     tracing::trace!("Heap-allocated string: {}", s);
     drop(s);
 
+    test_alloc(&args.root_allocator);
+
     test_inline();
 
     loop {
@@ -70,4 +77,24 @@ pub fn kmain(args: BootArgs) -> ! {
 #[inline(always)]
 fn test_inline() {
     panic!("This is inline");
+}
+
+fn test_alloc(allocator: &Allocator) {
+    let small_allocation = allocator.allocate(4).unwrap();
+    let big_allocation = allocator.allocate(1000).unwrap();
+    tracing::info!(
+        "Small allocation: {}\nBig allocation: {}",
+        small_allocation,
+        big_allocation
+    );
+
+    allocator.dump_state();
+
+    allocator.deallocate(big_allocation).unwrap();
+    assert!(
+        allocator.deallocate(big_allocation).is_err(),
+        "Allowed double-free"
+    );
+
+    allocator.dump_state();
 }

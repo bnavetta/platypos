@@ -4,15 +4,19 @@
 use core::alloc::GlobalAlloc;
 use core::mem::MaybeUninit;
 
+use crate::mm::root_allocator::Allocator as RootAllocator;
 use crate::prelude::*;
+use alloc::sync::Arc;
 use platypos_ktrace::if_not_tracing;
 
 use linked_list_allocator::LockedHeap;
+use spin::Once;
 
 struct KernelHeapAllocator {
     // TODO: whatever allocator implementation I go with can start with a static area and add more
     // dynamically (instead of special "early" allocator)
     inner: LockedHeap,
+    root: Once<Arc<RootAllocator<'static>>>,
 }
 
 #[global_allocator]
@@ -29,10 +33,19 @@ pub unsafe fn init() {
     KERNEL_HEAP.inner.lock().init_from_slice(&mut BUF);
 }
 
+/// Provide the root memory allocator after it's been initialized, enabling the
+/// heap to grow.
+pub fn enable_expansion(root: Arc<RootAllocator<'static>>) {
+    KERNEL_HEAP.root.call_once(|| root);
+}
+
 impl KernelHeapAllocator {
     const fn new() -> Self {
         let inner = LockedHeap::empty();
-        Self { inner }
+        Self {
+            inner,
+            root: Once::INIT,
+        }
     }
 }
 

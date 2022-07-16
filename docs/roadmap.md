@@ -1,6 +1,6 @@
 # PlatypOS TODO List
 
-- [ ] Finish root memory allocator
+- [X] Finish root memory allocator
 - [ ] Implement kernel heap allocator on top of root allocator
 - [ ] Abstract out HAL crate
 - [ ] Move interrupt-aware spinlock into reusable location and use in `ktrace`
@@ -8,3 +8,8 @@
 - [ ] Async runtime
 - [ ] Support multiple cores
 - [ ] PCI driver
+
+## Tests to add
+
+- [ ] Root memory allocator
+- [ ] Addressing operations

@@ -13,6 +13,9 @@ pub enum ErrorKind {
     /// The address was out of bounds (for example, it's outside of the current
     /// address space)
     AddressOutOfBounds,
+    /// The caller provided an invalid address (for example, they tried to free
+    /// an address that had not been allocated).
+    InvalidAddress,
 }
 
 impl Error {

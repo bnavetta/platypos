@@ -12,6 +12,7 @@ use crate::arch::mm::MemoryAccess;
 use crate::arch::SerialPort;
 use crate::mm::heap_allocator;
 use crate::mm::map::Region;
+use crate::mm::root_allocator::Allocator as RootAllocator;
 use crate::BootArgs;
 
 use super::display::FrameBufferTarget;
@@ -59,8 +60,8 @@ fn start(info: &'static mut BootInfo) -> ! {
         log_region(last);
     }
 
-    let mut access = unsafe {
-        MemoryAccess::new(
+    let access = unsafe {
+        MemoryAccess::init(
             info.physical_memory_offset.into_option().unwrap() as usize as *mut MaybeUninit<u8>
         )
     };
@@ -68,19 +69,21 @@ fn start(info: &'static mut BootInfo) -> ! {
     // TODO: add kernel?
     let reserved = &[];
 
-    let mut ab = crate::mm::root_allocator::Builder;
-    ab.parse_memory_map(
-        &mut access,
+    let root_allocator = RootAllocator::build(
+        &access,
         info.memory_regions.iter().map(Region::from),
         reserved,
     )
-    .unwrap();
+    .expect("Root allocator initialization failed");
+
+    heap_allocator::enable_expansion(root_allocator.clone());
 
     tracing::trace!("About to call kmain");
 
     let args = BootArgs {
         display: info.framebuffer.as_mut().map(FrameBufferTarget::new),
         memory_access: access,
+        root_allocator,
     };
 
     tracing::trace!("HERE :)");
