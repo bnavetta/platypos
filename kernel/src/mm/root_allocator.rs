@@ -16,7 +16,6 @@ use core::cell::RefCell;
 use core::fmt;
 use core::mem::{self, MaybeUninit};
 
-use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use intrusive_collections::linked_list::CursorMut;
@@ -26,7 +25,7 @@ use platypos_ktrace::if_not_tracing;
 
 use crate::arch::mm::MemoryAccess;
 use crate::prelude::*;
-use crate::sync::InterruptSafeMutex;
+use crate::sync::{Global, InterruptSafeMutex};
 
 use super::map::Region;
 
@@ -81,13 +80,27 @@ pub struct Allocator<'a> {
     inner: InterruptSafeMutex<AllocatorInner>,
 }
 
+/// Initialize the root memory allocator
+pub fn init<I>(
+    access: &'static MemoryAccess,
+    memory_map: I,
+    reserved: &[PageFrameRange],
+) -> Result<&'static Allocator<'static>, Error>
+where
+    I: Iterator<Item = Region> + Clone,
+{
+    static GLOBAL: Global<Allocator<'static>> = Global::new();
+    let allocator = Allocator::build(access, memory_map, reserved)?;
+    Ok(GLOBAL.init(allocator))
+}
+
 impl<'a> Allocator<'a> {
     /// Builds the root allocator.
-    pub fn build<I>(
+    fn build<I>(
         access: &'a MemoryAccess,
         memory_map: I,
         reserved: &[PageFrameRange],
-    ) -> Result<Arc<Self>, Error>
+    ) -> Result<Self, Error>
     where
         I: Iterator<Item = Region> + Clone,
     {
@@ -195,10 +208,10 @@ impl<'a> Allocator<'a> {
             })??
         };
 
-        Ok(Arc::new(Allocator {
+        Ok(Allocator {
             access,
             inner: InterruptSafeMutex::new(allocator),
-        }))
+        })
     }
 
     /// Allocate `count` pages of contiguous physical memory.

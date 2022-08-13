@@ -10,9 +10,8 @@ use bootloader::{entry_point, BootInfo};
 
 use crate::arch::mm::MemoryAccess;
 use crate::arch::SerialPort;
-use crate::mm::heap_allocator;
 use crate::mm::map::Region;
-use crate::mm::root_allocator::Allocator as RootAllocator;
+use crate::mm::{heap_allocator, root_allocator};
 use crate::BootArgs;
 
 use super::display::FrameBufferTarget;
@@ -69,14 +68,14 @@ fn start(info: &'static mut BootInfo) -> ! {
     // TODO: add kernel?
     let reserved = &[];
 
-    let root_allocator = RootAllocator::build(
+    let root_allocator = root_allocator::init(
         &access,
         info.memory_regions.iter().map(Region::from),
         reserved,
     )
     .expect("Root allocator initialization failed");
 
-    heap_allocator::enable_expansion(root_allocator.clone());
+    heap_allocator::enable_expansion(root_allocator);
 
     tracing::trace!("About to call kmain");
 

@@ -13,7 +13,6 @@ extern crate ktest;
 
 use core::fmt::Write;
 
-use alloc::sync::Arc;
 use arch::mm::MemoryAccess;
 use console::Console;
 use mm::root_allocator::Allocator;
@@ -40,7 +39,7 @@ pub struct BootArgs {
     pub memory_access: &'static MemoryAccess,
 
     /// Root memory allocator
-    pub root_allocator: Arc<Allocator<'static>>,
+    pub root_allocator: &'static Allocator<'static>,
 }
 
 /// The shared kernel entry point.

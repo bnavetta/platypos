@@ -1,7 +1,10 @@
 //! Kernel synchronization primitives
 
+use core::cell::UnsafeCell;
 use core::fmt;
+use core::mem::MaybeUninit;
 use core::ops::{Deref, DerefMut};
+use core::sync::atomic::{AtomicBool, Ordering};
 
 use spin::{Mutex, MutexGuard};
 
@@ -20,6 +23,30 @@ pub struct InterruptSafeMutexGuard<'a, T: ?Sized> {
     // https://elixir.bootlin.com/linux/v5.17.1/source/include/linux/spinlock_api_smp.h#L104
     inner: MutexGuard<'a, T>,
     _interrupt_guard: interrupts::Guard,
+}
+
+/// Primitive for global state initialized during boot. This is similar to
+/// [`spin::Once`], but optimized for the case of values that are known to be
+/// initialized in a specific order, such as memory allocators and state used in
+/// interrupt handlers.
+///
+/// # Example
+///
+/// ```rust
+/// // In some_subsystem:
+///
+/// struct Driver {
+///     base_address: PhysicalAddress,
+/// }
+///
+/// pub fn init(base_address: PhysicalAddress) -> &'static Driver {
+///     static GLOBAL: Global<Driver> = Global::new();
+///     GLOBAL.init(Driver { base_address })
+/// }
+/// ```
+pub struct Global<T> {
+    initialized: AtomicBool,
+    value: UnsafeCell<MaybeUninit<T>>,
 }
 
 impl<T> InterruptSafeMutex<T> {
@@ -71,5 +98,70 @@ impl<'a, T: ?Sized + fmt::Debug> fmt::Debug for InterruptSafeMutexGuard<'a, T> {
 impl<'a, T: ?Sized + fmt::Display> fmt::Display for InterruptSafeMutexGuard<'a, T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         fmt::Display::fmt(&self.inner, f)
+    }
+}
+
+impl<T> Global<T> {
+    /// Create a new uninitialized `Global`
+    pub const fn new() -> Self {
+        Self {
+            initialized: AtomicBool::new(false),
+            value: UnsafeCell::new(MaybeUninit::uninit()),
+        }
+    }
+
+    /// Attempt to initialize this global with `value`, returning `Err` if it
+    /// has already been initialized.
+    pub fn try_init(&self, value: T) -> Result<&T, ()> {
+        self.initialized
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .map_err(|_| ())?;
+
+        // SAFETY: at this point, we know `value` is uninitialized, and that any
+        // other thread attempting initialization will fail because we have set
+        // `initialized`
+        let value_ref = unsafe { (&mut *self.value.get()).write(value) };
+        Ok(value_ref)
+    }
+
+    /// Initialize this global to `value`
+    ///
+    /// # Panics
+    /// If already initialized
+    pub fn init(&self, value: T) -> &T {
+        self.try_init(value).expect("global already initialized")
+    }
+
+    /// Get a reference to the value if initialized, otherwise `None`
+    pub fn try_get(&self) -> Option<&T> {
+        if self.initialized.load(Ordering::Acquire) {
+            // SAFETY: we know that this value has been initialized from checking
+            // `initialized`
+            Some(unsafe { &*(*self.value.get()).as_ptr() })
+        } else {
+            None
+        }
+    }
+
+    /// Get a reference to the value
+    ///
+    /// # Panics
+    /// If not yet initialized
+    pub fn get(&self) -> &T {
+        // TODO: if I'm _really_ confident, could make the initialization check
+        // a debug assertion instead of calling try_get
+        self.try_get().expect("global not initialized")
+    }
+}
+
+// Same unsafe impls as spin::Once
+unsafe impl<T: Send + Sync> Sync for Global<T> {}
+unsafe impl<T: Send> Send for Global<T> {}
+
+impl<T> Drop for Global<T> {
+    fn drop(&mut self) {
+        if *self.initialized.get_mut() {
+            unsafe { self.value.get_mut().assume_init_drop() };
+        }
     }
 }

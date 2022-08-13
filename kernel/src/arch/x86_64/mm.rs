@@ -2,10 +2,10 @@ use core::mem::MaybeUninit;
 use core::slice;
 
 use bootloader::boot_info::{MemoryRegion, MemoryRegionKind};
-use spin::Once;
 
 use crate::mm::map::{Kind, Region};
 use crate::prelude::*;
+use crate::sync::Global;
 
 impl From<&MemoryRegion> for Region {
     fn from(r: &MemoryRegion) -> Self {
@@ -25,10 +25,6 @@ impl From<&MemoryRegion> for Region {
     }
 }
 
-/// Global handle for physical memory access. Needed because the memory
-/// allocation system must be 'static.
-pub(super) static ACCESS: Once<MemoryAccess> = Once::INIT;
-
 /// Accessor for physical memory. The kernel cannot assume that physical memory
 /// is mapped into its address space. Instead, it uses this type to create
 /// temporary or permanent mappings.
@@ -42,7 +38,8 @@ unsafe impl Sync for MemoryAccess {}
 
 impl MemoryAccess {
     pub(super) unsafe fn init(base: *mut MaybeUninit<u8>) -> &'static Self {
-        ACCESS.call_once(|| MemoryAccess::new(base))
+        static GLOBAL: Global<MemoryAccess> = Global::new();
+        GLOBAL.init(MemoryAccess::new(base))
     }
 
     unsafe fn new(base: *mut MaybeUninit<u8>) -> Self {
