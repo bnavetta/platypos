@@ -7,7 +7,7 @@ description = "Tools for building PlatypOS"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-addr2line = { version = "0.17" }
+addr2line = { version = "0.18" }
 bootloader-locator = "0.0.4"
 camino = "1.0.7"
 cargo_metadata = "0.15"
