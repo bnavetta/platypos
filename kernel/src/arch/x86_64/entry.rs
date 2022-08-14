@@ -81,7 +81,9 @@ fn start(info: &'static mut BootInfo) -> ! {
 
     heap_allocator::enable_expansion(root_allocator);
 
-    tracing::trace!("About to call kmain");
+    // Initialize the local interrupt controller after setting up memory allocation,
+    // in case there's any dynamic data
+    hal_impl::interrupts::init_local();
 
     let args = BootArgs {
         display: info.framebuffer.as_mut().map(FrameBufferTarget::new),
@@ -89,8 +91,6 @@ fn start(info: &'static mut BootInfo) -> ! {
         root_allocator,
         interrupt_controller: ic,
     };
-
-    tracing::trace!("HERE :)");
 
     crate::kmain(args);
 }

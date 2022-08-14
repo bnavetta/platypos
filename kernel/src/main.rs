@@ -61,15 +61,6 @@ pub fn kmain(args: BootArgs) -> ! {
         env!("CARGO_PKG_VERSION")
     );
 
-    let mut s = ::alloc::string::String::new();
-    s.push_str("Hello, World!");
-    tracing::trace!("Heap-allocated string: {}", s);
-    drop(s);
-
-    test_alloc(&args.root_allocator);
-
-    test_inline();
-
     loop {
         args.interrupt_controller.wait();
     }

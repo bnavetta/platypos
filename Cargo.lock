@@ -914,8 +914,11 @@ dependencies = [
 name = "platypos_hal_x86_64"
 version = "0.1.0"
 dependencies = [
+ "bitvec",
  "platypos_common",
  "platypos_hal",
+ "raw-cpuid",
+ "tracing",
  "uart_16550",
  "x86_64",
 ]
@@ -1061,6 +1064,15 @@ name = "rand_core"
 version = "0.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d34f1408f55294453790c48b2f1ebbb1c5b4b7563eb1f418bcfcfdbb06ebb4e7"
+
+[[package]]
+name = "raw-cpuid"
+version = "10.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2c49596760fce12ca21550ac21dc5a9617b2ea4b6e0aa7d8dab8ff2824fc2bba"
+dependencies = [
+ "bitflags",
+]
 
 [[package]]
 name = "regex"
