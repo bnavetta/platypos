@@ -37,3 +37,12 @@ impl platypos_hal::Write for SerialPort {
         Ok(())
     }
 }
+
+/// Called by the kernel after panic handling completes.
+pub fn fatal_error() -> ! {
+    // This function is only ever called _from_ the panic handler, so it must not
+    // panic
+    loop {
+        x86_64::instructions::interrupts::enable_and_hlt()
+    }
+}

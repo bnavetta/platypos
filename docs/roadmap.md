@@ -2,8 +2,8 @@
 
 - [X] Finish root memory allocator
 - [ ] Implement kernel heap allocator on top of root allocator
-- [ ] Abstract out HAL crate
-- [ ] Move interrupt-aware spinlock into reusable location and use in `ktrace`
+- [X] Abstract out HAL crate
+- [X] Move interrupt-aware spinlock into reusable location and use in `ktrace`
 - [ ] Interrupts
 - [ ] Async runtime
 - [ ] Support multiple cores

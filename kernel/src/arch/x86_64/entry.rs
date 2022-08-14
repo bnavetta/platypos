@@ -18,7 +18,6 @@ use super::display::FrameBufferTarget;
 /// Entry point called by the bootloader
 fn start(info: &'static mut BootInfo) -> ! {
     unsafe {
-        crate::panic::set_abort_handler(hal_impl::interrupts::abort_handler);
         heap_allocator::init();
     }
 
