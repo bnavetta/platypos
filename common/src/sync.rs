@@ -125,7 +125,7 @@ impl<T> Global<T> {
         // SAFETY: at this point, we know `value` is uninitialized, and that any
         // other thread attempting initialization will fail because we have set
         // `initialized`
-        let value_ref = unsafe { (&mut *self.value.get()).write(value) };
+        let value_ref = unsafe { (*self.value.get()).write(value) };
         Ok(value_ref)
     }
 

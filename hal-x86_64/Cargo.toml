@@ -8,6 +8,7 @@ description = "HAL implementation for x86-64"
 
 [dependencies]
 bitvec = { version = "1.0", default-features = false }
+paste = "1"
 platypos_common = { path = "../common" }
 platypos_hal = { path = "../hal" }
 raw-cpuid = "10.4"

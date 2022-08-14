@@ -1,23 +1,39 @@
 use platypos_common::sync::Global;
-use raw_cpuid::CpuId;
 use x86_64::instructions::interrupts;
+use x86_64::structures::idt::InterruptDescriptorTable;
 
 use platypos_hal as hal;
 
 mod apic;
+mod handlers;
 
 #[derive(Debug, Clone, Copy)]
 pub struct Controller;
 
 static GLOBAL: Global<Controller> = Global::new();
 
+/// Interrupt descriptor table. For now, use the same one on all processors.
+static IDT: Global<InterruptDescriptorTable> = Global::new();
+
+/// IRQ that spurious interrupts are mapped to (see Intel SDM vol 3A, 10.9)
+/// See the OSDev wiki for more information, but 0xff is an easy default for
+/// this:
+/// * It's above 32, and so not reserved for exceptions
+/// * Its lowest 4 bits are set, which some hardware requires
+const SPURIOUS_INTERRUPT_VECTOR: u8 = 0xff;
+
 /// Configure the interrupt controller
 pub fn init() -> &'static Controller {
-    let cpuid = CpuId::new();
-    let has_x2apic = cpuid.get_feature_info().map_or(false, |f| f.has_x2apic());
-    if !has_x2apic {
-        panic!("x2apic support is required");
+    apic::disable_pic();
+
+    // TODO: will this force an expensive move?
+    let mut idt = InterruptDescriptorTable::new();
+    for off in 0..8 {
+        idt[(apic::PIC1_OFFSET + off).into()].set_handler_fn(handlers::handle_remapped_pic);
+        idt[(apic::PIC2_OFFSET + off).into()].set_handler_fn(handlers::handle_remapped_pic);
     }
+    idt[SPURIOUS_INTERRUPT_VECTOR.into()].set_handler_fn(handlers::handle_spurious);
+    IDT.init(idt);
 
     GLOBAL.init(Controller)
 }
@@ -25,6 +41,7 @@ pub fn init() -> &'static Controller {
 /// Perform processor-local initialization
 pub fn init_local() {
     apic::init_local();
+    IDT.get().load();
 }
 
 impl hal::interrupts::Controller for Controller {
