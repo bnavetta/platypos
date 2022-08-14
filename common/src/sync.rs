@@ -1,5 +1,4 @@
-//! Kernel synchronization primitives
-
+//! Extra synchronization primitives
 use core::cell::UnsafeCell;
 use core::fmt;
 use core::mem::MaybeUninit;
@@ -8,13 +7,14 @@ use core::sync::atomic::{AtomicBool, Ordering};
 
 use spin::{Mutex, MutexGuard};
 
-use crate::arch::interrupts;
+use platypos_hal::interrupts::{Controller, Guard};
 
-pub struct InterruptSafeMutex<T: ?Sized> {
+pub struct InterruptSafeMutex<'a, T: ?Sized, C: Controller + ?Sized> {
+    controller: &'a C,
     inner: Mutex<T>,
 }
 
-pub struct InterruptSafeMutexGuard<'a, T: ?Sized> {
+pub struct InterruptSafeMutexGuard<'a, T: ?Sized, C: Controller + ?Sized> {
     // The order of these fields is important! See https://doc.rust-lang.org/reference/destructors.html
     // We need the inner MutexGuard to drop before reenabling interrupts. Otherwise, there's a
     // possible deadlock where interrupts are reenabled, a pending interrupt tries to lock the
@@ -22,7 +22,7 @@ pub struct InterruptSafeMutexGuard<'a, T: ?Sized> {
     // See also Linux's spin_lock_irqsave and spin_lock_irqrestore implementation:
     // https://elixir.bootlin.com/linux/v5.17.1/source/include/linux/spinlock_api_smp.h#L104
     inner: MutexGuard<'a, T>,
-    _interrupt_guard: interrupts::Guard,
+    _interrupt_guard: Guard<'a, C>,
 }
 
 /// Primitive for global state initialized during boot. This is similar to
@@ -49,9 +49,10 @@ pub struct Global<T> {
     value: UnsafeCell<MaybeUninit<T>>,
 }
 
-impl<T> InterruptSafeMutex<T> {
-    pub const fn new(value: T) -> Self {
+impl<'a, T, C: Controller + ?Sized> InterruptSafeMutex<'a, T, C> {
+    pub const fn new(controller: &'a C, value: T) -> Self {
         Self {
+            controller,
             inner: Mutex::new(value),
         }
     }
@@ -63,10 +64,10 @@ impl<T> InterruptSafeMutex<T> {
     }
 }
 
-impl<T: ?Sized> InterruptSafeMutex<T> {
+impl<'a, T: ?Sized, C: Controller> InterruptSafeMutex<'a, T, C> {
     #[inline(always)]
-    pub fn lock(&self) -> InterruptSafeMutexGuard<'_, T> {
-        let interrupt_guard = interrupts::disable();
+    pub fn lock(&self) -> InterruptSafeMutexGuard<'_, T, C> {
+        let interrupt_guard = self.controller.disable();
         InterruptSafeMutexGuard {
             _interrupt_guard: interrupt_guard,
             inner: self.inner.lock(),
@@ -76,26 +77,30 @@ impl<T: ?Sized> InterruptSafeMutex<T> {
     // TODO: is a correct try_lock implementation possible?
 }
 
-impl<'a, T: ?Sized> Deref for InterruptSafeMutexGuard<'a, T> {
+impl<'a, T: ?Sized, C: Controller + ?Sized> Deref for InterruptSafeMutexGuard<'a, T, C> {
     type Target = T;
     fn deref(&self) -> &T {
         self.inner.deref()
     }
 }
 
-impl<'a, T: ?Sized> DerefMut for InterruptSafeMutexGuard<'a, T> {
+impl<'a, T: ?Sized, C: Controller + ?Sized> DerefMut for InterruptSafeMutexGuard<'a, T, C> {
     fn deref_mut(&mut self) -> &mut T {
         self.inner.deref_mut()
     }
 }
 
-impl<'a, T: ?Sized + fmt::Debug> fmt::Debug for InterruptSafeMutexGuard<'a, T> {
+impl<'a, T: ?Sized + fmt::Debug, C: Controller + ?Sized> fmt::Debug
+    for InterruptSafeMutexGuard<'a, T, C>
+{
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         fmt::Debug::fmt(&self.inner, f)
     }
 }
 
-impl<'a, T: ?Sized + fmt::Display> fmt::Display for InterruptSafeMutexGuard<'a, T> {
+impl<'a, T: ?Sized + fmt::Display, C: Controller + ?Sized> fmt::Display
+    for InterruptSafeMutexGuard<'a, T, C>
+{
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         fmt::Display::fmt(&self.inner, f)
     }

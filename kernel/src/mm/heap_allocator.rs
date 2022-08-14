@@ -6,7 +6,7 @@ use core::mem::MaybeUninit;
 
 use crate::mm::root_allocator::Allocator as RootAllocator;
 use crate::prelude::*;
-use crate::sync::Global;
+use platypos_common::sync::Global;
 use platypos_ktrace::if_not_tracing;
 
 use linked_list_allocator::LockedHeap;

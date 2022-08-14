@@ -1,0 +1,8 @@
+[package]
+name = "platypos_hal"
+version = "0.1.0"
+edition = "2021"
+description = "PlatypOS hardware abstraction layer"
+
+[dependencies]
+ciborium-io = "0.2"

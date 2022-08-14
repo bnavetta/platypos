@@ -13,12 +13,13 @@ extern crate ktest;
 
 use core::fmt::Write;
 
+use platypos_hal::interrupts::Controller;
+
 use arch::mm::MemoryAccess;
 use console::Console;
 use mm::root_allocator::Allocator;
 
 use crate::arch::display::Display;
-use crate::arch::interrupts;
 
 mod arch;
 
@@ -27,7 +28,6 @@ mod error;
 mod mm;
 mod panic;
 mod prelude;
-mod sync;
 
 /// Arguments passed from the platform-specific initialization code to
 /// [`kmain`].
@@ -40,6 +40,8 @@ pub struct BootArgs {
 
     /// Root memory allocator
     pub root_allocator: &'static Allocator<'static>,
+
+    pub interrupt_controller: &'static arch::hal_impl::interrupts::Controller,
 }
 
 /// The shared kernel entry point.
@@ -69,7 +71,7 @@ pub fn kmain(args: BootArgs) -> ! {
     test_inline();
 
     loop {
-        interrupts::halt_until_interrupted();
+        args.interrupt_controller.wait();
     }
 }
 

@@ -1,0 +1,9 @@
+[package]
+name = "platypos_common"
+version = "0.1.0"
+edition = "2021"
+description = "Common utilities used in other PlatypOS crates"
+
+[dependencies]
+platypos_hal = { path = "../hal" }
+spin = { version = "0.9.2", features = ["mutex"] }

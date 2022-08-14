@@ -4,15 +4,16 @@ use core::convert::Infallible;
 use core::num::NonZeroU64;
 use core::sync::atomic::{AtomicBool, Ordering};
 
-use ciborium_io::Write;
+use platypos_common::sync::InterruptSafeMutex;
+use platypos_hal::interrupts::Controller;
 use platypos_ktrace_proto as proto;
-use spin::Mutex;
+
+use ciborium_io::Write;
 use tracing_core::{span, Dispatch, Subscriber};
 
-pub struct KTrace<W> {
-    // TOOD: this _really_ needs to be an InterruptSafeMutex, or sadness will ensue
+pub struct KTrace<W, C: Controller + 'static> {
     // TODO: use RWLock for inner? More generally, finer-grained locking
-    inner: Mutex<Inner<W>>,
+    inner: InterruptSafeMutex<'static, Inner<W>, C>,
 }
 
 /// Maximum depth of the "current span" call stack
@@ -49,11 +50,17 @@ struct SpanState {
 struct SpanId(span::Id);
 
 /// Initialize `ktrace` as the `tracing` subscriber.
-pub fn init<W: Write<Error = Infallible> + Send + 'static>(mut writer: W) {
+pub fn init<
+    W: Write<Error = Infallible> + Send + 'static,
+    C: Controller + Send + Sync + 'static,
+>(
+    mut writer: W,
+    controller: &'static C,
+) {
     writer
         .write_all(&proto::START_OF_OUTPUT)
         .expect("Could not write start-of-output");
-    let dispatch = Dispatch::new(KTrace::new(writer));
+    let dispatch = Dispatch::new(KTrace::new(writer, controller));
     tracing_core::dispatcher::set_global_default(dispatch).expect("Tracing initialized twice");
 }
 
@@ -75,15 +82,18 @@ macro_rules! if_not_tracing {
     };
 }
 
-impl<W: Write<Error = Infallible> + Send> KTrace<W> {
-    fn new(writer: W) -> Self {
+impl<W: Write<Error = Infallible> + Send, C: Controller + Send + Sync> KTrace<W, C> {
+    fn new(writer: W, controller: &'static C) -> Self {
         Self {
-            inner: Mutex::new(Inner {
-                next_id: NonZeroU64::new(1).unwrap(),
-                writer,
-                span_stack: heapless::Vec::new(),
-                active_spans: heapless::FnvIndexMap::new(),
-            }),
+            inner: InterruptSafeMutex::new(
+                controller,
+                Inner {
+                    next_id: NonZeroU64::new(1).unwrap(),
+                    writer,
+                    span_stack: heapless::Vec::new(),
+                    active_spans: heapless::FnvIndexMap::new(),
+                },
+            ),
         }
     }
 }
@@ -100,7 +110,9 @@ fn in_tracing<T, F: FnOnce() -> T>(f: F) -> T {
     result
 }
 
-impl<W: Write<Error = Infallible> + Send + 'static> Subscriber for KTrace<W> {
+impl<W: Write<Error = Infallible> + Send + 'static, C: Controller + Send + Sync + 'static>
+    Subscriber for KTrace<W, C>
+{
     fn enabled(&self, _metadata: &tracing_core::Metadata<'_>) -> bool {
         true
     }

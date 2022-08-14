@@ -21,11 +21,11 @@ use alloc::vec::Vec;
 use intrusive_collections::linked_list::CursorMut;
 use intrusive_collections::{intrusive_adapter, LinkedList, LinkedListLink, UnsafeRef};
 use linked_list_allocator::LockedHeap;
+use platypos_common::sync::Global;
 use platypos_ktrace::if_not_tracing;
 
 use crate::arch::mm::MemoryAccess;
 use crate::prelude::*;
-use crate::sync::{Global, InterruptSafeMutex};
 
 use super::map::Region;
 
@@ -77,20 +77,22 @@ const MIN_TRACKING_PAGES: usize = 2;
 /// Physical memory allocator
 pub struct Allocator<'a> {
     access: &'a MemoryAccess,
-    inner: InterruptSafeMutex<AllocatorInner>,
+    inner: InterruptSafeMutex<'a, AllocatorInner>,
 }
 
 /// Initialize the root memory allocator
 pub fn init<I>(
     access: &'static MemoryAccess,
+    controller: &'static hal_impl::interrupts::Controller,
     memory_map: I,
     reserved: &[PageFrameRange],
 ) -> Result<&'static Allocator<'static>, Error>
 where
     I: Iterator<Item = Region> + Clone,
 {
+    // TODO: need a workaround/way to have static generics
     static GLOBAL: Global<Allocator<'static>> = Global::new();
-    let allocator = Allocator::build(access, memory_map, reserved)?;
+    let allocator = Allocator::build(access, controller, memory_map, reserved)?;
     Ok(GLOBAL.init(allocator))
 }
 
@@ -98,6 +100,7 @@ impl<'a> Allocator<'a> {
     /// Builds the root allocator.
     fn build<I>(
         access: &'a MemoryAccess,
+        controller: &'a hal_impl::interrupts::Controller,
         memory_map: I,
         reserved: &[PageFrameRange],
     ) -> Result<Self, Error>
@@ -210,7 +213,7 @@ impl<'a> Allocator<'a> {
 
         Ok(Allocator {
             access,
-            inner: InterruptSafeMutex::new(allocator),
+            inner: InterruptSafeMutex::new(controller, allocator),
         })
     }
 

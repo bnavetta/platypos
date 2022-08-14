@@ -1,0 +1,13 @@
+[package]
+name = "platypos_hal_x86_64"
+version = "0.1.0"
+edition = "2021"
+description = "HAL implementation for x86-64"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+platypos_common = { path = "../common" }
+platypos_hal = { path = "../hal" }
+uart_16550 = "0.2.17"
+x86_64 = "0.14.8"

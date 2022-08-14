@@ -3,6 +3,9 @@ cargo-features = ["profile-rustflags"]
 [workspace]
 resolver = "2"
 members = [
+    "common",
+    "hal",
+    "hal-x86_64",
     "kernel",
     "ktest",
     "ktest/macros",

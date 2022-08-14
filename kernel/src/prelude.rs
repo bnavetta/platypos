@@ -10,3 +10,9 @@ pub use crate::mm::{
 };
 
 pub use sptr::Strict;
+
+pub use crate::arch::hal_impl;
+pub use platypos_hal as hal;
+
+pub type InterruptSafeMutex<'a, T> =
+    platypos_common::sync::InterruptSafeMutex<'a, T, hal_impl::interrupts::Controller>;

@@ -3,13 +3,12 @@
 use core::fmt;
 use core::mem::MaybeUninit;
 
-use platypos_ktrace as ktrace;
+use {platypos_hal_x86_64 as hal_impl, platypos_ktrace as ktrace};
 
 use bootloader::boot_info::{MemoryRegion, MemoryRegionKind};
 use bootloader::{entry_point, BootInfo};
 
 use crate::arch::mm::MemoryAccess;
-use crate::arch::SerialPort;
 use crate::mm::map::Region;
 use crate::mm::{heap_allocator, root_allocator};
 use crate::BootArgs;
@@ -18,9 +17,14 @@ use super::display::FrameBufferTarget;
 
 /// Entry point called by the bootloader
 fn start(info: &'static mut BootInfo) -> ! {
-    unsafe { heap_allocator::init() };
+    unsafe {
+        crate::panic::set_abort_handler(hal_impl::interrupts::abort_handler);
+        heap_allocator::init();
+    }
 
-    ktrace::init(unsafe { SerialPort::new(0x3f8) });
+    let ic = hal_impl::interrupts::init();
+
+    ktrace::init(unsafe { hal_impl::SerialPort::new(0x3f8) }, ic);
 
     let _span = tracing::info_span!("start").entered();
 
@@ -70,6 +74,7 @@ fn start(info: &'static mut BootInfo) -> ! {
 
     let root_allocator = root_allocator::init(
         &access,
+        ic,
         info.memory_regions.iter().map(Region::from),
         reserved,
     )
@@ -83,6 +88,7 @@ fn start(info: &'static mut BootInfo) -> ! {
         display: info.framebuffer.as_mut().map(FrameBufferTarget::new),
         memory_access: access,
         root_allocator,
+        interrupt_controller: ic,
     };
 
     tracing::trace!("HERE :)");

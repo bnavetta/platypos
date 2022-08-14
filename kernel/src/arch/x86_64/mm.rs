@@ -5,7 +5,7 @@ use bootloader::boot_info::{MemoryRegion, MemoryRegionKind};
 
 use crate::mm::map::{Kind, Region};
 use crate::prelude::*;
-use crate::sync::Global;
+use platypos_common::sync::Global;
 
 impl From<&MemoryRegion> for Region {
     fn from(r: &MemoryRegion) -> Self {
