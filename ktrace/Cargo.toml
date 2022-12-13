@@ -7,11 +7,15 @@ description = "Kernel tracing implementation for PlatypOS"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-ciborium-io = "0.2"
-hash32 = "0.2.1"
+hashbrown = { version = "0.12", default-features = false, features = [
+    "inline-more",
+    "ahash",
+    "ahash-compile-time-rng",
+] }
 heapless = "0.7"
-platypos_common = { path = "../common" }
 platypos_ktrace_proto = { path = "./proto" }
 platypos_hal = { path = "../hal" }
 postcard = "1.0"
+serde = { version = "1.0", default-features = false }
+thingbuf = { version = "0.1", default-features = false, features = ["static"] }
 tracing-core = { version = "0.1", default-features = false }

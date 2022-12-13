@@ -1,156 +1,164 @@
+//! Kernel Tracing
+//!
+//! This is an implementation of [`tracing_core`] APIs for use in the PlatypOS
+//! kernel.
+//!
+//! # Goals
+//! * Usable from interrupt and memory-allocator contexts. This implies that
+//!   tracing entry points cannot allocate and any locks must be
+//!   interrupt-aware.
+//!
+//! # Design
+//! `ktrace` introduces a lightweight [schema](https://dl.acm.org/doi/10.1145/3544497.3544500) on top of
+//! [`tracing_core`]'s APIs. In particular, attributes of an event or span must
+//! be predeclared and of a specific type.
+//!
+//! Serialized trace data is streamed over a serial (or other I/O) port, and a
+//! tool on the other end reconstructs and formats the traces.
+//!
+//! In-kernel span metadata is stored in a sharded fixed-size slab inspired by
+//! [sharded-slab](https://lib.rs/crates/sharded-slab). In addition, I/O is handled by a worker task
+//! via [`thingbuf`] so as to not block interrupt handlers and other critical
+//! code.
+//!
+//! This reduces the work done when creating trace data, allowing it to be used
+//! during interrupt handling and memory allocation. It also avoids contention
+//! between cores when tracing. However, interrupts must still be disabled
+//! during modifications of internal tracing data structures, which cannot be
+//! updated reentrantly.
 #![no_std]
+#![feature(maybe_uninit_uninit_array)]
+
+extern crate alloc;
 
 use core::convert::Infallible;
 use core::num::NonZeroU64;
-use core::sync::atomic::{AtomicBool, Ordering};
+use core::sync::atomic::{AtomicU64, Ordering};
 
-use platypos_common::sync::InterruptSafeMutex;
-use platypos_hal::interrupts::Controller;
+use hashbrown::hash_map::Entry;
+use platypos_hal::Write;
 use platypos_ktrace_proto as proto;
 
-use ciborium_io::Write;
+use hashbrown::HashMap;
+use serde::Serialize;
+use thingbuf::recycling::{self, Recycle};
+use thingbuf::StaticThingBuf;
 use tracing_core::{span, Dispatch, Subscriber};
 
-pub struct KTrace<W, C: Controller + 'static> {
-    // TODO: use RWLock for inner? More generally, finer-grained locking
-    inner: InterruptSafeMutex<'static, Inner<W>, C>,
+mod slab;
+mod stack;
+mod sync;
+
+pub struct KTrace {
+    next_id: AtomicU64,
 }
 
-/// Maximum depth of the "current span" call stack
-const MAX_DEPTH: usize = 16;
-
-/// Maximum number of active spans allowed
-const MAX_ACTIVE_SPANS: usize = 128;
-
-// TODO: separate out per-core state (span stack, whether or not in tracing
-// code)
-
-/// Used to track if `ktrace` code is currently running, so that code it might
-/// call (particularly memory allocators) can avoid recursive trace calls.
-static IN_TRACING: AtomicBool = AtomicBool::new(false);
-
-struct Inner<W> {
-    next_id: NonZeroU64,
+pub struct Worker<W: Write> {
     writer: W,
-    // TODO: we can probably afford dynamic allocation here, as long as we handle the
-    // logging-from-tracing-code case
-    span_stack: heapless::Vec<span::Id, MAX_DEPTH>,
-    active_spans: heapless::FnvIndexMap<SpanId, SpanState, MAX_ACTIVE_SPANS>,
+    active_spans: HashMap<span::Id, SpanState>,
+    total_events: usize,
 }
 
+/// Per-span state that is needed kernel-side (as opposed to processor-side)
 #[derive(Debug)]
 struct SpanState {
     references: usize,
+    // TODO: this isn't used since all state is tracked processor-side in the current design
+    //   we could do more locally if spans were accessible in KTrace
+    #[allow(dead_code)]
     metadata: &'static tracing_core::Metadata<'static>,
 }
 
-/// Newtype wrapper for implementing [`hash32::Hash`] on [`span::Id`]. Remove
-/// once [`heapless`] updates to [`hash32`] 0.3
-#[derive(PartialEq, Eq, Debug)]
-struct SpanId(span::Id);
+static QUEUE: StaticThingBuf<Message, 64, recycling::WithCapacity> =
+    StaticThingBuf::with_recycle(recycling::WithCapacity::new());
+
+#[derive(Debug)]
+struct Message {
+    command: Option<Command>,
+    /// Report a serialization error from writing `data`
+    error: Option<postcard::Error>,
+    /// Serialized event data (may be empty, depending on the [`command`])
+    data: heapless::Vec<u8, 1024>,
+}
+
+/// Instructions passed to the worker task, along with message data to send
+#[derive(Debug)]
+enum Command {
+    New {
+        id: span::Id,
+        metadata: &'static tracing_core::Metadata<'static>,
+    },
+    Reference(span::Id),
+    Dereference(span::Id),
+}
 
 /// Initialize `ktrace` as the `tracing` subscriber.
-pub fn init<
-    W: Write<Error = Infallible> + Send + 'static,
-    C: Controller + Send + Sync + 'static,
->(
-    mut writer: W,
-    controller: &'static C,
-) {
+///
+/// The returned worker must be driven periodically for events to be processed.
+pub fn init<W: Write<Error = Infallible> + Send + 'static>(mut writer: W) -> Worker<W> {
     writer
         .write_all(&proto::START_OF_OUTPUT)
         .expect("Could not write start-of-output");
-    let dispatch = Dispatch::new(KTrace::new(writer, controller));
+    let dispatch = Dispatch::new(KTrace::new());
     tracing_core::dispatcher::set_global_default(dispatch).expect("Tracing initialized twice");
+    Worker::new(writer)
 }
 
-/// Tests if this was called from inside the `ktrace` implementation
-pub fn is_tracing() -> bool {
-    IN_TRACING.load(Ordering::Acquire)
-}
-
-/// Evaluates an expression only if _not_ inside the `ktrace` implementation,
-/// wrapping it in an [`Option`].
-#[macro_export]
-macro_rules! if_not_tracing {
-    ($e:expr) => {
-        if $crate::is_tracing() {
-            None
-        } else {
-            Some($e)
+impl KTrace {
+    fn new() -> Self {
+        KTrace {
+            next_id: AtomicU64::new(1),
         }
-    };
-}
+    }
 
-impl<W: Write<Error = Infallible> + Send, C: Controller + Send + Sync> KTrace<W, C> {
-    fn new(writer: W, controller: &'static C) -> Self {
-        Self {
-            inner: InterruptSafeMutex::new(
-                controller,
-                Inner {
-                    next_id: NonZeroU64::new(1).unwrap(),
-                    writer,
-                    span_stack: heapless::Vec::new(),
-                    active_spans: heapless::FnvIndexMap::new(),
-                },
-            ),
-        }
+    /// Current processor ID to report, for contextual spans and events
+    fn processor_id(&self) -> proto::ProcessorId {
+        0
     }
 }
 
-/// Execute `f` with the [`IN_TRACING`] flag set. This must be used for any
-/// non-trivial [`Subscriber`] methods that may call out to other kernel
-/// subsystems. Otherwise, they might call `ktrace` while `ktrace` is calling
-/// them!
-#[inline(always)]
-fn in_tracing<T, F: FnOnce() -> T>(f: F) -> T {
-    IN_TRACING.store(true, Ordering::Release);
-    let result = f();
-    IN_TRACING.store(false, Ordering::Release);
-    result
-}
-
-impl<W: Write<Error = Infallible> + Send + 'static, C: Controller + Send + Sync + 'static>
-    Subscriber for KTrace<W, C>
-{
+impl Subscriber for KTrace {
     fn enabled(&self, _metadata: &tracing_core::Metadata<'_>) -> bool {
+        // TODO: filtering directives
         true
     }
 
     fn new_span(&self, span: &span::Attributes<'_>) -> span::Id {
-        in_tracing(|| {
-            let mut inner = self.inner.lock();
-            let id = inner.next_id;
-            inner.next_id = inner.next_id.checked_add(1).expect("span ID overflow");
+        let mut id = self.next_id.fetch_add(1, Ordering::Relaxed);
+        if id == 0 {
+            // Wrapped around!
+            id = self.next_id.fetch_add(1, Ordering::Relaxed);
+            debug_assert!(id != 0);
+        }
 
-            let parent = if span.is_root() {
-                None
-            } else if span.is_contextual() {
-                inner.current().cloned()
-            } else {
-                span.parent().cloned()
-            };
+        let parent = if span.is_root() {
+            proto::Parent::Root
+        } else if span.is_contextual() {
+            proto::Parent::Current(self.processor_id())
+        } else {
+            // At this point, we know the parent must be set, but avoid panicking
+            proto::Parent::Explicit(span.parent().map_or(0, |s| s.into_u64()))
+        };
 
-            let id = span::Id::from_non_zero_u64(id);
+        // Safety: we ensure that id is nonzero above
 
-            let state = SpanState {
+        let span_id = span::Id::from_non_zero_u64(unsafe { NonZeroU64::new_unchecked(id) });
+
+        if let Ok(mut slot) = QUEUE.push_ref() {
+            slot.command = Some(Command::New {
+                id: span_id.clone(),
                 metadata: span.metadata(),
-                references: 1,
-            };
-            inner
-                .active_spans
-                .insert(SpanId(id.clone()), state)
-                .expect("too many spans");
-
-            inner.emit(&proto::Message::SpanCreated(proto::SpanCreated {
-                id: id.into_u64(),
-                parent: parent.map(|s| s.into_u64()),
+            });
+            slot.write_message(&proto::Message::SpanCreated(proto::SpanCreated {
+                id,
+                parent,
                 metadata: proto::Metadata::from_tracing(span.metadata()),
                 fields: span.into(),
             }));
+        }
+        // Otherwise, the queue is full - drop this span
 
-            id
-        })
+        span_id
     }
 
     fn record(&self, _span: &span::Id, _values: &span::Record<'_>) {
@@ -162,152 +170,234 @@ impl<W: Write<Error = Infallible> + Send + 'static, C: Controller + Send + Sync 
     }
 
     fn event(&self, event: &tracing_core::Event<'_>) {
-        in_tracing(|| {
-            let mut inner = self.inner.lock();
-            let span_id = if event.is_contextual() {
-                inner.current()
-            } else if event.is_root() {
-                None
-            } else {
-                event.parent()
-            }
-            .map(|i| i.into_u64());
+        let span_id = if event.is_root() {
+            proto::Parent::Root
+        } else if event.is_contextual() {
+            proto::Parent::Current(self.processor_id())
+        } else {
+            // At this point, we know the parent must be set, but avoid panicking
+            proto::Parent::Explicit(event.parent().map_or(0, |s| s.into_u64()))
+        };
 
-            inner.emit(&proto::Message::Event(proto::Event {
+        if let Ok(mut slot) = QUEUE.push_ref() {
+            slot.write_message(&proto::Message::Event(proto::Event {
                 span_id,
                 metadata: proto::Metadata::from_tracing(event.metadata()),
                 fields: event.into(),
             }));
-        })
+        }
+        // Otherwise, the queue is full - drop this event
     }
 
     fn enter(&self, span: &span::Id) {
-        let mut inner = self.inner.lock();
-        inner.push_span(span.clone());
+        if let Ok(mut slot) = QUEUE.push_ref() {
+            slot.write_message(&proto::Message::SpanEntered {
+                id: span.into_u64(),
+                processor: self.processor_id(),
+            });
+        }
+        // TODO: should probably panic if the queue is full, since tracking will
+        // be messed up
     }
 
     fn exit(&self, span: &span::Id) {
-        in_tracing(|| {
-            // TODO: handle duplicates and out-of-order exiting?
-            let mut inner = self.inner.lock();
-            let popped = inner.pop_span();
-            assert!(popped == Some(span.clone()), "Popped non-current span");
-        })
+        if let Ok(mut slot) = QUEUE.push_ref() {
+            slot.write_message(&proto::Message::SpanExited {
+                id: span.into_u64(),
+                processor: self.processor_id(),
+            });
+        }
+        // TODO: should probably panic if the queue is full, since tracking will
+        // be messed up
     }
+
+    fn clone_span(&self, id: &span::Id) -> span::Id {
+        if let Ok(mut slot) = QUEUE.push_ref() {
+            slot.command = Some(Command::Reference(id.clone()))
+        }
+        // TODO: should probably panic if the queue is full, since tracking will be
+        // messed up
+        id.clone()
+    }
+
+    fn try_close(&self, id: span::Id) -> bool {
+        if let Ok(mut slot) = QUEUE.push_ref() {
+            slot.command = Some(Command::Dereference(id))
+        }
+
+        // At this point, we don't _know_ if all referenced have been closed, but it
+        // appears that nothing relies on the return value Consider using a
+        // sharded slab or other synchronizable data structure for span state, while
+        // keeping the queue for I/O
+        false
+    }
+
+    // TODO: this would require concurrent access to the span metadata stored in
+    // Worker.active_spans fn current_span(&self) -> span::Current {
+    // }
 
     fn max_level_hint(&self) -> Option<tracing_core::LevelFilter> {
         None
     }
 
-    fn event_enabled(&self, event: &tracing_core::Event<'_>) -> bool {
-        let _ = event;
+    fn event_enabled(&self, _event: &tracing_core::Event<'_>) -> bool {
         true
     }
+}
 
-    fn clone_span(&self, id: &span::Id) -> span::Id {
-        in_tracing(|| {
-            let mut inner = self.inner.lock();
-            let state = inner
-                .span_state_mut(id)
-                .expect("Cloning a span with no state");
-            state.references += 1;
-            id.clone()
-        })
-    }
+impl Message {
+    fn write_message(&mut self, msg: &proto::SenderMessage) {
+        // Variant of the postcard HVec flavor that can reuse an existing heapless::Vec
+        struct ExistingVec<'a, const B: usize> {
+            vec: &'a mut heapless::Vec<u8, B>,
+        }
 
-    fn try_close(&self, id: span::Id) -> bool {
-        in_tracing(|| {
-            let mut inner = self.inner.lock();
-            let state = inner
-                .span_state_mut(&id)
-                .expect("Cloning a span with no state");
-            state.references -= 1;
+        impl<'a, const B: usize> postcard::ser_flavors::Flavor for ExistingVec<'a, B> {
+            type Output = ();
 
-            if state.references == 0 {
-                inner.active_spans.remove(&SpanId(id.clone()));
-
-                inner.emit(&proto::Message::SpanClosed { id: id.into_u64() });
-
-                true
-            } else {
-                false
+            #[inline(always)]
+            fn try_extend(&mut self, data: &[u8]) -> Result<(), postcard::Error> {
+                self.vec
+                    .extend_from_slice(data)
+                    .map_err(|_| postcard::Error::SerializeBufferFull)
             }
-        })
-    }
 
-    fn current_span(&self) -> span::Current {
-        in_tracing(|| {
-            let inner = self.inner.lock();
-            if let Some(id) = inner.current() {
-                let state = inner.span_state(id).expect("current span has no state");
-                span::Current::new(id.clone(), state.metadata)
-            } else {
-                span::Current::none()
+            #[inline(always)]
+            fn try_push(&mut self, data: u8) -> Result<(), postcard::Error> {
+                self.vec
+                    .push(data)
+                    .map_err(|_| postcard::Error::SerializeBufferFull)
             }
-        })
+
+            fn finalize(self) -> Result<Self::Output, postcard::Error> {
+                Ok(())
+            }
+        }
+
+        self.error = postcard::serialize_with_flavor(
+            msg,
+            ExistingVec {
+                vec: &mut self.data,
+            },
+        )
+        .err()
     }
 }
 
-impl<W: Write<Error = Infallible> + Send> Inner<W> {
-    fn span_state(&self, id: &span::Id) -> Option<&SpanState> {
-        self.active_spans.get(&SpanId(id.clone()))
+// This implements Recycle mainly for clearing behavior, heapless vectors are
+// fixed-capacity
+impl Recycle<Message> for recycling::WithCapacity {
+    fn new_element(&self) -> Message {
+        Message {
+            command: None,
+            error: None,
+            data: heapless::Vec::new(),
+        }
     }
 
-    fn span_state_mut(&mut self, id: &span::Id) -> Option<&mut SpanState> {
-        self.active_spans.get_mut(&SpanId(id.clone()))
-    }
-
-    fn emit(&mut self, message: &proto::SenderMessage) {
-        let storage = StreamOut(&mut self.writer);
-        postcard::serialize_with_flavor(message, storage).expect("Sending failed");
-
-        // TODO: COBS needs to modify data after it's written. Can probably get
-        // streaming working  by just writing the message, and having the host
-        // read more if it gets an unexpected EOF error from postcard
-        // ALSO: look at collect_str method when serializing, can use Display
-        // impl
-    }
-
-    fn current(&self) -> Option<&span::Id> {
-        self.span_stack.last()
-    }
-
-    fn push_span(&mut self, id: span::Id) {
-        self.span_stack.push(id).expect("Span stack depth exceeded");
-    }
-
-    fn pop_span(&mut self) -> Option<span::Id> {
-        self.span_stack.pop()
+    fn recycle(&self, element: &mut Message) {
+        element.data.clear();
     }
 }
 
-struct StreamOut<'a, W: Write>(&'a mut W);
-
-impl<'a, W: Write> postcard::ser_flavors::Flavor for StreamOut<'a, W> {
-    type Output = ();
-
-    fn try_push(&mut self, data: u8) -> postcard::Result<()> {
-        self.0
-            .write_all(&[data])
-            .map_err(|_| postcard::Error::SerdeSerCustom)
+impl<W: Write> Worker<W> {
+    fn new(writer: W) -> Self {
+        Self {
+            writer,
+            active_spans: HashMap::new(),
+            total_events: 0,
+        }
     }
 
-    fn try_extend(&mut self, data: &[u8]) -> postcard::Result<()> {
-        self.0
-            .write_all(data)
-            .map_err(|_| postcard::Error::SerdeSerCustom)
+    /// Process any queued tracing events
+    pub fn work(&mut self) {
+        while let Some(event) = QUEUE.pop_ref() {
+            self.total_events += 1;
+            match &event.command {
+                Some(Command::New { id, metadata }) => {
+                    // If the span ID counter has wrapped around, this will overwrite previous
+                    // spans. The assumption is that they're old and unlikely to be active (for
+                    // example, if there's a bug where some span never gets closed.)
+                    self.active_spans.insert(
+                        id.clone(),
+                        SpanState {
+                            references: 1,
+                            metadata,
+                        },
+                    );
+                }
+                Some(Command::Reference(id)) => {
+                    if let Some(state) = self.active_spans.get_mut(id) {
+                        state.references += 1;
+                    }
+                    // Silently ignore referencing an unknown span
+                }
+                Some(Command::Dereference(id)) => {
+                    if let Entry::Occupied(mut entry) = self.active_spans.entry(id.clone()) {
+                        entry.get_mut().references -= 1;
+                        if entry.get().references == 0 {
+                            entry.remove();
+                            // self.write_message::<16, _,
+                            // _>(&proto::Message::SpanClosed {
+                            //     id: id.into_u64(),
+                            // });
+                        }
+                    }
+                    // Silently ignore dereferencing an unknown span
+                }
+                None => (),
+            }
+
+            if let Some(ref err) = event.error {
+                self.report_error(err);
+            }
+
+            if !event.data.is_empty() {
+                // Ignore I/O errors, since there's nowhere to report them anyways
+                // TODO: now that data is buffered anyways, use COBS for error recovery
+                let _ = self.writer.write_all(&event.data);
+            }
+        }
     }
 
-    fn finalize(self) -> postcard::Result<Self::Output> {
-        self.0.flush().map_err(|_| postcard::Error::SerdeSerCustom)
+    /// Write a locally-produced message from the worker
+    fn write_message<const CAP: usize, E: Serialize, A: Serialize>(
+        &mut self,
+        msg: &proto::Message<'_, E, A>,
+    ) {
+        match postcard::to_vec::<_, CAP>(msg) {
+            Ok(data) => {
+                let _ = self.writer.write_all(&data);
+            }
+            Err(err) => {
+                #[cfg(debug_assertions)]
+                panic!("Internal write failed: {}", err);
+            }
+        }
+    }
+
+    /// Report a message serialization error
+    fn report_error(&mut self, err: &postcard::Error) {
+        // let args = format_args!("serialization error: {}", err);
+        // let fields = proto::InternalEvent::new(args);
+        // let msg: &proto::InternalMessage =
+        // &proto::Message::Event(proto::Event {     span_id:
+        // proto::Parent::Root,     metadata: proto::Metadata {
+        //         name: "<internal tracing error>",
+        //         target: "<internal tracing error>",
+        //         level: proto::Level::Error,
+        //         file: None,
+        //         line: None,
+        //     },
+        //     fields,
+        // });
+        // self.write_message::<256, _, _>(msg);
     }
 }
 
-impl hash32::Hash for SpanId {
-    fn hash<H>(&self, state: &mut H)
-    where
-        H: hash32::Hasher,
-    {
-        self.0.into_u64().hash(state)
+impl<W: Write> Drop for Worker<W> {
+    fn drop(&mut self) {
+        // Ensure any queued events are flushed on exit
+        self.work();
     }
 }

@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 mod fields;
 
-pub use fields::{DeserializedFields, FieldType, Value};
+pub use fields::{DeserializedFields, FieldType, InternalEvent, Value};
 
 /// Marker written by the kernel to indicate that it's started writing to the
 /// serial port (and not the bootloader).
@@ -20,23 +20,43 @@ pub type SenderMessage<'a> =
 pub type ReceiverMessage<'a> =
     Message<'a, fields::DeserializedFields<'a>, fields::DeserializedFields<'a>>;
 
+pub type InternalMessage<'a> =
+    Message<'a, fields::InternalEvent<'a>, fields::SerializeAttributes<'a>>;
+
+/// Identifier for a span
+pub type SpanId = u64;
+/// Identifier for a processor (or a core in a multi-core CPU)
+pub type ProcessorId = u32;
+
 /// Root type for KTrace messages
 #[derive(Deserialize, Serialize, Debug)]
 pub enum Message<'a, E, A> {
     SpanCreated(#[serde(borrow)] SpanCreated<'a, A>),
     Event(#[serde(borrow)] Event<'a, E>),
 
+    /// A new span has been entered on one processor
+    SpanEntered {
+        id: SpanId,
+        processor: ProcessorId,
+    },
+
+    /// A span has been exited on a processor
+    SpanExited {
+        id: SpanId,
+        processor: ProcessorId,
+    },
+
     /// A span has been closed, so it can no longer be entered
     SpanClosed {
-        id: u64,
+        id: SpanId,
     },
 }
 
 /// A new span was created
 #[derive(Deserialize, Serialize, Debug)]
 pub struct SpanCreated<'a, A> {
-    pub id: u64,
-    pub parent: Option<u64>,
+    pub id: SpanId,
+    pub parent: Parent,
 
     #[serde(borrow)]
     pub metadata: Metadata<'a>,
@@ -47,12 +67,23 @@ pub struct SpanCreated<'a, A> {
 /// A tracing event occurred
 #[derive(Deserialize, Serialize, Debug)]
 pub struct Event<'a, E> {
-    pub span_id: Option<u64>,
+    pub span_id: Parent,
 
     #[serde(borrow)]
     pub metadata: Metadata<'a>,
 
     pub fields: E,
+}
+
+/// The parent span for an event or new span
+#[derive(Deserialize, Serialize, Debug)]
+pub enum Parent {
+    /// This is a root, with no parent
+    Root,
+    /// Use the contextual current span on the given processor as the parent
+    Current(ProcessorId),
+    /// Use the explicitly-assigned span ID as the parent
+    Explicit(SpanId),
 }
 
 #[derive(Deserialize, Serialize, Debug)]

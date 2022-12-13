@@ -8,7 +8,8 @@ use owo_colors::{OwoColorize, Stream};
 use platypos_ktrace_proto as proto;
 
 pub struct Formatter<S: Symbolizer> {
-    spans: HashMap<u64, SpanState>,
+    spans: HashMap<proto::SpanId, SpanState>,
+    span_stacks: HashMap<proto::ProcessorId, Vec<proto::SpanId>>,
     symbolizer: S,
 }
 
@@ -21,14 +22,29 @@ impl<S: Symbolizer> Formatter<S> {
     pub fn new(symbolizer: S) -> Self {
         Formatter {
             spans: HashMap::new(),
+            span_stacks: HashMap::new(),
             symbolizer,
+        }
+    }
+
+    fn stack(&mut self, processor: proto::ProcessorId) -> &mut Vec<proto::SpanId> {
+        self.span_stacks.entry(processor).or_default()
+    }
+
+    fn resolve_parent(&mut self, parent: &proto::Parent) -> Option<proto::SpanId> {
+        match parent {
+            proto::Parent::Root => None,
+            proto::Parent::Current(processor) => self.stack(*processor).last().cloned(),
+            proto::Parent::Explicit(id) => Some(*id),
         }
     }
 
     pub fn receive(&mut self, message: &proto::ReceiverMessage) {
         match message {
             proto::Message::SpanCreated(span) => {
-                let parent = span.parent.and_then(|p| self.spans.get(&p));
+                let parent = self
+                    .resolve_parent(&span.parent)
+                    .and_then(|s| self.spans.get(&s));
                 let depth = parent.map_or(0, |s| s.depth + 1);
 
                 let state = SpanState {
@@ -62,9 +78,9 @@ impl<S: Symbolizer> Formatter<S> {
                 self.spans.insert(span.id, state);
             }
             proto::Message::Event(event) => {
-                let depth = event
-                    .span_id
-                    .and_then(|p| self.spans.get(&p))
+                let depth = self
+                    .resolve_parent(&event.span_id)
+                    .and_then(|s| self.spans.get(&s))
                     .map_or(0, |s| s.depth)
                     + 1;
                 println!(
@@ -87,6 +103,13 @@ impl<S: Symbolizer> Formatter<S> {
                         span.name()
                     )
                 }
+            }
+            proto::Message::SpanEntered { id, processor } => {
+                self.stack(*processor).push(*id);
+            }
+            proto::Message::SpanExited { id, processor } => {
+                let prev = self.stack(*processor).pop();
+                assert!(prev == Some(*id), "Exited span was not current!");
             }
         }
     }

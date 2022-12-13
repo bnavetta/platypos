@@ -22,7 +22,6 @@ use intrusive_collections::linked_list::CursorMut;
 use intrusive_collections::{intrusive_adapter, LinkedList, LinkedListLink, UnsafeRef};
 use linked_list_allocator::LockedHeap;
 use platypos_common::sync::Global;
-use platypos_ktrace::if_not_tracing;
 
 use crate::arch::mm::MemoryAccess;
 use crate::prelude::*;
@@ -291,8 +290,8 @@ impl AllocatorInner {
 
     /// Allocate `count` pages of contiguous physical memory.
     #[must_use]
+    #[tracing::instrument(level = "trace", skip(self))]
     fn allocate(&mut self, count: usize) -> Result<PageFrameRange, Error> {
-        let _span = if_not_tracing!(tracing::trace_span!("allocate", count));
         // TODO: ensure runs available
 
         // First-fit algorithm, could add other conditions (e.g. must allocate below a
@@ -309,7 +308,7 @@ impl AllocatorInner {
                         }
                     }
                     None => {
-                        if_not_tracing!(tracing::warn!("Insufficient free memory"));
+                        tracing::warn!("Insufficient free memory");
                         return Err(Error::new(ErrorKind::InsufficientMemory));
                     }
                 }
@@ -326,7 +325,7 @@ impl AllocatorInner {
                 run_state.range
             };
             free_cursor.remove();
-            if_not_tracing!(tracing::trace!(%range, "Found allocatable run"));
+            tracing::trace!(%range, "Found allocatable run");
             Ok(range)
         } else {
             // Split the allocation off the start of the run, so that we can reuse it as the
@@ -353,16 +352,15 @@ impl AllocatorInner {
 
             Self::add_run(allocated_run, cursor, &mut self.tracking);
 
-            if_not_tracing!(tracing::trace!(%range, "Split off allocatable run"));
+            tracing::trace!(%range, "Split off allocatable run");
             Ok(range)
         }
     }
 
     /// Deallocate the physical memory allocation `range`.
     #[must_use]
+    #[tracing::instrument(level = "trace", skip(self))]
     fn deallocate(&mut self, range: PageFrameRange) -> Result<(), Error> {
-        let _span = if_not_tracing!(tracing::trace_span!("deallocate", %range));
-
         // TODO: more efficient way to find run?
         let mut cursor = self.runs.front_mut();
         loop {
@@ -370,10 +368,7 @@ impl AllocatorInner {
                 let mut inner = run.inner.borrow_mut();
                 if inner.range == range {
                     if inner.status != Status::Allocated {
-                        if_not_tracing!(tracing::error!(
-                            "Run is not allocated! Has status {:?}",
-                            inner.status
-                        ));
+                        tracing::error!("Run is not allocated! Has status {:?}", inner.status);
                         break Err(Error::new(ErrorKind::InvalidAddress));
                     }
 
@@ -391,7 +386,7 @@ impl AllocatorInner {
                     cursor.move_next();
                 }
             } else {
-                if_not_tracing!(tracing::error!("Could not find existing run"));
+                tracing::error!("Could not find existing run");
                 break Err(Error::new(ErrorKind::AddressOutOfBounds));
             }
         }

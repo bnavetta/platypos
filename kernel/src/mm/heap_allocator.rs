@@ -7,7 +7,6 @@ use core::mem::MaybeUninit;
 use crate::mm::root_allocator::Allocator as RootAllocator;
 use crate::prelude::*;
 use platypos_common::sync::Global;
-use platypos_ktrace::if_not_tracing;
 
 use linked_list_allocator::LockedHeap;
 
@@ -49,23 +48,19 @@ impl KernelHeapAllocator {
 }
 
 unsafe impl GlobalAlloc for KernelHeapAllocator {
+    #[tracing::instrument(level = "trace", skip_all, fields(size = layout.size()))]
     unsafe fn alloc(&self, layout: core::alloc::Layout) -> *mut u8 {
-        let _trace = if_not_tracing!(tracing::trace_span!("alloc", size = layout.size()));
         let res = self.inner.alloc(layout);
         if res.is_null() {
-            if_not_tracing!(tracing::warn!("allocation failed"));
+            tracing::warn!("allocation failed");
         } else {
-            if_not_tracing!(tracing::trace!(vaddr = res.addr(), "allocation succeeded"));
+            tracing::trace!(vaddr = res.addr(), "allocation succeeded");
         }
         res
     }
 
+    #[tracing::instrument(level = "trace", skip_all, fields(size = layout.size(), vaddr = ptr.addr()))]
     unsafe fn dealloc(&self, ptr: *mut u8, layout: core::alloc::Layout) {
-        let _trace = if_not_tracing!(tracing::trace_span!(
-            "dealloc",
-            size = layout.size(),
-            vaddr = ptr.addr()
-        ));
         self.inner.dealloc(ptr, layout)
     }
 }

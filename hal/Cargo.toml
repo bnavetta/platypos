@@ -6,3 +6,6 @@ description = "PlatypOS hardware abstraction layer"
 
 [dependencies]
 ciborium-io = "0.2"
+
+[target.'cfg(loom)'.dependencies]
+loom = "0.5"

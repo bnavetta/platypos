@@ -1,0 +1,11 @@
+[package]
+name = "platypos_slab"
+version = "0.1.0"
+edition = "2021"
+description = "Lock-free concurrent slab for PlatypOS"
+
+[dependencies]
+platypos_hal = { path = "../hal" }
+
+[target.'cfg(loom)'.dependencies]
+loom = "0.5"

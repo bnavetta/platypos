@@ -1,7 +1,7 @@
 //! Serializable adapter for trace attributes
 
 use alloc::vec::Vec;
-use core::fmt::{Debug, Formatter};
+use core::fmt::{Arguments, Debug, Formatter};
 use phf::phf_map;
 use serde::de::{Error as _, MapAccess, Visitor};
 use serde::ser::{Error as _, SerializeMap};
@@ -46,6 +46,25 @@ impl<'a> From<&'a Event<'a>> for SerializeEvent<'a> {
     #[inline(always)]
     fn from(event: &'a Event<'a>) -> Self {
         SerializeEvent(event)
+    }
+}
+
+/// Special event representation for reporting tracing-internal events
+#[derive(Debug)]
+pub struct InternalEvent<'a>(Arguments<'a>);
+
+impl<'a> InternalEvent<'a> {
+    pub fn new(args: Arguments<'a>) -> Self {
+        Self(args)
+    }
+}
+
+impl<'a> Serialize for InternalEvent<'a> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serialize_fields(serializer, 1, |f| f.record_message(&self.0))
     }
 }
 
@@ -224,6 +243,13 @@ impl<S: SerializeMap> FieldVisitor<S> {
     fn finish(self) -> Result<S::Ok, S::Error> {
         self.state?;
         self.serializer.end()
+    }
+
+    /// Record an internally-generated message
+    fn record_message(&mut self, value: &Arguments) {
+        if self.state.is_ok() {
+            self.state = FieldType::String.write_debug("message", value, &mut self.serializer);
+        }
     }
 }
 
