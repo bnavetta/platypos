@@ -108,7 +108,7 @@ impl Qemu {
     /// Configure QEMU to boot `spec.binary` via the platform-appropriate
     /// bootloader
     fn add_binary(&self, args: &mut Vec<OsString>, spec: &Spec) -> Result<()> {
-        let boot_image = x86_64::build_boot_image(spec.crate_name, spec.binary, &self.cargo)?;
+        let boot_image = x86_64::build_boot_image(spec.binary)?;
         args.push("-drive".into());
         args.push(format!("format=raw,file={boot_image}").into());
         Ok(())

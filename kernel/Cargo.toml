@@ -32,7 +32,7 @@ name = "platypos_kernel"
 harness = false
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]
-bootloader = "0.10.12"
+bootloader_api = "0.11"
 platypos_hal_x86_64 = { path = "../hal-x86_64" }
 x86_64 = "0.14.8"
 

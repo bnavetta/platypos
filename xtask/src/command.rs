@@ -10,6 +10,7 @@ use crate::tools::gdb;
 use crate::tools::qemu::{self, Qemu};
 
 #[derive(Debug, Parser)]
+#[command(author, version, about)]
 pub struct XTask {
     #[clap(flatten)]
     output: OutputOpts,
@@ -17,20 +18,20 @@ pub struct XTask {
     #[clap(flatten)]
     tools: ToolOpts,
 
-    #[clap(subcommand)]
+    #[command(subcommand)]
     command: Command,
 }
 
 #[derive(Debug, Args)]
 struct ToolOpts {
-    #[clap(long, global = true, env = "CARGO")]
+    #[arg(long, global = true, env = "CARGO")]
     cargo: Option<Utf8PathBuf>,
 
-    #[clap(long, arg_enum, default_value_t = Platform::X86_64)]
+    #[arg(long, value_enum, default_value_t = Platform::X86_64)]
     platform: Platform,
 
     /// defmt logging filter
-    #[clap(long, default_value = "trace")]
+    #[arg(long, default_value = "trace")]
     defmt: String,
 }
 
@@ -45,19 +46,19 @@ enum Command {
 #[derive(Debug, Args)]
 struct QemuOpts {
     /// Number of CPUs for the QEMU VM
-    #[clap(long, default_value = "1")]
+    #[arg(long, default_value = "1")]
     cpus: u8,
 
     /// Memory for the QEMU VM
-    #[clap(long, default_value = "1G")]
+    #[arg(long, default_value = "1G")]
     memory: String,
 
     /// Enable debugging with GDB
-    #[clap(long, short)]
+    #[arg(long, short)]
     debugger: bool,
 
     /// Wait for GDB to attach. Implies `--debugger`
-    #[clap(long, short = 'w')]
+    #[arg(long, short = 'w')]
     debugger_wait: bool,
 }
 

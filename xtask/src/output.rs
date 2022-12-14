@@ -1,4 +1,4 @@
-use clap::{ArgEnum, Args};
+use clap::{Args, ValueEnum};
 use color_eyre::eyre::eyre;
 use color_eyre::Result;
 use log::{LevelFilter, Log};
@@ -7,14 +7,14 @@ use supports_color::Stream;
 
 #[derive(Debug, Args)]
 pub struct OutputOpts {
-    #[clap(long, arg_enum, global = true, default_value_t = Color::Auto)]
+    #[arg(long, value_enum, global = true, default_value_t = Color::Auto)]
     color: Color,
 
-    #[clap(long, short, global = true)]
+    #[arg(long, short, global = true)]
     verbose: bool,
 }
 
-#[derive(ArgEnum, Clone, Copy, Debug)]
+#[derive(ValueEnum, Clone, Copy, Debug)]
 enum Color {
     Always,
     Auto,

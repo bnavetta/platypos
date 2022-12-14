@@ -126,18 +126,12 @@ impl Cargo {
 
     /// Computes base build flags for the given platform
     fn flags_for(&self, platform: Platform) -> Flags {
-        let target_triple = format!(
-            "kernel/src/arch/{}/{}-kernel.json",
-            platform.name(),
-            platform.name()
-        );
-
         match platform {
             Platform::X86_64 => Flags {
-                target_triple,
+                target_triple: "x86_64-unknown-none".to_string(),
                 build_flags: vec![
-                    "-Zbuild-std=core,compiler_builtins,alloc".to_string(),
-                    "-Zbuild-std-features=compiler-builtins-mem".to_string(),
+                    // "-Zbuild-std=core,compiler_builtins,alloc".to_string(),
+                    // "-Zbuild-std-features=compiler-builtins-mem".to_string(),
                 ],
                 rust_flags: vec!["-Cforce-unwind-tables".to_string()],
                 cxx_flags: vec!["-fno-stack-protector".to_string()],

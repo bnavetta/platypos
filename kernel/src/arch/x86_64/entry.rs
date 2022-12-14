@@ -5,8 +5,8 @@ use core::mem::MaybeUninit;
 
 use {platypos_hal_x86_64 as hal_impl, platypos_ktrace as ktrace};
 
-use bootloader::boot_info::{MemoryRegion, MemoryRegionKind};
-use bootloader::{entry_point, BootInfo};
+use bootloader_api::info::{MemoryRegion, MemoryRegionKind};
+use bootloader_api::{entry_point, BootInfo, BootloaderConfig};
 
 use crate::arch::mm::MemoryAccess;
 use crate::mm::map::Region;
@@ -14,6 +14,12 @@ use crate::mm::{heap_allocator, root_allocator};
 use crate::BootArgs;
 
 use super::display::FrameBufferTarget;
+
+pub static BOOTLOADER_CONFIG: BootloaderConfig = {
+    let mut config = BootloaderConfig::new_default();
+    config.mappings.physical_memory = Some(bootloader_api::config::Mapping::Dynamic);
+    config
+};
 
 /// Entry point called by the bootloader
 fn start(info: &'static mut BootInfo) -> ! {
@@ -146,7 +152,7 @@ impl fmt::Display for DisplayRegion {
     }
 }
 
-entry_point!(start);
+entry_point!(start, config = &BOOTLOADER_CONFIG);
 
 /*
 

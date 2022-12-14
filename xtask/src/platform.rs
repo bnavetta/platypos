@@ -1,8 +1,8 @@
 use std::fmt;
 
-use clap::ArgEnum;
+use clap::ValueEnum;
 
-#[derive(Debug, Clone, Copy, ArgEnum)]
+#[derive(Debug, Clone, Copy, ValueEnum)]
 pub enum Platform {
     X86_64,
 }

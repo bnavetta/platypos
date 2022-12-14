@@ -1,7 +1,7 @@
 use core::mem::MaybeUninit;
 use core::slice;
 
-use bootloader::boot_info::{MemoryRegion, MemoryRegionKind};
+use bootloader_api::info::{MemoryRegion, MemoryRegionKind};
 
 use crate::mm::map::{Kind, Region};
 use crate::prelude::*;
