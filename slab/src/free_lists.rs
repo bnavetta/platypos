@@ -6,10 +6,12 @@
 use core::sync::atomic::Ordering;
 
 use hal::topology::PerProcessor;
+use modular_bitfield::bitfield;
+use modular_bitfield::specifiers::{B18, B46};
 use platypos_hal as hal;
 
 use crate::sync::AtomicU64;
-use crate::{Slot, SLOT_BITS, SLOT_MAX};
+use crate::Slot;
 
 /// Concurrent, global free list.
 pub(crate) struct GlobalFreeList {
@@ -17,6 +19,16 @@ pub(crate) struct GlobalFreeList {
     head: AtomicU64,
     /// Counter incremented on every push to avoid ABA issues
     tag: AtomicU64,
+}
+
+#[bitfield]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u64)]
+#[allow(dead_code, clippy::identity_op)]
+struct Entry {
+    index: B18,
+    #[allow(unused)]
+    tag: B46,
 }
 
 /// Per-core free list.
@@ -44,13 +56,21 @@ impl GlobalFreeList {
         // TODO: this should verify that `index` is not allocated and not already in a
         // free list
 
-        debug_assert!(index < SLOT_MAX, "slot out of bounds: {index}");
-        // TODO: handle tag overflow
-        let new_head = (index as u64) | (self.tag.fetch_add(1, Ordering::Relaxed) << SLOT_BITS);
+        let new_tag = self.tag.fetch_add(1, Ordering::Relaxed);
+        // TODO: wrap on tag overflow (1<<46)
+
+        let new_head: u64 = Entry::new()
+            .with_index(index.try_into().unwrap())
+            .with_tag(new_tag)
+            .into();
 
         loop {
             let old_head = self.head.load(Ordering::Acquire);
-            storage[index].next.store(old_head, Ordering::Release);
+            // Safety: `index` points to a slot being added to the free list, so we know
+            // it's not referenced by anyone else
+            unsafe {
+                storage[index].set_next(old_head);
+            }
 
             if self
                 .head
@@ -70,8 +90,11 @@ impl GlobalFreeList {
                 return None;
             }
 
-            let old_head_index = Self::to_index(old_head);
-            let new_head = storage[old_head_index].next.load(Ordering::Acquire);
+            let old_head_index = Entry::from(old_head).index() as usize;
+            // Safety: we got old_head_index from the free list, so we know it's not
+            // allocated and has a valid next pointer. Use of next is safe per the Treiber
+            // algorithm (we read it here, then CAS)
+            let new_head = unsafe { storage[old_head_index].next() };
             if self
                 .head
                 .compare_exchange(old_head, new_head, Ordering::AcqRel, Ordering::Acquire)
@@ -80,11 +103,6 @@ impl GlobalFreeList {
                 return Some(old_head_index);
             }
         }
-    }
-
-    /// Extracts the index from a tagged stack entry
-    fn to_index(entry: u64) -> usize {
-        entry as usize & ((1 << SLOT_BITS) - 1)
     }
 }
 
@@ -101,7 +119,11 @@ impl<TP: hal::topology::Topology> LocalFreeList<TP> {
         // free list
         self.free_lists.with_mut(|head| {
             let old_head = head.map(|v| v as u64).unwrap_or(EMPTY);
-            storage[index].next.store(old_head, Ordering::Relaxed);
+            // Safety: `index` points to a slot being added to the free list, so we know
+            // it's not referenced by anyone else
+            unsafe {
+                storage[index].set_next(old_head);
+            }
             *head = Some(index);
         });
     }
@@ -113,7 +135,9 @@ impl<TP: hal::topology::Topology> LocalFreeList<TP> {
             if old_head == EMPTY as usize {
                 None
             } else {
-                *head = Some(storage[old_head].next.load(Ordering::Relaxed) as usize);
+                // Safety: we got old_head from the local free list, so know it has a valid next
+                // pointer and isn't referenced by any other cores
+                *head = Some(unsafe { storage[old_head].next() } as usize);
                 Some(old_head)
             }
         })
@@ -122,8 +146,8 @@ impl<TP: hal::topology::Topology> LocalFreeList<TP> {
 
 #[cfg(all(loom, test))]
 mod test {
-    use super::GlobalFreeList;
-    use crate::Slot;
+    use super::{GlobalFreeList, EMPTY};
+    use crate::slot::Slot;
 
     use loom::sync::Arc;
 
@@ -131,12 +155,12 @@ mod test {
     fn test_single_processor() {
         loom::model(|| {
             let storage: [Slot<()>; 6] = [
-                Slot::empty(),
-                Slot::empty(),
-                Slot::empty(),
-                Slot::empty(),
-                Slot::empty(),
-                Slot::empty(),
+                Slot::new_unallocated(EMPTY),
+                Slot::new_unallocated(EMPTY),
+                Slot::new_unallocated(EMPTY),
+                Slot::new_unallocated(EMPTY),
+                Slot::new_unallocated(EMPTY),
+                Slot::new_unallocated(EMPTY),
             ];
 
             let free_list = GlobalFreeList::new_empty();
@@ -159,8 +183,12 @@ mod test {
     #[test]
     fn test_concurrent_push() {
         loom::model(|| {
-            let storage: [Slot<()>; 4] =
-                [Slot::empty(), Slot::empty(), Slot::empty(), Slot::empty()];
+            let storage: [Slot<()>; 4] = [
+                Slot::new_unallocated(EMPTY),
+                Slot::new_unallocated(EMPTY),
+                Slot::new_unallocated(EMPTY),
+                Slot::new_unallocated(EMPTY),
+            ];
             let storage = Arc::new(storage);
             let free_list = Arc::new(GlobalFreeList::new_empty());
 
@@ -192,6 +220,37 @@ mod test {
 
             results.sort();
             assert_eq!(results, vec![0, 1, 2, 3]);
+        })
+    }
+
+    #[test]
+    fn test_concurrent_pop() {
+        loom::model(|| {
+            let storage: [Slot<()>; 2] =
+                [Slot::new_unallocated(EMPTY), Slot::new_unallocated(EMPTY)];
+            let storage = Arc::new(storage);
+            let free_list = Arc::new(GlobalFreeList::new_empty());
+            free_list.push(0, &*storage);
+            free_list.push(1, &*storage);
+
+            let t1 = {
+                let storage = storage.clone();
+                let free_list = free_list.clone();
+                loom::thread::spawn(move || {
+                    assert!(free_list.pop(&*storage).is_some());
+                })
+            };
+
+            let t2 = {
+                let storage = storage.clone();
+                let free_list = free_list.clone();
+                loom::thread::spawn(move || {
+                    assert!(free_list.pop(&*storage).is_some());
+                })
+            };
+
+            t1.join().unwrap();
+            t2.join().unwrap();
         })
     }
 }

@@ -5,6 +5,7 @@ edition = "2021"
 description = "Lock-free concurrent slab for PlatypOS"
 
 [dependencies]
+modular-bitfield = "0.11.2"
 platypos_hal = { path = "../hal" }
 
 [target.'cfg(loom)'.dependencies]

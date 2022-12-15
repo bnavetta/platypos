@@ -7,9 +7,6 @@ pub(crate) use loom::cell::ConstPtr;
 #[cfg(loom)]
 pub(crate) use loom::sync::atomic::AtomicU64;
 
-#[cfg(loom)]
-pub(crate) use loom::sync::atomic::AtomicBool;
-
 #[cfg(not(loom))]
 pub(crate) struct UnsafeCell<T>(core::cell::UnsafeCell<T>);
 
@@ -18,9 +15,6 @@ pub(crate) struct ConstPtr<T>(*const T);
 
 #[cfg(not(loom))]
 pub(crate) use core::sync::atomic::AtomicU64;
-
-#[cfg(not(loom))]
-pub(crate) use core::sync::atomic::AtomicBool;
 
 #[cfg(not(loom))]
 impl<T> UnsafeCell<T> {
