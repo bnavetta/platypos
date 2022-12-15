@@ -8,7 +8,7 @@ Across several years and several iterations, some of the ideas it's tried out:
 * Kernel developer tooling, including [tracing](https://github.com/tokio-rs/tracing) for structured logging and diagnostics, an in-kernel [test framework](./ktest),
   and tight GDB integration
 * Various bootloading mechanisms - a custom UEFI binary to load ELF files, the [bootloader crate](https://github.com/rust-osdev/bootloader/),
-  and [coreboot](https://www.coreboot.org/)and [u-boot](https://github.com/u-boot/u-boot) for RISC-V
+  and [coreboot](https://www.coreboot.org/) and [u-boot](https://github.com/u-boot/u-boot) for RISC-V
 * Different memory allocators including a [Buddy allocator](https://en.wikipedia.org/wiki/Buddy_memory_allocation) and a linked list of allocation ranges
   inspired by [Fuschia](https://cs.opensource.google/fuchsia/fuchsia/+/main:zircon/kernel/phys/lib/memalloc/include/lib/memalloc/pool.h).
 
@@ -23,6 +23,8 @@ Long-term, it's intended to be an OS for running servers:
 * I'd like to also support message-passing with capabilities/handles for security. This would be how the kernel grants resources to processes (particularly device access),
   but also accessible to userspace. Users could implement things like a log-shipping daemon that passes out handles tied to application log namespaces or an object
   storage API that produces opaque references which are still shareable.
+* Running WASM instead of host-specific binaries also sounds fun. There's a lot of prior art around incorporating
+  [Cranelift](https://github.com/bytecodealliance/wasmtime/tree/main/cranelift) for just-in-time compilation
 
 ## Current Status
 
