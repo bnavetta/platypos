@@ -8,7 +8,7 @@ use alloc::vec::Vec;
 /// array indices.
 pub type ProcessorId = u16;
 
-pub trait Topology {
+pub trait Topology: Send + Sync {
     /// The maximum number of processors supported on this platform.
     const MAX_PROCESSORS: u16;
 
@@ -109,6 +109,10 @@ impl<T, TP: Topology> PerProcessor<T, TP> {
         self.values[idx].with_mut(|ptr| f(unsafe { ptr.as_mut().unwrap() }))
     }
 }
+
+// Sync because T is bound to a specific processor and only accessible on that
+// processor
+unsafe impl<T, TP: Topology> Sync for PerProcessor<T, TP> {}
 
 #[cfg(all(test, loom))]
 mod test {

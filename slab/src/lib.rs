@@ -182,6 +182,11 @@ impl<const SIZE: usize, T: Sized, TP: hal::topology::Topology + 'static> Slab<SI
     }
 }
 
+unsafe impl<const SIZE: usize, T: Sized + Sync, TP: hal::topology::Topology + 'static> Sync
+    for Slab<SIZE, T, TP>
+{
+}
+
 impl<'a, const SIZE: usize, T, TP: hal::topology::Topology + 'static> Deref
     for Ref<'a, SIZE, T, TP>
 {

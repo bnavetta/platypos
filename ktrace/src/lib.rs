@@ -7,6 +7,8 @@
 //! * Usable from interrupt and memory-allocator contexts. This implies that
 //!   tracing entry points cannot allocate and any locks must be
 //!   interrupt-aware.
+//! * Sufficiently-structured so that hosts can enhance trace data (for example,
+//!   automatically mapping kernel addresses to source code location)
 //!
 //! # Design
 //! `ktrace` introduces a lightweight [schema](https://dl.acm.org/doi/10.1145/3544497.3544500) on top of
@@ -33,39 +35,42 @@ extern crate alloc;
 
 use core::convert::Infallible;
 use core::num::NonZeroU64;
-use core::sync::atomic::{AtomicU64, Ordering};
+use core::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 
 use hashbrown::hash_map::Entry;
+use platypos_hal::topology::PerProcessor;
 use platypos_hal::Write;
 use platypos_ktrace_proto as proto;
 
 use hashbrown::HashMap;
+use platypos_slab::Slab;
 use serde::Serialize;
+// use stack::SpanStack;
 use thingbuf::recycling::{self, Recycle};
 use thingbuf::StaticThingBuf;
 use tracing_core::{span, Dispatch, Subscriber};
 
-mod slab;
-mod stack;
-mod sync;
+// mod stack;
 
-pub struct KTrace {
-    next_id: AtomicU64,
+// Maximum number of spans which can exist at once
+const MAX_SPANS: usize = 128;
+
+/// Shared kernel tracing subscriber
+pub struct KTrace<TP: platypos_hal::topology::Topology + 'static> {
+    spans: Slab<MAX_SPANS, SpanState, TP>,
+    // stack: PerProcessor<SpanStack, &'static TP>,
 }
 
+/// Worker task which sends serialized trace events to the host
 pub struct Worker<W: Write> {
     writer: W,
-    active_spans: HashMap<span::Id, SpanState>,
     total_events: usize,
 }
 
 /// Per-span state that is needed kernel-side (as opposed to processor-side)
 #[derive(Debug)]
 struct SpanState {
-    references: usize,
-    // TODO: this isn't used since all state is tracked processor-side in the current design
-    //   we could do more locally if spans were accessible in KTrace
-    #[allow(dead_code)]
+    references: AtomicUsize,
     metadata: &'static tracing_core::Metadata<'static>,
 }
 
@@ -74,40 +79,35 @@ static QUEUE: StaticThingBuf<Message, 64, recycling::WithCapacity> =
 
 #[derive(Debug)]
 struct Message {
-    command: Option<Command>,
     /// Report a serialization error from writing `data`
     error: Option<postcard::Error>,
-    /// Serialized event data (may be empty, depending on the [`command`])
+    /// Serialized event data (may be empty, if there is an error)
     data: heapless::Vec<u8, 1024>,
-}
-
-/// Instructions passed to the worker task, along with message data to send
-#[derive(Debug)]
-enum Command {
-    New {
-        id: span::Id,
-        metadata: &'static tracing_core::Metadata<'static>,
-    },
-    Reference(span::Id),
-    Dereference(span::Id),
 }
 
 /// Initialize `ktrace` as the `tracing` subscriber.
 ///
 /// The returned worker must be driven periodically for events to be processed.
-pub fn init<W: Write<Error = Infallible> + Send + 'static>(mut writer: W) -> Worker<W> {
+pub fn init<
+    W: Write<Error = Infallible> + Send + 'static,
+    TP: platypos_hal::topology::Topology + 'static,
+>(
+    mut writer: W,
+    topology: &'static TP,
+) -> Worker<W> {
     writer
         .write_all(&proto::START_OF_OUTPUT)
         .expect("Could not write start-of-output");
-    let dispatch = Dispatch::new(KTrace::new());
+    let dispatch = Dispatch::new(KTrace::new(topology));
     tracing_core::dispatcher::set_global_default(dispatch).expect("Tracing initialized twice");
     Worker::new(writer)
 }
 
-impl KTrace {
-    fn new() -> Self {
+impl<TP: platypos_hal::topology::Topology + 'static> KTrace<TP> {
+    fn new(topology: &'static TP) -> Self {
         KTrace {
-            next_id: AtomicU64::new(1),
+            spans: Slab::new(topology),
+            // stack: PerProcessor::new(topology),
         }
     }
 
@@ -115,21 +115,30 @@ impl KTrace {
     fn processor_id(&self) -> proto::ProcessorId {
         0
     }
+
+    /// Handler for fatal internal tracing errors. This is used instead of
+    /// `panic!` so that the `panic!` implementation can itself use KTrace.
+    fn fatal_error(&self, _msg: &str) -> ! {
+        // TODO: indicate error somehow
+        loop {}
+    }
 }
 
-impl Subscriber for KTrace {
+impl<TP: platypos_hal::topology::Topology + 'static> Subscriber for KTrace<TP> {
     fn enabled(&self, _metadata: &tracing_core::Metadata<'_>) -> bool {
         // TODO: filtering directives
         true
     }
 
     fn new_span(&self, span: &span::Attributes<'_>) -> span::Id {
-        let mut id = self.next_id.fetch_add(1, Ordering::Relaxed);
-        if id == 0 {
-            // Wrapped around!
-            id = self.next_id.fetch_add(1, Ordering::Relaxed);
-            debug_assert!(id != 0);
-        }
+        let Ok(idx) = self.spans.insert(SpanState {
+            references: AtomicUsize::new(1),
+            metadata: span.metadata()
+        }) else {
+            self.fatal_error("exceeded max span limit")
+        };
+
+        let id = span::Id::from_u64(idx.into());
 
         let parent = if span.is_root() {
             proto::Parent::Root
@@ -140,17 +149,9 @@ impl Subscriber for KTrace {
             proto::Parent::Explicit(span.parent().map_or(0, |s| s.into_u64()))
         };
 
-        // Safety: we ensure that id is nonzero above
-
-        let span_id = span::Id::from_non_zero_u64(unsafe { NonZeroU64::new_unchecked(id) });
-
         if let Ok(mut slot) = QUEUE.push_ref() {
-            slot.command = Some(Command::New {
-                id: span_id.clone(),
-                metadata: span.metadata(),
-            });
             slot.write_message(&proto::Message::SpanCreated(proto::SpanCreated {
-                id,
+                id: idx.into(),
                 parent,
                 metadata: proto::Metadata::from_tracing(span.metadata()),
                 fields: span.into(),
@@ -158,7 +159,7 @@ impl Subscriber for KTrace {
         }
         // Otherwise, the queue is full - drop this span
 
-        span_id
+        id
     }
 
     fn record(&self, _span: &span::Id, _values: &span::Record<'_>) {
@@ -212,24 +213,28 @@ impl Subscriber for KTrace {
     }
 
     fn clone_span(&self, id: &span::Id) -> span::Id {
-        if let Ok(mut slot) = QUEUE.push_ref() {
-            slot.command = Some(Command::Reference(id.clone()))
-        }
-        // TODO: should probably panic if the queue is full, since tracking will be
-        // messed up
+        let Some(state) = self.spans.get(id.into_u64().into()) else {
+            return id.clone();
+        };
+        state.references.fetch_add(1, Ordering::Relaxed);
         id.clone()
     }
 
     fn try_close(&self, id: span::Id) -> bool {
-        if let Ok(mut slot) = QUEUE.push_ref() {
-            slot.command = Some(Command::Dereference(id))
-        }
+        let idx = id.into_u64().into();
+        let Some(state) = self.spans.get(idx) else {
+        return false
+      };
+        let references = state.references.fetch_sub(1, Ordering::Relaxed);
 
-        // At this point, we don't _know_ if all referenced have been closed, but it
-        // appears that nothing relies on the return value Consider using a
-        // sharded slab or other synchronizable data structure for span state, while
-        // keeping the queue for I/O
-        false
+        if references == 1 {
+            // This was the last reference
+            drop(state);
+            self.spans.remove(idx);
+            true
+        } else {
+            false
+        }
     }
 
     // TODO: this would require concurrent access to the span metadata stored in
@@ -289,7 +294,6 @@ impl Message {
 impl Recycle<Message> for recycling::WithCapacity {
     fn new_element(&self) -> Message {
         Message {
-            command: None,
             error: None,
             data: heapless::Vec::new(),
         }
@@ -304,7 +308,6 @@ impl<W: Write> Worker<W> {
     fn new(writer: W) -> Self {
         Self {
             writer,
-            active_spans: HashMap::new(),
             total_events: 0,
         }
     }
@@ -313,41 +316,6 @@ impl<W: Write> Worker<W> {
     pub fn work(&mut self) {
         while let Some(event) = QUEUE.pop_ref() {
             self.total_events += 1;
-            match &event.command {
-                Some(Command::New { id, metadata }) => {
-                    // If the span ID counter has wrapped around, this will overwrite previous
-                    // spans. The assumption is that they're old and unlikely to be active (for
-                    // example, if there's a bug where some span never gets closed.)
-                    self.active_spans.insert(
-                        id.clone(),
-                        SpanState {
-                            references: 1,
-                            metadata,
-                        },
-                    );
-                }
-                Some(Command::Reference(id)) => {
-                    if let Some(state) = self.active_spans.get_mut(id) {
-                        state.references += 1;
-                    }
-                    // Silently ignore referencing an unknown span
-                }
-                Some(Command::Dereference(id)) => {
-                    if let Entry::Occupied(mut entry) = self.active_spans.entry(id.clone()) {
-                        entry.get_mut().references -= 1;
-                        if entry.get().references == 0 {
-                            entry.remove();
-                            // self.write_message::<16, _,
-                            // _>(&proto::Message::SpanClosed {
-                            //     id: id.into_u64(),
-                            // });
-                        }
-                    }
-                    // Silently ignore dereferencing an unknown span
-                }
-                None => (),
-            }
-
             if let Some(ref err) = event.error {
                 self.report_error(err);
             }

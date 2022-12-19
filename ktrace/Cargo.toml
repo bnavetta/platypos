@@ -12,8 +12,10 @@ hashbrown = { version = "0.13", default-features = false, features = [
     "ahash",
 ] }
 heapless = "0.7"
+platypos_common = { path = "../common" }
 platypos_ktrace_proto = { path = "./proto" }
 platypos_hal = { path = "../hal" }
+platypos_slab = { path = "../slab" }
 postcard = "1.0"
 serde = { version = "1.0", default-features = false }
 thingbuf = { version = "0.1", default-features = false, features = ["static"] }

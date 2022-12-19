@@ -4,6 +4,7 @@
 use core::convert::Infallible;
 
 pub mod interrupts;
+pub mod topology;
 
 /// UART 16550 serial port writer
 pub struct SerialPort(uart_16550::SerialPort);

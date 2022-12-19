@@ -79,7 +79,7 @@ impl<'a> Symbolizer for &'a GimliSymbolizer {
         }
 
         if !wrote_frame {
-            write!(f, "<unknown symbol @ {address:#012x}")?;
+            write!(f, "<unknown symbol @ {address:#012x}>")?;
         }
 
         Ok(())

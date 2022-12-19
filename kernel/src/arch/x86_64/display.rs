@@ -1,6 +1,6 @@
 use core::convert::Infallible;
 
-use bootloader::boot_info::{FrameBuffer, PixelFormat};
+use bootloader_api::info::{FrameBuffer, PixelFormat};
 use embedded_graphics::draw_target::DrawTarget;
 use embedded_graphics::pixelcolor::Bgr888;
 use embedded_graphics::prelude::*;
@@ -39,14 +39,14 @@ impl<'a> DrawTarget for FrameBufferTarget<'a> {
             let pixel_offset = coord.y * stride + coord.x;
             let byte_offset = pixel_offset as usize * info.bytes_per_pixel;
             match info.pixel_format {
-                PixelFormat::RGB => {
+                PixelFormat::Rgb => {
                     // Could avoid some work by casting the frame buffer to a u32 array, but that
                     // seems... sketchy
                     buffer[byte_offset] = color.r();
                     buffer[byte_offset + 1] = color.g();
                     buffer[byte_offset + 2] = color.b();
                 }
-                PixelFormat::BGR => {
+                PixelFormat::Bgr => {
                     buffer[byte_offset] = color.b();
                     buffer[byte_offset + 1] = color.g();
                     buffer[byte_offset + 2] = color.r();
@@ -64,9 +64,6 @@ impl<'a> DrawTarget for FrameBufferTarget<'a> {
 impl<'a> OriginDimensions for FrameBufferTarget<'a> {
     fn size(&self) -> Size {
         let info = self.inner.info();
-        Size::new(
-            info.horizontal_resolution as u32,
-            info.vertical_resolution as u32,
-        )
+        Size::new(info.width as u32, info.height as u32)
     }
 }

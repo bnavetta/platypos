@@ -28,6 +28,7 @@ mod error;
 mod mm;
 mod panic;
 mod prelude;
+mod trace;
 
 /// Arguments passed from the platform-specific initialization code to
 /// [`kmain`].
@@ -42,20 +43,17 @@ pub struct BootArgs {
     pub root_allocator: &'static Allocator<'static>,
 
     pub interrupt_controller: &'static arch::hal_impl::interrupts::Controller,
-
-    pub trace_worker: platypos_ktrace::Worker<arch::hal_impl::SerialPort>,
 }
 
 /// The shared kernel entry point.
 pub fn kmain(mut args: BootArgs) -> ! {
     let _span = tracing::info_span!("kmain", at = kmain as usize).entered();
-    args.trace_worker.work(); // Manually driving until there's a task executor
-                              // TODO: make sure panic handler can flush worker
+    trace::flush();
 
     #[cfg(test)]
     {
         ktest::run_tests();
-        args.trace_worker.work(); // TODO: run during tests too
+        trace::flush();
     }
 
     let display = args.display.unwrap();

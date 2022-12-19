@@ -11,7 +11,7 @@ use bootloader_api::{entry_point, BootInfo, BootloaderConfig};
 use crate::arch::mm::MemoryAccess;
 use crate::mm::map::Region;
 use crate::mm::{heap_allocator, root_allocator};
-use crate::BootArgs;
+use crate::{trace, BootArgs};
 
 use super::display::FrameBufferTarget;
 
@@ -29,18 +29,23 @@ fn start(info: &'static mut BootInfo) -> ! {
 
     let ic = hal_impl::interrupts::init();
 
-    let mut trace_worker = ktrace::init(unsafe { hal_impl::SerialPort::new(0x3f8) });
-    trace_worker.work();
+    trace::init(
+        unsafe { hal_impl::SerialPort::new(0x3f8) },
+        &crate::arch::hal_impl::topology::INSTANCE,
+        ic,
+    );
+    trace::flush();
 
     let _span = tracing::info_span!("start").entered();
-    trace_worker.work();
+    trace::flush();
 
+    let version = info.api_version;
     tracing::info!(
         "Booting from bootloader v{}.{}.{}{}",
-        info.version_major,
-        info.version_minor,
-        info.version_patch,
-        if info.pre_release {
+        version.version_major(),
+        version.version_minor(),
+        version.version_patch(),
+        if version.pre_release() {
             " (prerelease)"
         } else {
             ""
@@ -48,7 +53,7 @@ fn start(info: &'static mut BootInfo) -> ! {
     );
 
     tracing::info!("Memory Regions:");
-    trace_worker.work();
+    trace::flush();
     // The bootloader doesn't combine adjacent functionally-equivalent regions, so
     // do it here
     // It also marks UEFI runtime service memory as usable...
@@ -70,40 +75,52 @@ fn start(info: &'static mut BootInfo) -> ! {
     if let Some(last) = last {
         log_region(last);
     }
-    trace_worker.work();
+    trace::flush();
+
+    tracing::info!("HERE!");
+    trace::flush();
 
     let access = unsafe {
         MemoryAccess::init(
             info.physical_memory_offset.into_option().unwrap() as usize as *mut MaybeUninit<u8>
         )
     };
-    trace_worker.work();
+    trace::flush();
 
     // TODO: add kernel?
     let reserved = &[];
 
+    tracing::debug!("Before allocator init");
+    trace::flush();
+
     let root_allocator = root_allocator::init(
         &access,
         ic,
-        info.memory_regions.iter().map(Region::from),
+        info.memory_regions.iter().map(Region::from), /* TODO: end of failing region seems off,
+                                                       * but also start isn't page-aligned?
+                                                       * right after bootloader */
         reserved,
     )
     .expect("Root allocator initialization failed");
-    trace_worker.work();
+    trace::flush();
+
+    tracing::debug!("After allocator init");
+    trace::flush();
 
     heap_allocator::enable_expansion(root_allocator);
 
     // Initialize the local interrupt controller after setting up memory allocation,
     // in case there's any dynamic data
     hal_impl::interrupts::init_local();
-    trace_worker.work();
+
+    tracing::debug!("Platform-specific initialization complete, entering kmain");
+    trace::flush();
 
     let args = BootArgs {
         display: info.framebuffer.as_mut().map(FrameBufferTarget::new),
         memory_access: access,
         root_allocator,
         interrupt_controller: ic,
-        trace_worker,
     };
 
     crate::kmain(args);

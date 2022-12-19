@@ -151,6 +151,9 @@ impl<'a> Allocator<'a> {
 
                 for region in memory_map {
                     if region.usable() {
+                        let _span =
+                            tracing::debug_span!("Initializing allocatable region", range = %region)
+                                .entered();
                         let start = PageFrame::from_start(region.start())
                             .expect("Memory region is not page-aligned!");
                         assert!(

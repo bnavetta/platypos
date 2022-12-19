@@ -1342,8 +1342,10 @@ version = "0.1.0"
 dependencies = [
  "hashbrown 0.13.1",
  "heapless",
+ "platypos_common",
  "platypos_hal",
  "platypos_ktrace_proto",
+ "platypos_slab",
  "postcard",
  "serde",
  "thingbuf",

@@ -74,7 +74,25 @@ impl<'a, T: ?Sized, C: Controller> InterruptSafeMutex<'a, T, C> {
         }
     }
 
-    // TODO: is a correct try_lock implementation possible?
+    #[inline(always)]
+    pub fn try_lock(&self) -> Option<InterruptSafeMutexGuard<'_, T, C>> {
+        let interrupt_guard = self.controller.disable();
+        // TODO: this can probably be simplified to just `map` the Option returned by
+        // `inner.try_lock`
+        // The idea is that we try to acquire the lock with interrupts disabled, to
+        // prevent racing or deadlocking with an interrupt handler, but can reenable
+        // interrupts if getting the lock fails.
+        match self.inner.try_lock() {
+            Some(inner_guard) => Some(InterruptSafeMutexGuard {
+                inner: inner_guard,
+                _interrupt_guard: interrupt_guard,
+            }),
+            None => {
+                drop(interrupt_guard);
+                None
+            }
+        }
+    }
 }
 
 impl<'a, T: ?Sized, C: Controller + ?Sized> Deref for InterruptSafeMutexGuard<'a, T, C> {
